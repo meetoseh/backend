@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 class UpdateArgs(BaseModel):
-    repo: Literal["backend", "websocket", "frontend", "jobs", "itg_tests"] = Field(
+    repo: Literal["backend", "websocket", "frontend-web", "jobs"] = Field(
         description="the repository identifier that was updated",
     )
 

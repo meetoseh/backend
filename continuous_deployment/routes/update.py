@@ -32,9 +32,9 @@ async def update(args: UpdateArgs, authorization: Optional[str] = Header(None)):
     """
     if authorization is None:
         return AUTHORIZATION_NOT_SET
-    if not authorization.startswith("token "):
+    if not authorization.startswith("bearer "):
         return AUTHORIZATION_INVALID_PREFIX
-    token = authorization[len("token ") :]
+    token = authorization[len("bearer ") :]
     if not hmac.compare_digest(token, os.environ["DEPLOYMENT_SECRET"]):
         return AUTHORIZATION_UNKNOWN_TOKEN
 

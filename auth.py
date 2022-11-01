@@ -5,6 +5,7 @@ import time
 import traceback
 from typing import List, Literal, Optional, Tuple, TypedDict
 from fastapi.responses import Response
+from error_middleware import handle_error
 from itgs import Itgs
 import jwt
 import os
@@ -103,6 +104,12 @@ async def auth_cognito(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
         if key["kid"] == unverified_headers["kid"] and key["use"] == "sig"
     ]
     if not matching_keys:
+        # TODO
+        slack = await itgs.slack()
+        await slack.send_web_error_message(
+            f"no matching cognito keys for kid={unverified_headers['kid']}"
+        )
+        # TODO END
         return AuthResult(
             None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
         )
@@ -120,7 +127,8 @@ async def auth_cognito(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
             audience=os.environ["AUTH_CLIENT_ID"],
             issuer=os.environ["EXPECTED_ISSUER"],
         )
-    except:
+    except Exception as e:
+        await handle_error(e)
         return AuthResult(
             None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
         )

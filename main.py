@@ -17,7 +17,7 @@ multiprocessing.Process(target=updater.listen_forever_sync, daemon=True).start()
 multiprocessing.Process(target=migrations.main.main_sync, daemon=True).start()
 app = FastAPI(
     title="oseh",
-    description="hypersocial daily mindfulness!",
+    description="hypersocial daily mindfulness",
     version="1.0.0+alpha",
     openapi_url="/api/1/openapi.json",
     docs_url="/api/1/docs",

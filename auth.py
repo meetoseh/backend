@@ -195,7 +195,7 @@ async def get_trusted_cognito_keys(itgs: Itgs) -> List[JWK]:
     public_kid_url = os.environ["PUBLIC_KID_URL"]
     async with aiohttp.ClientSession() as session:
         response = await session.get(public_kid_url)
-        body = response.json()
+        body = await response.json()
     keys: List[JWK] = body["keys"]
     await redis.set(b"cognito:jwks", json.dumps(keys).encode("utf-8"), ex=3600)
     _trusted_cognito_keys = (keys, time.time())
@@ -224,7 +224,7 @@ async def auth_shared_secret(itgs: Itgs, authorization: Optional[str]) -> AuthRe
     conn = await itgs.conn()
     cursor = conn.cursor()
     response = await cursor.execute(
-        """SELECT 
+        """SELECT
             users.sub
         FROM users
         WHERE

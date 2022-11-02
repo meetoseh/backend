@@ -51,26 +51,26 @@ CREATE TABLE daily_events(
 );
 
 /* foreign key, uniqueness */
-CREATE UNIQUE INDEX daily_events_visualization_journey_id
+CREATE UNIQUE INDEX daily_events_visualization_journey_id_idx
     ON daily_events (visualization_journey_id);
 
 /* foreign key, uniqueness */
-CREATE UNIQUE INDEX daily_events_sound_journey_id
+CREATE UNIQUE INDEX daily_events_sound_journey_id_idx
     ON daily_events (sound_journey_id);
 
 /* foreign key, uniqueness */
-CREATE UNIQUE INDEX daily_events_meditation_journey_id
+CREATE UNIQUE INDEX daily_events_meditation_journey_id_idx
     ON daily_events (meditation_journey_id);
 
 /* foreign key, uniqueness */
-CREATE UNIQUE INDEX daily_events_somatic_journey_id
+CREATE UNIQUE INDEX daily_events_somatic_journey_id_idx
     ON daily_events (somatic_journey_id);
 
 /* search */
-CREATE INDEX daily_events_available_at
+CREATE INDEX daily_events_available_at_idx
     ON daily_events (available_at);
 
 /* search */
-CREATE INDEX daily_events_created_at
+CREATE INDEX daily_events_created_at_idx
     ON daily_events (created_at);
 ```

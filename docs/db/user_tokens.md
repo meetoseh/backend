@@ -31,5 +31,5 @@ CREATE TABLE user_tokens(
     name TEXT NOT NULL,
     created_at REAL NOT NULL,
     expires_at REAL NULL
-)
+);
 ```

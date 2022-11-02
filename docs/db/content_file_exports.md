@@ -64,9 +64,9 @@ CREATE TABLE content_file_exports(
     target_duration INTEGER NOT NULL,
     quality_parameters TEXT NOT NULL,
     created_at REAL NOT NULL
-)
+);
 
-CREATE INDEX content_file_exports_uid ON content_file_exports(uid)
+CREATE INDEX content_file_exports_uid_idx ON content_file_exports(uid);
 ```
 
 ## Example m3u8 files

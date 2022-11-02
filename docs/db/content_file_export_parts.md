@@ -36,7 +36,7 @@ CREATE TABLE content_file_export_parts(
 );
 
 /* unique, foreign key, sort */
-CREATE UNIQUE INDEX content_file_export_parts_content_file_export_id_position
+CREATE UNIQUE INDEX content_file_export_parts_content_file_export_id_position_idx
     ON content_file_export_parts(content_file_export_id, position);
 
 /* foreign key */

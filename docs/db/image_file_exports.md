@@ -48,7 +48,8 @@ CREATE TABLE image_file_exports (
 );
 
 /* foreign key, search */
-CREATE INDEX image_file_exports_image_file_id_format_width_height_idx ON image_file_exports(image_file_id, format, width, height);
+CREATE INDEX image_file_exports_image_file_id_format_width_height_idx
+    ON image_file_exports(image_file_id, format, width, height);
 
 /* foreign key */
 CREATE INDEX image_file_exports_s3_file_id_idx ON image_file_exports(s3_file_id);

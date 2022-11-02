@@ -104,12 +104,6 @@ async def auth_cognito(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
         if key["kid"] == unverified_headers["kid"] and key["use"] == "sig"
     ]
     if not matching_keys:
-        # TODO
-        slack = await itgs.slack()
-        await slack.send_web_error_message(
-            f"no matching cognito keys for kid={unverified_headers['kid']}"
-        )
-        # TODO END
         return AuthResult(
             None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
         )
@@ -266,6 +260,6 @@ async def auth_any(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
         return AuthResult(
             result=None, error_type="not_set", error_response=AUTHORIZATION_NOT_SET
         )
-    if authorization.startswith("bearer ep_ut_"):
+    if authorization.startswith("bearer oseh_ut_"):
         return await auth_shared_secret(itgs, authorization)
     return await auth_cognito(itgs, authorization)

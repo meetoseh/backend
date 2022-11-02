@@ -1,10 +1,10 @@
 # users
 
-Every user w.ho has interacted with our service is represented in one row in this
-table
+Every user who has interacted with our service is represented in one row in this
+table.
 
 Typically identified via a JWT in the form of a bearer token in the
-authorization header via the sub claim
+authorization header via the sub claim.
 
 ## columns
 

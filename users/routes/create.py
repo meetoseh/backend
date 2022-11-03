@@ -21,23 +21,48 @@ async def create_user(authorization: Optional[str] = Header(None)):
         auth_result = await auth_cognito(itgs, authorization)
         if not auth_result.success:
             return auth_result.error_response
+
+        # we assert since these would all be 5xx errors if they failed
+        assert (
+            auth_result.result.claims is not None
+        ), "expected claims from auth_cognito"
+        claims = auth_result.result.claims
+        assert isinstance(claims.get("email"), str), "expected email in claims"
+        assert isinstance(claims.get("given_name"), str), "expected given_name in claims"
+        assert isinstance(claims.get("family_name"), str) in claims, "expected family_name in claims"
+
         now = time.time()
         conn = await itgs.conn()
         cursor = conn.cursor("none")
         await cursor.execute(
             """INSERT INTO users (
                 sub,
+                email,
+                given_name,
+                family_name,
                 created_at
             )
-            SELECT ?, ?
+            SELECT ?, ?, ?, ?, ?
             WHERE NOT EXISTS (
                 SELECT 1 FROM users
                 WHERE users.sub = ?
             )""",
             (
                 auth_result.result.sub,
+                claims["email"],
+                claims["given_name"],
+                claims["family_name"],
                 now,
                 auth_result.result.sub,
             ),
         )
+
+        if "picture" in claims:
+            jobs = await itgs.jobs()
+            await jobs.enqueue(
+                "runners.check_profile_picture",
+                user_sub=auth_result.result.sub,
+                picture_url=claims["picture"],
+            )
+
         return Response(status_code=204)

@@ -27,6 +27,8 @@ obvious way to do something (in this case, identify a row)
 
 -   `de` - [daily_events](db/daily_events.md)
 -   `j` - [journeys](db/journeys.md)
+-   `je` - [journey_events](db/journey_events.md)
+-   `dej` - [daily_event_journeys](db/daily_event_journeys.md)
 -   `s3f` - [s3_files](db/s3_files.md)
 -   `ut` - the token in [user_tokens](db/user_tokens.md)
 -   `ut_uid` - the uid in [user_tokens](db/user_tokens.md)

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import json
 import time
 import traceback
-from typing import List, Literal, Optional, Tuple, TypedDict
+from typing import Any, Dict, List, Literal, Optional, Tuple, TypedDict
 from fastapi.responses import Response
 from error_middleware import handle_error
 from itgs import Itgs
@@ -24,6 +24,9 @@ from models import (
 class SuccessfulAuthResult:
     sub: str
     """the subject of the user; acts as their unique identifier"""
+
+    claims: Optional[Dict[str, Any]] = None
+    """If the token was a JWT, this will contain the claims of the token"""
 
 
 @dataclass
@@ -130,7 +133,7 @@ async def auth_cognito(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
         return AuthResult(
             None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
         )
-    return AuthResult(SuccessfulAuthResult(payload["sub"]), None, None)
+    return AuthResult(SuccessfulAuthResult(payload["sub"], claims=payload), None, None)
 
 
 async def auth_fake_cognito(itgs: Itgs, authorization: Optional[str]) -> AuthResult:

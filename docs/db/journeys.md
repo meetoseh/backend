@@ -44,6 +44,12 @@ class ColorPrompt:
     text: str
     colors: List[str]
     """hex codes"""
+
+class WordPrompt:
+    """e.g. what are you feeling?"""
+    style: Literal["word"]
+    text: str
+    options: List[str]
 ```
 
 ## Fields

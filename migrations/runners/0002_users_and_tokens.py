@@ -8,8 +8,19 @@ async def up(itgs: Itgs) -> None:
         """CREATE TABLE users(
             id INTEGER PRIMARY KEY,
             sub TEXT UNIQUE NOT NULL,
+            email TEXT NOT NULL,
+            given_name TEXT NOT NULL,
+            family_name TEXT NOT NULL,
+            picture_url TEXT,
+            picture_image_file_id INTEGER REFERENCES image_files(id) ON DELETE SET NULL,
             created_at REAL NOT NULL
         )""",
+    )
+    await cursor.execute(
+        "CREATE INDEX users_email_idx ON users(email)"
+    )
+    await cursor.execute(
+        "CREATE INDEX users_picture_image_file_id_idx ON users(picture_image_file_id)"
     )
     await cursor.execute(
         """CREATE TABLE user_tokens(

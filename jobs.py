@@ -49,7 +49,7 @@ class Jobs:
 
         Args:
             name (str): the name of the job which corresponds to the import path in the jobs module
-                e.g., 'runners.charge' corresponds to the excecute function in jobs/charge.py
+                e.g., 'runners.charge' corresponds to the execute function in jobs/charge.py
                 relative to the jobs root directory
             kwargs (dict): the keyword arguments to pass to the job; must be json serializable
                 the jobs will automatically be sent the integrations and graceful death handler

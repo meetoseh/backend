@@ -1,36 +1,23 @@
 # daily_events
 
-A daily event consists of one [journey](journeys.md) per category that we offer
-plus a time at which the event becomes available. One journey per daily event is
-free, while the rest are locked behind a subscription.
-
-Note that paid subscriptions can invite free users to join them on any of the
-journeys within the active daily event.
+A daily event consists of 1 or more [journeys](journeys.md), where any number of
+them may be available for free, while the remaining require a subscription or a
+link from a subscriber.
 
 Similarly to content files and image files, daily events have their own JWT
 to separate how they got access to the content from the rendering of the content.
 For more information, see [../daily_events/README.md](../daily_events/README.md).
 
 Journeys MUST NOT be reused between daily events, however, we an have two
-"identical" journeys which are for two different daily events. In the schema we
-only enforce that the journey is not reused within the same category - a
-technical limitation, not a business one. We could get around this by breaking
-out the journey<->daily events join into journey_daily_events with a category
-field, but that is very inconvenient and less clear.
+"identical" journeys which are for two different daily events.
+
+See also: [daily_event_journeys.md](daily_event_journeys.md)
 
 ## Fields
 
 -   `id (integer primary key)`: the internal identifier for the row
 -   `uid (text unique not null)`: the primary external identifier for the row. The
     uid prefix is `de`: see [uid_prefixes](../uid_prefixes.md).
--   `visualization_journey_id (integer not null references journeys(id) on delete cascade)`: the
-    id of the visualization journey
--   `sound_journey_id (integer not null references journeys(id) on delete cascade)`: the
-    id of the sound journey
--   `meditation_journey_id (integer not null references journeys(id) on delete cascade)`: the
-    id of the meditation journey
--   `somatic_journey_id (integer not null references journeys(id) on delete cascade)`: the
-    id of the somatic journey
 -   `available_at (real not null)`: when this daily event becomes available in seconds since the unix epoch.
     Note that the time is important. The daily events are typically live for 5 minutes, though
     this amount is not dictated in the database.
@@ -42,29 +29,9 @@ field, but that is very inconvenient and less clear.
 CREATE TABLE daily_events(
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
-    visualization_journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
-    sound_journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
-    meditation_journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
-    somatic_journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
     available_at REAL NOT NULL,
     created_at REAL NOT NULL
 );
-
-/* foreign key, uniqueness */
-CREATE UNIQUE INDEX daily_events_visualization_journey_id_idx
-    ON daily_events (visualization_journey_id);
-
-/* foreign key, uniqueness */
-CREATE UNIQUE INDEX daily_events_sound_journey_id_idx
-    ON daily_events (sound_journey_id);
-
-/* foreign key, uniqueness */
-CREATE UNIQUE INDEX daily_events_meditation_journey_id_idx
-    ON daily_events (meditation_journey_id);
-
-/* foreign key, uniqueness */
-CREATE UNIQUE INDEX daily_events_somatic_journey_id_idx
-    ON daily_events (somatic_journey_id);
 
 /* search */
 CREATE INDEX daily_events_available_at_idx

@@ -13,8 +13,9 @@ authorization header via the sub claim.
 -   `email (text not null)`: the email address of the user. NOT A VALID IDENTIFIER.
     Primarily for custoemr support. Is often unique, but there are many valid reasons
     why it may not be.
--   `given_name (text not null)`: the given name of the user
--   `family_name (text not null)`: the family name of the user
+-   `given_name (text null)`: the given name of the user. we don't get this from apple,
+    so it's null for apple users unless they specify it
+-   `family_name (text null)`: the family name of the user
 -   `picture_url (text null)`: the url where the users profile picture can be found;
     this comes from the id token, so we should occassionally compare the value in
     an id token we get to the value in the database - if they don't match, we should
@@ -33,8 +34,8 @@ CREATE TABLE users(
     id INTEGER PRIMARY KEY,
     sub TEXT UNIQUE NOT NULL,
     email TEXT NOT NULL,
-    given_name TEXT NOT NULL,
-    family_name TEXT NOT NULL,
+    given_name TEXT,
+    family_name TEXT,
     picture_url TEXT,
     picture_image_file_id INTEGER REFERENCES image_files(id) ON DELETE SET NULL,
     created_at REAL NOT NULL

@@ -28,8 +28,6 @@ async def create_user(authorization: Optional[str] = Header(None)):
         ), "expected claims from auth_cognito"
         claims = auth_result.result.claims
         assert isinstance(claims.get("email"), str), "expected email in claims"
-        assert isinstance(claims.get("given_name"), str), "expected given_name in claims"
-        assert isinstance(claims.get("family_name"), str) in claims, "expected family_name in claims"
 
         now = time.time()
         conn = await itgs.conn()
@@ -50,8 +48,8 @@ async def create_user(authorization: Optional[str] = Header(None)):
             (
                 auth_result.result.sub,
                 claims["email"],
-                claims["given_name"],
-                claims["family_name"],
+                claims.get("given_name"),
+                claims.get("family_name"),
                 now,
                 auth_result.result.sub,
             ),

@@ -6,6 +6,11 @@ the keys that we use in redis
 
 -   `jobs:hot` used for the hot queue for jobs in jobs.py
 -   `cognito:jwks` used for caching our cognito keys in auth.py
+-   `rjobs:hash` is a hash of all the recurring jobs in `jobs`
+-   `rjobs` is a sset where the scores are the unix time the job should be run next,
+    and the values are the hashes of the jobs. see the jobs repo for more details
+-   `rjobs:purgatory` a set of job hashes that were removed from `rjobs` and are temporarily being
+    processed. this should remain near empty
 
 ## pubsub keys
 

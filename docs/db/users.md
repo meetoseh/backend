@@ -11,8 +11,15 @@ authorization header via the sub claim.
 -   `id (integer primary key)`: the internal row identifier
 -   `sub (text unique not null)`: the amazon cognito identifier
 -   `email (text not null)`: the email address of the user. NOT A VALID IDENTIFIER.
-    Primarily for custoemr support. Is often unique, but there are many valid reasons
-    why it may not be.
+    Primarily for customer support or contacting them. Is often unique, but there are
+    many valid reasons why it may not be.
+-   `email_verified (boolean not null)`: if we or an identity provider has confirmed
+    that the user owns the email address
+-   `phone_number (text null)`: the phone number of the user. NOT A VALID IDENTIFIER.
+-   `phone_number_verified (boolean null)`: if we or an identity provider has confirmed
+    that the user owns the phone number. Note that `phone_number_verified` is 21 chars,
+    which longer than the cognito jwt limit of 20 chars per field, so in the jwt this is
+    `custom:pn_verified`
 -   `given_name (text null)`: the given name of the user. we don't get this from apple,
     so it's null for apple users unless they specify it
 -   `family_name (text null)`: the family name of the user
@@ -34,6 +41,9 @@ CREATE TABLE users(
     id INTEGER PRIMARY KEY,
     sub TEXT UNIQUE NOT NULL,
     email TEXT NOT NULL,
+    email_verified BOOLEAN NOT NULL,
+    phone_number TEXT,
+    phone_number_verified BOOLEAN,
     given_name TEXT,
     family_name TEXT,
     picture_url TEXT,

@@ -29,6 +29,22 @@ async def create_user(authorization: Optional[str] = Header(None)):
         claims = auth_result.result.claims
         assert isinstance(claims.get("email"), str), "expected email in claims"
 
+        name: Optional[str] = claims.get("name")
+        given_name: Optional[str] = claims.get("given_name")
+        family_name: Optional[str] = claims.get("family_name")
+
+        if name is None and (given_name is not None or family_name is not None):
+            name = " ".join([given_name or "", family_name or ""]).strip()
+
+        if name is not None and (given_name is None or family_name is None):
+            try:
+                implied_given_name, implied_family_name = name.split(" ", 1)
+            except ValueError:
+                implied_given_name, implied_family_name = name, ""
+
+            given_name = given_name or implied_given_name
+            family_name = family_name or implied_family_name
+
         now = time.time()
         conn = await itgs.conn()
         cursor = conn.cursor("none")
@@ -36,11 +52,14 @@ async def create_user(authorization: Optional[str] = Header(None)):
             """INSERT INTO users (
                 sub,
                 email,
+                email_verified,
+                phone_number,
+                phone_number_verified,
                 given_name,
                 family_name,
                 created_at
             )
-            SELECT ?, ?, ?, ?, ?
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?
             WHERE NOT EXISTS (
                 SELECT 1 FROM users
                 WHERE users.sub = ?
@@ -48,8 +67,11 @@ async def create_user(authorization: Optional[str] = Header(None)):
             (
                 auth_result.result.sub,
                 claims["email"],
-                claims.get("given_name"),
-                claims.get("family_name"),
+                claims.get("email_verified", False),
+                claims.get("phone_number"),
+                claims.get("custom:pn_verified"),
+                given_name,
+                family_name,
                 now,
                 auth_result.result.sub,
             ),

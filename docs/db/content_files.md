@@ -58,7 +58,7 @@ CREATE TABLE content_files(
 /* foreign key */
 CREATE INDEX content_files_original_s3_file_id_idx ON content_files(original_s3_file_id);
 
-/* uniqueness */
+/* uniqueness, search */
 CREATE UNIQUE INDEX content_files_original_sha512_idx ON content_files(original_sha512);
 
 /* search, sort */

@@ -83,6 +83,7 @@ async def create_user(authorization: Optional[str] = Header(None)):
                 "runners.check_profile_picture",
                 user_sub=auth_result.result.sub,
                 picture_url=claims["picture"],
+                jwt_iat=claims["iat"],
             )
 
         return Response(status_code=204)

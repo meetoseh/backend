@@ -11,6 +11,35 @@ the keys that we use in redis
     and the values are the hashes of the jobs. see the jobs repo for more details
 -   `rjobs:purgatory` a set of job hashes that were removed from `rjobs` and are temporarily being
     processed. this should remain near empty
+-   `files:purgatory` a sorted set where the scores are the unix time the s3 file should be purged,
+    and the values are a json object in the following shape:
+
+    ```json
+    {
+        "bucket": "bucket-name",
+        "key": "path/to/file"
+    }
+    ```
+
+    You SHOULD sort the keys to ensure there are no duplicate entries and to
+    improve the debugging experience. Sort using `sort_keys=True`, regardless of
+    if you specified them in the correct order, to make intent clear.
+
+    Scanned regularly by [sweep_partial_file_uploads.py](../../../jobs/runners/sweep_partial_file_uploads.py)
+    This is primarily for files that may or may not be in s3, but are not in the database, since
+    otherwise these files are very hard to find. So the typical flow (pseudocode) is
+
+    -   add to files:purgatory
+    -   upload to s3
+    -   save to s3_files
+    -   remove from files:purgatory
+
+    We generally don't go so far as to ensure _nothing_ ever goes wrong using
+    this key, but we do want to decrease the error rate to below 0.01%, and if
+    we did nothing it'd probably be around 0.1%. This key also serves to allow a
+    quick way to queue up a file for deletion - when doing so, include the
+    "expected": True key and optionally a "hint" providing more debugging
+    context.
 
 ## pubsub keys
 

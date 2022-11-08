@@ -10,6 +10,9 @@ We maintain the following invariants not expressed in the schema:
 
 -   Every `image_file` has at least one `image_file_export`.
 
+Image files should only be deleted if they are not in use - see
+[delete_image_file.py](../../../jobs/runners/delete_image_file.py)
+
 ## Fields
 
 -   `id (integer primary key)`: the internal identifier for the row
@@ -23,6 +26,8 @@ We maintain the following invariants not expressed in the schema:
     users, but can be used to repeat the export if our targets change.
 -   `original_sha512 (text not null)`: the sha512 of the original image used to construct the
     exports. This is used to automatically deduplicate images where possible.
+-   `original_width (integer not null)`: the width of the original image in pixels
+-   `original_height (integer not null)`: the height of the original image in pixels
 -   `created_at (real not null)`: when this record was created in seconds since
     the unix epoch
 
@@ -35,6 +40,8 @@ CREATE TABLE image_files(
     name TEXT NOT NULL,
     original_s3_file_id INTEGER REFERENCES s3_files(id) ON DELETE SET NULL,
     original_sha512 TEXT NOT NULL,
+    original_width INTEGER NOT NULL,
+    original_height INTEGER NOT NULL,
     created_at REAL NOT NULL
 );
 

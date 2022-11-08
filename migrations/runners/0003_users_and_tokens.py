@@ -17,6 +17,7 @@ async def up(itgs: Itgs) -> None:
             family_name TEXT,
             picture_url TEXT,
             picture_image_file_id INTEGER REFERENCES image_files(id) ON DELETE SET NULL,
+            picture_image_file_updated_at REAL,
             created_at REAL NOT NULL
         )
         """,

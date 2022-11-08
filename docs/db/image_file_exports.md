@@ -24,7 +24,7 @@ See also: [image_files](image_files.md) for the logical image file.
     original image before applying the object-fit cover crop to get this image
 -   `format (text not null)`: the format of the export, e.g., `png`, `jpeg`, `webp`
 -   `quality_settings (text not null)`: the quality settings used for the export, which depends
-    on the format, as a json dictionary.
+    on the format, as a json dictionary. The keys must be sorted.
 -   `created_at (real not null)`: when this record was created in seconds since
     the unix epoch
 

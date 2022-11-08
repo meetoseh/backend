@@ -28,6 +28,8 @@ async def up(itgs: Itgs) -> None:
             name TEXT NOT NULL,
             original_s3_file_id INTEGER REFERENCES s3_files(id) ON DELETE SET NULL,
             original_sha512 TEXT NOT NULL,
+            original_width INTEGER NOT NULL,
+            original_height INTEGER NOT NULL,
             created_at REAL NOT NULL
         )
         """
@@ -82,6 +84,8 @@ async def up(itgs: Itgs) -> None:
             name TEXT NOT NULL,
             original_s3_file_id INTEGER NULL REFERENCES s3_files(id) ON DELETE SET NULL,
             original_sha512 TEXT NOT NULL,
+            original_width INTEGER NOT NULL,
+            original_height INTEGER NOT NULL,
             duration_seconds REAL NOT NULL,
             created_at REAL NOT NULL
         )

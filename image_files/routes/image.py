@@ -147,12 +147,10 @@ async def serve_ife_from_cache(
     if cached_data is None:
         return None
 
-    headers = (
-        {
-            "Content-Type": meta["content_type"],
-            "Content-Length": str(meta["file_size"]),
-        },
-    )
+    headers = {
+        "Content-Type": meta["content_type"],
+        "Content-Length": str(meta["file_size"]),
+    }
 
     if isinstance(cached_data, (bytes, bytearray)):
         return Response(content=cached_data, status_code=200, headers=headers)

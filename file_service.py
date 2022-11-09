@@ -163,7 +163,7 @@ class S3:
                         await f.write(data)
                         data = await stream.read(8192)
             finally:
-                await stream.close()
+                stream.close()
 
             return True
         except botocore.exceptions.ClientError as e:

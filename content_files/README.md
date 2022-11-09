@@ -7,7 +7,8 @@ Besides the admin-related functions (search, create, etc), users typically get a
 content file reference via a JWT signed using the `OSEH_CONTENT_FILE_JWT_SECRET`
 with RS256 from the appropriate endpoint (e.g., the journey endpoint). The aud
 must be `oseh-content` and the `sub` is the uid of the content file. The `iat`
-and `exp` claims are required.
+and `exp` claims are required. The `iss` claim should be `oseh`. The only supported
+algorithm is `HS256`.
 
 To convert this jwt to a link to the corresponding export, the client uses
 `/api/1/content_files/exports/{uid}/{os}.{ext}`. The `os` and `ext` are

@@ -12,6 +12,7 @@ import migrations.main
 import multiprocessing
 import continuous_deployment.router
 import users.router
+import image_files.router
 
 multiprocessing.Process(target=updater.listen_forever_sync, daemon=True).start()
 multiprocessing.Process(target=migrations.main.main_sync, daemon=True).start()
@@ -38,6 +39,9 @@ app.include_router(
     tags=["continuous_deployment"],
 )
 app.include_router(users.router.router, prefix="/api/1/users", tags=["users"])
+app.include_router(
+    image_files.router.router, prefix="/api/1/image_files", tags=["image_files"]
+)
 app.router.redirect_slashes = False
 
 

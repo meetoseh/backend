@@ -4,3 +4,4 @@ updater.lock
 dev.bat
 dev-*.bat
 /s3_buckets
+/tmp

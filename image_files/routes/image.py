@@ -67,7 +67,7 @@ async def get_image(
     token: Optional[str] = (
         authorization
         if authorization is not None
-        else (f"bearer {jwt}" if jwt is not None else "")
+        else (f"bearer {jwt}" if jwt is not None else None)
     )
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, token)

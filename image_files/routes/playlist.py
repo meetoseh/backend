@@ -9,6 +9,7 @@ from models import (
     StandardErrorResponse,
 )
 from itgs import Itgs
+from urllib.parse import urlencode
 import os
 import io
 
@@ -198,9 +199,8 @@ async def get_image_playlist(
         cur_list: Optional[List[PlaylistItemResponse]] = None
 
         root_backend_url = os.environ["ROOT_BACKEND_URL"]
-        presign_suffix = (
-            "?jwt=" + checked_jwt.split(" ", 1)[1].strip() if presign else ""
-        )
+        token = checked_jwt.split(" ", 1)[1].strip()
+        presign_suffix = "?" + urlencode({"jwt": token}) if presign else ""
         for row in response.results:
             item = PlaylistItemResponse(
                 url=f"{root_backend_url}/api/1/image_files/image/{row[0]}.{row[3]}{presign_suffix}",

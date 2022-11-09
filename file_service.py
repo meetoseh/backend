@@ -2,7 +2,7 @@ from abc import ABC
 from io import BytesIO
 from typing import Union
 import aioboto3
-import botocore.errorfactory
+import botocore.exceptions
 import aiofiles
 import os
 import logging
@@ -162,16 +162,20 @@ class S3:
                         data = await stream.read(8192)
 
             return True
-        except botocore.errorfactory.NoSuchKey:
-            return False
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == "NoSuchKey":
+                return False
+            raise
 
     async def delete(self, *, bucket: str, key: str) -> bool:
         logging.info(f"[file_service/s3]: delete {bucket=}, {key=}")
         try:
             await self._s3.delete_object(Bucket=bucket, Key=key)
             return True
-        except botocore.errorfactory.NoSuchKey:
-            return False
+        except botocore.exceptions.ClientError as e:
+            if e.response['Error']['Code'] == "NoSuchKey":
+                return False
+            raise
 
 
 class LocalFiles:

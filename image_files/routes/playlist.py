@@ -128,9 +128,10 @@ async def get_image_playlist(
     using_query_jwt = authorization is None
     if presign is None:
         presign = using_query_jwt
+    checked_jwt = jwt if using_query_jwt else authorization
 
     async with Itgs() as itgs:
-        auth_result = await auth_any(itgs, jwt if using_query_jwt else authorization)
+        auth_result = await auth_any(itgs, checked_jwt)
         if not auth_result.success:
             return auth_result.error_response
 
@@ -200,7 +201,7 @@ async def get_image_playlist(
         for row in response.results:
             item = PlaylistItemResponse(
                 url=f"{root_backend_url}/api/1/image_files/image/{row[0]}.{row[3]}"
-                + ("?jwt=" + jwt if presign else ""),
+                + ("?jwt=" + checked_jwt if presign else ""),
                 format=row[3],
                 width=row[1],
                 height=row[2],

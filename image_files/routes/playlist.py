@@ -192,7 +192,7 @@ async def get_image_playlist(
                 status_code=404,
             )
 
-        items: Dict[str, List[PlaylistItemResponse]]
+        items: Dict[str, List[PlaylistItemResponse]] = dict()
         last_fmt: Optional[str] = None
         cur_list: Optional[List[PlaylistItemResponse]] = None
 

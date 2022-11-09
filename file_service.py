@@ -150,7 +150,9 @@ class S3:
         try:
             s3_ob = await self._s3.get_object(Bucket=bucket, Key=key)
 
-            async with s3_ob["Body"] as stream:
+            # https://github.com/terrycain/aioboto3/issues/266
+            stream = s3_ob["Body"]
+            try:
                 data = await stream.read(8192)
                 if sync:
                     while data:
@@ -160,10 +162,12 @@ class S3:
                     while data:
                         await f.write(data)
                         data = await stream.read(8192)
+            finally:
+                await stream.close()
 
             return True
         except botocore.exceptions.ClientError as e:
-            if e.response['Error']['Code'] == "NoSuchKey":
+            if e.response["Error"]["Code"] == "NoSuchKey":
                 return False
             raise
 
@@ -173,7 +177,7 @@ class S3:
             await self._s3.delete_object(Bucket=bucket, Key=key)
             return True
         except botocore.exceptions.ClientError as e:
-            if e.response['Error']['Code'] == "NoSuchKey":
+            if e.response["Error"]["Code"] == "NoSuchKey":
                 return False
             raise
 

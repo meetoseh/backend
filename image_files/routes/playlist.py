@@ -128,7 +128,7 @@ async def get_image_playlist(
     using_query_jwt = authorization is None
     if presign is None:
         presign = using_query_jwt
-    checked_jwt = jwt if using_query_jwt else authorization
+    checked_jwt = f"bearer {jwt}" if using_query_jwt else authorization
 
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, checked_jwt)

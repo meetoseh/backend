@@ -64,7 +64,11 @@ async def get_image(
     **This endpoint should almost never be referenced directly in clients**. Instead,
     treat the urls from the playlist as opaque and use them directly.
     """
-    token: Optional[str] = authorization if authorization is not None else jwt
+    token: Optional[str] = (
+        authorization
+        if authorization is not None
+        else (f"bearer {jwt}" if jwt is not None else "")
+    )
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, token)
         if not auth_result.success:

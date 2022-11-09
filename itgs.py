@@ -13,7 +13,7 @@ import file_service
 import loguru
 
 
-__local_cache: diskcache.Cache = diskcache.Cache(
+our_diskcache: diskcache.Cache = diskcache.Cache(
     "tmp/diskcache", eviction_policy="least-recently-stored"
 )
 """diskcache does a particularly good job ensuring it's safe to reuse a single Cache object
@@ -179,5 +179,4 @@ class Itgs:
 
     async def local_cache(self) -> diskcache.Cache:
         """gets or creates the local cache for storing files transiently on this instance"""
-        global __local_cache
-        return __local_cache
+        return our_diskcache

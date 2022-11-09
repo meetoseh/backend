@@ -179,4 +179,5 @@ class Itgs:
 
     async def local_cache(self) -> diskcache.Cache:
         """gets or creates the local cache for storing files transiently on this instance"""
+        global __local_cache
         return __local_cache

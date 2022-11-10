@@ -57,9 +57,10 @@ async def create_user(authorization: Optional[str] = Header(None)):
                 phone_number_verified,
                 given_name,
                 family_name,
+                admin,
                 created_at
             )
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
             WHERE NOT EXISTS (
                 SELECT 1 FROM users
                 WHERE users.sub = ?
@@ -72,6 +73,7 @@ async def create_user(authorization: Optional[str] = Header(None)):
                 claims.get("custom:pn_verified"),
                 given_name,
                 family_name,
+                False,
                 now,
                 auth_result.result.sub,
             ),

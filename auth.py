@@ -249,7 +249,7 @@ async def auth_shared_secret(itgs: Itgs, authorization: Optional[str]) -> AuthRe
 
 
 async def auth_any(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
-    """verifies the given authorization token matches a valid user token or
+    """Verifies the given authorization token matches a valid user token or
     amazon cognito JWT
 
     Args:
@@ -266,3 +266,48 @@ async def auth_any(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
     if authorization.startswith("bearer oseh_ut_"):
         return await auth_shared_secret(itgs, authorization)
     return await auth_cognito(itgs, authorization)
+
+
+async def auth_admin(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
+    """Verifies that the given authorization token is valid for privileged
+    endpoints.
+
+    Args:
+        itgs (Itgs): the integrations to use
+        authorization (str, None): the provided authorization header
+
+    Returns:
+        AuthResult: the result of interpreting the provided header
+    """
+    result = await auth_any(itgs, authorization)
+    if not result.success:
+        return result
+
+    local_cache = await itgs.local_cache()
+    cache_key = f"auth:is_admin:{result.result.sub}"
+    cached_is_admin = local_cache.get(cache_key)
+    if cached_is_admin == b"1":
+        return result
+    if cached_is_admin == b"0":
+        return AuthResult(
+            result=None,
+            error_type="invalid",
+            error_response=AUTHORIZATION_UNKNOWN_TOKEN,
+        )
+
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+    response = await cursor.execute(
+        "SELECT 1 FROM users WHERE sub=? AND admin=1",
+        (result.result.sub,),
+    )
+    if not response.results:
+        local_cache.set(cache_key, b"0", expire=900)
+        return AuthResult(
+            result=None,
+            error_type="invalid",
+            error_response=AUTHORIZATION_UNKNOWN_TOKEN,
+        )
+
+    local_cache.set(cache_key, b"1", expire=900)
+    return result

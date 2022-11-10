@@ -18,3 +18,5 @@ the keys we store locally on instances via diskcache
     ```
 -   `s3_files:{uid}`: a cache for s3 files. used, for example,
     [here](../../image_files/routes/image.py)
+-   `auth:is_admin:{sub}`: contains `b'1'` if the user is an admin, `b'0'` otherwise.
+    [used here](../../auth.py)

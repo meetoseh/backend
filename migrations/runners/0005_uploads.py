@@ -16,6 +16,7 @@ async def up(itgs: Itgs) -> None:
             failure_job_name TEXT NOT NULL,
             failure_job_kwargs TEXT NOT NULL,
             created_at REAL NOT NULL,
+            completed_at REAL NULL,
             expires_at REAL NOT NULL
         )
         """
@@ -55,5 +56,22 @@ async def up(itgs: Itgs) -> None:
         """
         CREATE INDEX s3_file_upload_parts_s3_file_upload_id_s3_file_id_idx
             ON s3_file_upload_parts(s3_file_upload_id, s3_file_id)
+        """
+    )
+
+    await cursor.execute(
+        """
+        CREATE TABLE journey_background_images (
+            id INTEGER PRIMARY KEY,
+            uid TEXT UNIQUE NOT NULL,
+            image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
+            uploaded_by_user_id INTEGER NULL REFERENCES user(id) ON DELETE SET NULL
+        )
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE INDEX journey_background_images_uploaded_by_user_id_idx
+            ON journey_background_images (uploaded_by_user_id)
         """
     )

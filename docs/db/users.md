@@ -37,6 +37,7 @@ authorization header via the sub claim.
     pictures with the wrong URL when the JWT was issued before this time.
     This is set to the issued at time of the JWT when the profile picture
     is updated.
+-   `admin (boolean not null)`: allows access to the admin panel
 -   `created_at (real not null)`: when this record was created in seconds since
     the unix epoch
 
@@ -55,6 +56,7 @@ CREATE TABLE users(
     picture_url TEXT,
     picture_image_file_id INTEGER REFERENCES image_files(id) ON DELETE SET NULL,
     picture_image_file_updated_at REAL,
+    admin BOOLEAN NOT NULL,
     created_at REAL NOT NULL
 );
 

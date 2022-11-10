@@ -7,9 +7,8 @@ file service for development, plus it saves relatively little complexity.
 
 When an `s3_file_uploads` row is created, all of the required
 `s3_file_upload_parts` should also be created atomically. Thus, an s3 file
-upload can be considered successful when there are no incomplete parts, at which
-part it should be deleted. It's considered failed either when explicitly
-aborted, or when it expires, at which point it should be deleted.
+upload can be considered successful when there are no incomplete parts. It's
+considered failed either when explicitly aborted, or when it expires.
 
 ## Fields
 
@@ -27,6 +26,8 @@ aborted, or when it expires, at which point it should be deleted.
 -   `failure_job_kwargs (text not null)`: The keyword arguments, as json, to pass to
     the failure job.
 -   `created_at (real not null)`: When this record was created in seconds since the unix epoch
+-   `completed_at (real null)`: If the success or failure job as already been enqueued for this
+    upload, this is when it was enqueued. Otherwise, null.
 -   `expires_at (real not null)`: When this record expires in seconds since the unix epoch;
     after this time, the record (and any uploaded parts) can be deleted
 
@@ -41,6 +42,7 @@ CREATE TABLE s3_file_uploads (
     failure_job_name TEXT NOT NULL,
     failure_job_kwargs TEXT NOT NULL,
     created_at REAL NOT NULL,
+    completed_at REAL NULL,
     expires_at REAL NOT NULL
 );
 

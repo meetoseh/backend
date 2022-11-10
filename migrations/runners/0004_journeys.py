@@ -12,7 +12,7 @@ async def up(itgs: Itgs) -> None:
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
             audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
-            background_image_file_id INTEGER REFERENCES image_files(id) ON DELETE SET NULL,
+            background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
             prompt TEXT NOT NULL,
             created_at REAL NOT NULL
         )

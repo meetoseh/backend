@@ -59,7 +59,7 @@ class WordPrompt:
     uid prefix is `j`: see [uid_prefixes](../uid_prefixes.md).
 -   `audio_content_file_id (integer not null references content_files(id) on delete cascade)`: the
     id of the audio content file
--   `background_image_file_id (integer references image_files(id) on delete set null)`: the
+-   `background_image_file_id (integer not null references image_files(id) on delete cascade)`: the
     id of the background image file
 -   `prompt (text not null)`: the prompt and corresponding settings as a json dictionary. the
     prompt format is described in the Prompts section
@@ -72,7 +72,7 @@ CREATE TABLE journeys(
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
     audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
-    background_image_file_id INTEGER REFERENCES image_files(id) ON DELETE SET NULL,
+    background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
     prompt TEXT NOT NULL,
     created_at REAL NOT NULL
 );

@@ -11,7 +11,7 @@ images.
     uid prefix is `jbi: see [uid_prefixes](../uid_prefixes.md).
 -   `image_file_id (integer unique not null references image_files(id) on delete cascade)`:
     The image file that is being used as a background image
--   `uploaded_by_user_id (integer null references user(id) on delete set null)`:
+-   `uploaded_by_user_id (integer null references users(id) on delete set null)`:
     The user that uploaded this image
 
 ## Schema
@@ -21,7 +21,7 @@ CREATE TABLE journey_background_images (
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
     image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
-    uploaded_by_user_id INTEGER NULL REFERENCES user(id) ON DELETE SET NULL
+    uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL
 );
 
 /* foreign key */

@@ -65,7 +65,7 @@ async def up(itgs: Itgs) -> None:
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
             image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
-            uploaded_by_user_id INTEGER NULL REFERENCES user(id) ON DELETE SET NULL
+            uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL
         )
         """
     )

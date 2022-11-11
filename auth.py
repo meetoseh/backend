@@ -176,7 +176,7 @@ async def auth_fake_cognito(itgs: Itgs, authorization: Optional[str]) -> AuthRes
         return AuthResult(
             None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
         )
-    return AuthResult(SuccessfulAuthResult(payload["sub"]), None, None)
+    return AuthResult(SuccessfulAuthResult(payload["sub"], payload), None, None)
 
 
 _trusted_cognito_keys: Optional[Tuple[List[JWK], float]] = None

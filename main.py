@@ -15,6 +15,7 @@ import users.router
 import image_files.router
 import journeys.router
 import file_uploads.router
+import urllib.parse
 
 multiprocessing.Process(target=updater.listen_forever_sync, daemon=True).start()
 multiprocessing.Process(target=migrations.main.main_sync, daemon=True).start()
@@ -30,7 +31,7 @@ app = FastAPI(
 if os.environ.get("ENVIRONMENT") == "dev":
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://127.0.0.1:8888"],
+        allow_origins=[os.environ["ROOT_FRONTEND_URL"]],
         allow_credentials=True,
         allow_methods=["GET", "POST", "HEAD", "PUT", "DELETE"],
         allow_headers=["Authorization"],
@@ -130,6 +131,17 @@ async def dev_login(sub: str):
             "iss": os.environ["EXPECTED_ISSUER"],
             "exp": now + 3600,
             "aud": os.environ["AUTH_CLIENT_ID"],
+            "given_name": "Timothy",
+            "family_name": "Moore",
+            "email": "tj@meetoseh.com",
+            "email_verified": True,
+            "picture": (
+                # i prefer this avatar :o
+                "https://avatars.dicebear.com/api/adventurer/tj-%40-meetoseh.svg"
+                if sub == "timothy"
+                else f"https://avatars.dicebear.com/api/bottts/{urllib.parse.quote(sub)}.svg"
+            ),
+            "iat": now,
             "token_use": "id",
         },
         os.environ["DEV_SECRET_KEY"],

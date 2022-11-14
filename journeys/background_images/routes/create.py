@@ -1,5 +1,6 @@
 from typing import Optional
 from fastapi import APIRouter, Header
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from auth import auth_admin
 from file_uploads.helper import FileUploadResponse, start_upload
@@ -13,7 +14,12 @@ class CreateJourneyBackgroundImageRequest(BaseModel):
     file_size: int = Field(description="The size of the file in bytes", ge=1)
 
 
-@router.post("/", response_model=FileUploadResponse, responses=STANDARD_ERRORS_BY_CODE)
+@router.post(
+    "/",
+    response_model=FileUploadResponse,
+    responses=STANDARD_ERRORS_BY_CODE,
+    status_code=201,
+)
 async def create_journey_background_image(
     args: CreateJourneyBackgroundImageRequest,
     authorization: Optional[str] = Header(None),
@@ -26,11 +32,15 @@ async def create_journey_background_image(
         if not auth_result.success:
             return auth_result.error_response
 
-        return await start_upload(
+        res = await start_upload(
             itgs,
             file_size=args.file_size,
             success_job_name="runners.process_journey_background_image",
             success_job_kwargs={"uploaded_by_user_sub": auth_result.result.sub},
             failure_job_name="runners.delete_file_upload",
             failure_job_kwargs=dict(),
+        )
+        return JSONResponse(
+            content=res.dict(),
+            status_code=201,
         )

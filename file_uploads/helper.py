@@ -4,7 +4,8 @@ upload a file.
 import json
 import time
 from pydantic import BaseModel, Field
-from typing import Dict, List, Union
+from typing import List, Union
+from file_uploads.auth import create_jwt
 from itgs import Itgs
 from functools import cache
 import itertools
@@ -206,3 +207,10 @@ async def start_upload(
             ),
         )
         assert response.rows_affected == 1
+
+    jwt = await create_jwt(itgs, s3_file_upload_uid, expires_in)
+    return FileUploadResponse(
+        uid=s3_file_upload_uid,
+        jwt=jwt,
+        parts=parts,
+    )

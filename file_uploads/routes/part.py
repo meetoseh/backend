@@ -1,4 +1,5 @@
 import asyncio
+import os
 import secrets
 import time
 from fastapi import APIRouter, UploadFile, Header
@@ -94,7 +95,7 @@ async def upload_part(
             WHERE
                 s3_file_uploads.uid = ?
                 AND s3_file_uploads.completed_at IS NULL
-                AND s3_file_uploads.expires_at < ?
+                AND s3_file_uploads.expires_at > ?
             """,
             (part, uid, now),
         )
@@ -140,8 +141,10 @@ async def upload_part(
                 status_code=409,
             )
 
+        file.file.seek(0, os.SEEK_END)
         file_size = file.file.tell()
-        if end_byte - start_byte + 1 != file_size:
+        file.file.seek(0)
+        if end_byte - start_byte != file_size:
             return JSONResponse(
                 content=StandardErrorResponse[ERROR_409_TYPE](
                     type="part_does_not_match",
@@ -149,7 +152,7 @@ async def upload_part(
                         "The referenced part does not match the expected length. The server "
                         "decides how the parts are split up, and the parts and corresponding byte ranges "
                         "should have been returned from the same endpoint you used to get the JWT. You provided "
-                        f"a file with {file_size} bytes, but the server expected {end_byte - start_byte + 1} "
+                        f"a file with {file_size} bytes, but the server expected {end_byte - start_byte} "
                         f"bytes for this part; bytes [{start_byte}, {end_byte})."
                     ),
                 ).dict(),
@@ -166,72 +169,71 @@ async def upload_part(
         await files.upload(file.file, bucket=files.default_bucket, key=key, sync=True)
         s3_file_uid = f"oseh_s3f_{secrets.token_urlsafe(16)}"
         response = await cursor.executemany3(
-            # INSERT INTO s3_files
             (
-                """
-                INSERT INTO s3_files (
-                    uid, key, file_size, content_type, created_at
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (s3_file_uid, key, file_size, "application/octet-stream", now),
-            ),
-            # UPDATE s3_file_upload_parts
-            (
-                """
-                UPDATE s3_file_upload_parts
-                SET s3_file_id = s3_files.id
-                FROM s3_files
-                WHERE
-                    EXISTS (
-                        SELECT 1 FROM s3_files
-                        WHERE s3_files.uid = ?
-                    )
-                    AND EXISTS (
-                        SELECT 1 FROM s3_file_uploads
-                        WHERE s3_file_upload_parts.s3_file_upload_id = s3_file_uploads.id
-                          AND s3_file_uploads.uid = ?
-                    )
-                    AND s3_file_upload_parts.part_number = ?
-                    AND s3_file_upload_parts.s3_file_id IS NULL
-                """,
+                # INSERT INTO s3_files
                 (
-                    s3_file_uid,
-                    uid,
-                    part,
+                    """
+                    INSERT INTO s3_files (
+                        uid, key, file_size, content_type, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (s3_file_uid, key, file_size, "application/octet-stream", now),
                 ),
-            ),
-            # mark complete if all parts uploaded (we'll check rows_affected)
-            (
-                """
-                UPDATE s3_file_uploads
-                SET completed_at = ?
-                WHERE
-                    s3_file_uploads.uid = ?
-                    AND EXISTS (
-                        SELECT 1 FROM s3_file_upload_parts
-                        WHERE s3_file_upload_parts.s3_file_upload_id = s3_file_uploads.id
-                          AND s3_file_upload_parts.part_number = ?
-                          AND EXISTS (
-                            SELECT 1 FROM s3_files
-                            WHERE s3_files.id = s3_file_upload_parts.s3_file_id
-                              AND s3_files.uid = ?
-                          )
-                    )
-                    AND NOT EXISTS (
-                        SELECT 1 FROM s3_file_upload_parts
-                        WHERE s3_file_upload_parts.s3_file_upload_id = s3_file_uploads.id
-                          AND s3_file_upload_parts.s3_file_id IS NULL
-                    )
-                    AND s3_file_uploads.completed_at IS NULL
-                """,
+                # UPDATE s3_file_upload_parts
                 (
-                    now,
-                    uid,
-                    part,
-                    s3_file_uid,
+                    """
+                    UPDATE s3_file_upload_parts
+                    SET s3_file_id = s3_files.id
+                    FROM s3_files
+                    WHERE
+                        s3_files.uid = ?
+                        AND EXISTS (
+                            SELECT 1 FROM s3_file_uploads
+                            WHERE s3_file_upload_parts.s3_file_upload_id = s3_file_uploads.id
+                            AND s3_file_uploads.uid = ?
+                        )
+                        AND s3_file_upload_parts.part_number = ?
+                        AND s3_file_upload_parts.s3_file_id IS NULL
+                    """,
+                    (
+                        s3_file_uid,
+                        uid,
+                        part,
+                    ),
                 ),
-            ),
+                # mark complete if all parts uploaded (we'll check rows_affected)
+                (
+                    """
+                    UPDATE s3_file_uploads
+                    SET completed_at = ?
+                    WHERE
+                        s3_file_uploads.uid = ?
+                        AND EXISTS (
+                            SELECT 1 FROM s3_file_upload_parts
+                            WHERE s3_file_upload_parts.s3_file_upload_id = s3_file_uploads.id
+                            AND s3_file_upload_parts.part_number = ?
+                            AND EXISTS (
+                                SELECT 1 FROM s3_files
+                                WHERE s3_files.id = s3_file_upload_parts.s3_file_id
+                                AND s3_files.uid = ?
+                            )
+                        )
+                        AND NOT EXISTS (
+                            SELECT 1 FROM s3_file_upload_parts
+                            WHERE s3_file_upload_parts.s3_file_upload_id = s3_file_uploads.id
+                            AND s3_file_upload_parts.s3_file_id IS NULL
+                        )
+                        AND s3_file_uploads.completed_at IS NULL
+                    """,
+                    (
+                        now,
+                        uid,
+                        part,
+                        s3_file_uid,
+                    ),
+                ),
+            )
         )
 
         part_was_accepted = (

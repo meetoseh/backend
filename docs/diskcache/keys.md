@@ -33,5 +33,17 @@ the keys we store locally on instances via diskcache
         "file_size": 1234
     }
     ```
--   `content_files:exports:web:{uid}` the jsonified ShowWebPlaylistResponseItem as if it
+-   `content_files:playlists:web:{uid}` the jsonified ShowWebPlaylistResponseItem as if it
     did not require presigning. [used here](../../content_files/exports/routes/show_web_playlist.py)
+-   `content_files:playlists:mobile:{uid}` the m3u8 playlist for the given content file.
+    [used here](../../content_files/routes/show_mobile_playlist.py)
+-   `content_files:vods:{uid}:meta`: meta information about the content file export with the
+    given uid intended for when attempting to show that content file export as a vod.
+    [used here](../../content_files/exports/routes/show_m3u_vod.py). the format is:
+    ```json
+    {
+        "content_file_uid": "string"
+    }
+    ```
+-   `content_files:vods:{uid}:m3u`: the m3u8 vod for the given content file export uid.
+    [used here](../../content_files/exports/routes/show_m3u_vod.py)

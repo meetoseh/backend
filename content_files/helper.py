@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, Generator, Literal, Optional, Union
+from typing import Dict, Generator, List, Literal, Optional, Tuple, Union
 import aiofiles
 from fastapi.responses import Response, StreamingResponse
 from dataclasses import dataclass
@@ -8,6 +8,8 @@ import io
 import json
 from itgs import Itgs
 from temp_files import temp_file
+from collections import deque
+from urllib.parse import urlencode
 
 
 DOWNLOAD_LOCKS: Dict[str, asyncio.Lock] = dict()
@@ -198,3 +200,127 @@ async def serve_cfep_from_cache(
     return StreamingResponse(
         content=read_in_parts(cached_data), status_code=200, headers=headers
     )
+
+
+class M3UPresigner(io.RawIOBase):
+    """A byte-io wrapper that will presign the given m3u8 file by suffixing the
+    paths with the given presign bytes. This only works on well-formed m3u8 files
+    """
+
+    def __init__(self, source: io.BytesIO, presign: bytes) -> None:
+        self.source: io.BytesIO = source
+        self.start_of_line: bool = True
+        self.line_needs_presigning: bool = False
+        self.presign: bytes = presign
+        self._tell = 0
+        if not self.presign.endswith(b"\n"):
+            self.presign += b"\n"
+
+        self._prepared: deque = deque()  # deque[Tuple[slice, bytes]] once supported
+        """only well-defined slices (they are in range, with start<stop)"""
+
+    def _prepared_popleft(self) -> Tuple[slice, bytes]:
+        """typed workaround until production supports type hints for deque (py 3.9)"""
+        return self._prepared.popleft()
+
+    def _prepared_append(self, val: Tuple[slice, bytes]) -> None:
+        """typed workaround until production supports type hints for deque (py 3.9)"""
+        self._prepared.append(val)
+
+    def _prepared_appendleft(self, val: Tuple[slice, bytes]) -> None:
+        """typed workaround until production supports type hints for deque (py 3.9)"""
+        self._prepared.appendleft(val)
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> Literal[False]:
+        return False
+
+    def tell(self) -> int:
+        return self._tell
+
+    def _prepare_up_to(self, n: Optional[int] = None) -> None:
+        """Prepares up to the next n bytes of the stream. If n is none, this
+        will prepare an arbitrary amount from the stream. This may prepare
+        fewer or more bytes than n, but if there are bytes available this
+        will prepare at least 1 byte.
+        """
+        taken = self.source.read(n)
+        if not taken:
+            return
+
+        source_idx = 0
+        # splitlines performance is ridiculously good despite the copies, we're not beating
+        # it without a native implementation
+        # slicing from taken rather than line improves locality on read() at no cost here
+        for line in taken.splitlines(keepends=True):
+            if self.start_of_line:
+                self.line_needs_presigning = (not line.startswith(b"#")) and (
+                    line != b"\n"
+                )
+            if self.line_needs_presigning and line.endswith(b"\n"):
+                self._prepared_append(
+                    (slice(source_idx, source_idx + len(line) - 1), taken)
+                )
+                self._prepared_append((slice(0, len(self.presign)), self.presign))
+            else:
+                self._prepared_append(
+                    (slice(source_idx, source_idx + len(line)), taken)
+                )
+            self.start_of_line = line.endswith(b"\n")
+            source_idx += len(line)
+
+    def read(self, n: Optional[int] = None) -> bytes:
+        result: List[Tuple[slice, bytes]] = []
+        result_len: int = 0
+
+        while n is None or result_len < n:
+            if self._prepared:
+                avail = self._prepared_popleft()
+                avail_num = avail[0].stop - avail[0].start
+                if n is None or result_len + avail_num <= n:
+                    result.append(avail)
+                    result_len += avail_num
+                    continue
+                num_desired = n - result_len
+                result.append(
+                    (slice(avail[0].start, avail[0].start + num_desired), avail[1])
+                )
+                self._prepared_appendleft(
+                    (slice(avail[0].start + num_desired, avail[0].stop), avail[1])
+                )
+                result_len += num_desired
+                break
+
+            self._prepare_up_to(None if n is None else max(n - result_len, 8192))
+            if not self._prepared:
+                break
+
+        # memoryview reduces the number of copies we need to make
+        self._tell += result_len
+        return b"".join(memoryview(x[1])[x[0]] for x in result)
+
+
+async def get_cached_m3u(
+    local_cache: diskcache.Cache, *, key: str, jwt: Optional[str]
+) -> Optional[Union[bytes, io.BytesIO]]:
+    """Loads the m3u file (either a playlist or a vod) from the cache, if it
+    exists, and presigns it if a jwt is specified, otherwise returns None.
+
+    This will return either a bytes or an io.BytesIO, depending on the size of
+    the file and if presigning is necessary. Since the m3u file is assumed to be
+    well formatted, presigning can be done effectively without loading the
+    entire file into memory, or even parsing most of it.
+    """
+    cached_data: Optional[Union[bytes, io.BytesIO]] = local_cache.get(key, read=True)
+    if cached_data is None:
+        return None
+
+    if jwt is None:
+        return cached_data
+
+    if isinstance(cached_data, (bytes, bytearray)):
+        cached_data = io.BytesIO(cached_data)
+
+    return M3UPresigner(cached_data, ("?" + urlencode({"jwt": jwt})).encode("utf-8"))

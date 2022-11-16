@@ -75,3 +75,19 @@ async def up(itgs: Itgs) -> None:
             ON journey_background_images (uploaded_by_user_id)
         """
     )
+
+    await cursor.execute(
+        """
+        CREATE TABLE journey_audio_contents (
+            id INTEGER PRIMARY KEY,
+            uid TEXT UNIQUE NOT NULL,
+            content_file_id INTEGER UNIQUE NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
+            uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL
+        )"""
+    )
+    await cursor.execute(
+        """
+        CREATE INDEX journey_audio_contents_uploaded_by_user_id_idx
+            ON journey_audio_contents (uploaded_by_user_id)
+        """
+    )

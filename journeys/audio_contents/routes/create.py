@@ -10,7 +10,7 @@ from itgs import Itgs
 router = APIRouter()
 
 
-class CreateJourneyBackgroundImageRequest(BaseModel):
+class CreateJourneyAudioContentRequest(BaseModel):
     file_size: int = Field(description="The size of the file in bytes", ge=1)
 
 
@@ -20,13 +20,14 @@ class CreateJourneyBackgroundImageRequest(BaseModel):
     responses=STANDARD_ERRORS_BY_CODE,
     status_code=201,
 )
-async def create_journey_background_image(
-    args: CreateJourneyBackgroundImageRequest,
+async def create_journey_audio_content(
+    args: CreateJourneyAudioContentRequest,
     authorization: Optional[str] = Header(None),
 ):
-    """Starts the process to create a new journey background image. Background images
-    are cropped to the center, and at least 1920x1920 is suggested for maximum support;
-    1920x1080 for desktop, 1080x1920 for instagram
+    """Starts the process to create a new journey audio content. Raw formats are
+    suggested, such as 2 channels (stereo) * 44.1 Khz * 24 bits = 2116.8kpbs - the
+    file will be compressed at multiple different levels so that it can be played
+    on a variety of devices in a variety of network conditions.
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
@@ -36,7 +37,7 @@ async def create_journey_background_image(
         res = await start_upload(
             itgs,
             file_size=args.file_size,
-            success_job_name="runners.process_journey_background_image",
+            success_job_name="runners.process_journey_audio_content",
             success_job_kwargs={"uploaded_by_user_sub": auth_result.result.sub},
             failure_job_name="runners.delete_file_upload",
             failure_job_kwargs=dict(),

@@ -15,3 +15,19 @@ existing keys.
 -   `s3_files/uploads/{upload_uid}/{part_number}/{random}`: Where an individual
     [upload_part](../db/s3_file_upload_parts.md) is stored, before stitching. See
     [part.py](../../file_uploads/routes/part.py)
+-   `s3_files/audio/{content_file_uid}/mp4/{target bitrate}/{random}.mp4`:
+    Where an individual [content_file_export_part](../db/content_file_export_parts.md) is
+    located, where its a content file export for an audio file, and the particular
+    export part is for an mp4. See [audio.py](../../../jobs/audio.py). NOTE:
+    the content file uid may not match, as it is selected optimistically assuming
+    that the content file does not exist, and then if it does exist it's spliced
+    into the existing content file without being moved.
+-   `s3_files/audio/{content_file_uid}/hls/{random}.ts`: Where an individual
+    segment of some part of the given content file parsed as audio can be found.
+    Note that this key is used for varying bandwidths and time segments. NOTE:
+    the content file uid may not match, as it is selected optimistically assuming
+    that the content file does not exist, and then if it does exist it's spliced
+    into the existing content file without being moved.
+-   `s3_files/audio/originals/{content_file_uid}/{random}`: Where the original
+    audio file of a [content_file](../db/content_files.md) is stored, when that
+    content file is an audio file. See [audio.py](../../../jobs/audio.py)

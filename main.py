@@ -15,6 +15,7 @@ import users.router
 import image_files.router
 import journeys.router
 import file_uploads.router
+import content_files.router
 import urllib.parse
 
 multiprocessing.Process(target=updater.listen_forever_sync, daemon=True).start()
@@ -48,6 +49,9 @@ app.include_router(
 app.include_router(journeys.router.router, prefix="/api/1/journeys", tags=["journeys"])
 app.include_router(
     file_uploads.router.router, prefix="/api/1/file_uploads", tags=["file_uploads"]
+)
+app.include_router(
+    content_files.router.router, prefix="/api/1/content_files", tags=["content_files"]
 )
 app.router.redirect_slashes = False
 

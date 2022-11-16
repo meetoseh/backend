@@ -14,6 +14,7 @@ import diskcache
 import asyncio
 import json
 from temp_files import temp_file
+from content_files.helper import DOWNLOAD_LOCKS
 
 router = APIRouter()
 
@@ -92,12 +93,6 @@ async def get_image(
             return AUTHORIZATION_UNKNOWN_TOKEN
 
         return await serve_ife(itgs, ife_metadata)
-
-
-DOWNLOAD_LOCKS: Dict[str, asyncio.Lock] = dict()
-"""The keys are uids of s3 files, and the values are process-specific locks to prevent us
-from concurrently filling the local cache (which is a waste of time and resources).
-"""
 
 
 async def serve_ife(itgs: Itgs, meta: CachedImageFileExportMetadata) -> Response:

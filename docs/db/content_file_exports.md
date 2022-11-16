@@ -34,13 +34,14 @@ See the example section at the bottom for what m3u8 files look like.
 -   `id (integer primary key)`: the internal identifier for the row
 -   `uid (text unique not null)`: the primary external identifier for the row. The
     uid prefix is `afe`: see [uid_prefixes](../uid_prefixes.md).
--   `content_file_id (integer not null)`: the id of the [content_files](content_files.md)
+-   `content_file_id (integer not null references content_files(id) on delete cascade)`:
+    the id of the [content_files](content_files.md)
     row that this export is for
 -   `format (text not null)`: the format of the export. Examples: `m4a`, `mp3`, `ogg`
 -   `bandwidth (integer not null)`: the maximum bitrate of the export in bits per second.
     Required for client-side adaptive bitrate selection.
 -   `codecs (text not null)`: the codecs used in the export, comma separated, for
-    example: `avc1.640020,mp4a.40.2`. Required for ios.
+    example: `avc1.640020,mp4a.40.2`. Alphabetically sorted. Required for ios.
 -   `target_duration (integer not null)`: the target duration of each part in seconds.
     No part can have a duration larger than this, after flooring. Required for client-side
     preloading.
@@ -57,7 +58,7 @@ See the example section at the bottom for what m3u8 files look like.
 CREATE TABLE content_file_exports(
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
-    content_file_id INTEGER NOT NULL,
+    content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
     format TEXT NOT NULL,
     bandwidth INTEGER NOT NULL,
     codecs TEXT NOT NULL,

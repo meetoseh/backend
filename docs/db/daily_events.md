@@ -19,8 +19,7 @@ See also: [daily_event_journeys.md](daily_event_journeys.md)
 -   `uid (text unique not null)`: the primary external identifier for the row. The
     uid prefix is `de`: see [uid_prefixes](../uid_prefixes.md).
 -   `available_at (real not null)`: when this daily event becomes available in seconds since the unix epoch.
-    Note that the time is important. The daily events are typically live for 5 minutes, though
-    this amount is not dictated in the database.
+    Note that the time is important.
 -   `created_at (real not null)`: when this record was created in seconds since the unix epoch
 
 ## Schema

@@ -28,11 +28,33 @@ async def up(itgs: Itgs) -> None:
 
     await cursor.execute(
         """
+        CREATE TABLE journey_sessions (
+            id INTEGER PRIMARY KEY,
+            journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            uid TEXT UNIQUE NOT NULL
+        )
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE INDEX journey_sessions_journey_id_user_id_idx
+            ON journey_sessions(journey_id, user_id)
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE INDEX journey_sessions_user_id_idx
+            ON journey_sessions(user_id)
+        """
+    )
+
+    await cursor.execute(
+        """
         CREATE TABLE journey_events(
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
-            journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
-            user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+            journey_session_id INTEGER NOT NULL REFERENCES journey_sessions(id) ON DELETE CASCADE,
             evtype TEXT NOT NULL,
             data TEXT NOT NULL,
             journey_time REAL NOT NULL,
@@ -42,20 +64,8 @@ async def up(itgs: Itgs) -> None:
     )
     await cursor.execute(
         """
-        CREATE INDEX journey_events_journey_id_journey_time_idx
-            ON journey_events(journey_id, journey_time)
-        """
-    )
-    await cursor.execute(
-        """
-        CREATE INDEX journey_events_user_id_journey_time_idx
-            ON journey_events(user_id, created_at)
-        """
-    )
-    await cursor.execute(
-        """
-        CREATE INDEX journey_events_journey_id_created_at_idx
-            ON journey_events(journey_id, created_at)
+        CREATE INDEX journey_events_journey_session_id_journey_time_uid_idx
+            ON journey_events(journey_session_id, journey_time, uid)
         """
     )
 

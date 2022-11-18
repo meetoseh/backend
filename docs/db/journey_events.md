@@ -17,6 +17,8 @@ ahead of everyone else and no longer see any other interactions.
 See also:
 
 -   [journeys](journeys.md) - combines the content and the prompt
+-   [journey_sessions](journey_sessions.md) - the journey + user that the session
+    is for
 -   [daily_events](daily_events.md) - the journeys for a particular day
 -   [daily_event_journeys](daily_event_journeys.md) - the relationship
     between journeys and daily events
@@ -36,6 +38,9 @@ where an empty body implies that the data will be `{}`
 class JoinEvent:
     ...
 
+class LeaveEvent:
+    ...
+
 class LikeEvent:
     ...
 
@@ -46,8 +51,7 @@ class PressPromptStartResponseEvent:
     ...
 
 class PressPromptEndResponseEvent:
-    start_uid: str
-    """the uid of the journey_event that started the press"""
+    ...
 
 class ColorPromptResponseEvent:
     index: int
@@ -61,13 +65,11 @@ class WordPromptResponseEvent:
 -   `id (integer primary key)`: the internal identifier for the row
 -   `uid (text unique not null)`: the primary external identifier for the row. The
     uid prefix is `je`: see [uid_prefixes](../uid_prefixes.md).
--   `journey_id (integer not null references journeys(id) on delete cascade)`:
-    the id of the journey this event belongs to
--   `user_id (integer null references users(id) on delete set null)`: the id of
-    the user who created the event, if there was one and they still exist, otherwise
-    null
+-   `journey_session_id (integer not null references journey_sessions(id) on delete cascade)`:
+    the journey session id, which combines which journey, which user, and what session (if
+    they left and rejoined or repeated the journey they would have multiple sessions)
 -   `evtype (text not null)`: the type of event, which is the snakecase name of the
-    class used in the Data section above
+    class used in the Data section above but without the '\_event' suffix
 -   `data (text not null)`: the data for the event, which is a json object. See
     Data
 -   `journey_time (real not null)`: the time in seconds into the journey when the
@@ -75,14 +77,29 @@ class WordPromptResponseEvent:
 -   `created_at (real not null)`: when this record was created in seconds since
     the unix epoch
 
+## Performance
+
+`journey_id` and `user_id` are not included here but are very relevant for
+searching. I would not be surprised if either one has to be denormalized or
+if we need an index on `journey_time` directly if the
+`journey_session_id, journey_time` index isn't fruitful for the optimizer.
+However, I've held off denormalizing them until we can actually measure the
+performance of the queries.
+
+A index on the evtype shouldn't be necessary as the main search that would
+be for is checking if a session has already ended, which can be done without
+a specific index by guarranteeing at the application layer that if a session
+has an end event, it is the last event in the session. Thus, to check if a
+journey session has ended, it's sufficient to check if the last event in the
+journey session is an end event.
+
 ## Schema
 
 ```sql
 CREATE TABLE journey_events(
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
-    journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
-    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    journey_session_id INTEGER NOT NULL REFERENCES journey_sessions(id) ON DELETE CASCADE,
     evtype TEXT NOT NULL,
     data TEXT NOT NULL,
     journey_time REAL NOT NULL,
@@ -90,14 +107,6 @@ CREATE TABLE journey_events(
 );
 
 /* foreign key, sort */
-CREATE INDEX journey_events_journey_id_journey_time_idx
-    ON journey_events(journey_id, journey_time);
-
-/* foreign key, search */
-CREATE INDEX journey_events_user_id_journey_time_idx
-    ON journey_events(user_id, created_at);
-
-/* search */
-CREATE INDEX journey_events_journey_id_created_at_idx
-    ON journey_events(journey_id, created_at);
+CREATE INDEX journey_events_journey_session_id_journey_time_uid_idx
+    ON journey_events(journey_session_id, journey_time, uid);
 ```

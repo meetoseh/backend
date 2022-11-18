@@ -50,7 +50,9 @@ the keys that we use in redis
     of the message should be formatted as if by the trivial serialization of the following:
     ```py
     class JourneyEventPubSubMessage:
-        user_sub: Optional[str]
+        uid: str
+        user_sub: str
+        session_uid: str
         evtype: str
         data: Dict[str, Any]
         journey_time: float

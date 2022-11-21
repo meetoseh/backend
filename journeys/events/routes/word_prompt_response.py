@@ -6,13 +6,14 @@ from journeys.events.models import (
     CreateJourneyEventRequest,
     CreateJourneyEventResponse,
     CREATE_JOURNEY_EVENT_STANDARD_ERRORS_BY_CODE,
-    ERROR_JOURNEY_NOT_FOUND_RESPONSE,
     CREATE_JOURNEY_EVENT_409_TYPES,
 )
-import journeys.events.helper
+import journeys.events.helper as evhelper
 from itgs import Itgs
 from models import StandardErrorResponse
-import json
+from pypika import Query, Table, Parameter
+from pypika.terms import ExistsCriterion
+from pypika.functions import Function
 
 
 class WordPromptData(BaseModel):
@@ -40,7 +41,7 @@ async def respond_to_journey_word_prompt(
     journey has a word prompt.
     """
     async with Itgs() as itgs:
-        auth_result = await journeys.events.helper.auth_create_journey_event(
+        auth_result = await evhelper.auth_create_journey_event(
             itgs,
             authorization=authorization,
             journey_jwt=args.journey_jwt,
@@ -49,50 +50,10 @@ async def respond_to_journey_word_prompt(
         if not auth_result.success:
             return auth_result.error_response
 
-        conn = await itgs.conn()
-        cursor = conn.cursor("none")
-        response = await cursor.execute(
-            "SELECT prompt FROM journeys WHERE uid=?",
-            (auth_result.result.journey_uid,),
-        )
-        if not response.results:
-            return ERROR_JOURNEY_NOT_FOUND_RESPONSE
+        journey_sessions = Table("journey_sessions")
+        journeys = Table("journeys")
 
-        prompt_raw: str = response.results[0][0]
-        prompt: dict = json.loads(prompt_raw)
-
-        if prompt["style"] != "word":
-            return Response(
-                content=StandardErrorResponse[CREATE_JOURNEY_EVENT_409_TYPES](
-                    type="impossible_event",
-                    message=(
-                        "A word prompt response can only be provided to a "
-                        "word prompt journey, but this journey has a "
-                        f"{prompt['style']} prompt."
-                    ),
-                ).json(),
-                headers={
-                    "Content-Type": "application/json; charset=utf-8",
-                },
-                status_code=409,
-            )
-
-        if args.data.index >= len(prompt["options"]):
-            return Response(
-                content=StandardErrorResponse[CREATE_JOURNEY_EVENT_409_TYPES](
-                    type="impossible_event_data",
-                    message=(
-                        "The given index is outside of the range of the "
-                        "journey's word prompt."
-                    ),
-                ).json(),
-                headers={
-                    "Content-Type": "application/json; charset=utf-8",
-                },
-                status_code=409,
-            )
-
-        result = await journeys.events.helper.create_journey_event(
+        result = await evhelper.create_journey_event(
             itgs,
             journey_uid=auth_result.result.journey_uid,
             user_sub=auth_result.result.user_sub,
@@ -100,6 +61,88 @@ async def respond_to_journey_word_prompt(
             event_type="word_prompt_response",
             event_data=args.data,
             journey_time=args.journey_time,
+            bonus_terms=[
+                (
+                    ExistsCriterion(
+                        Query.from_(journeys)
+                        .select(1)
+                        .where(journeys.id == journey_sessions.journey_id)
+                        .where(
+                            Function("json_extract", journeys.prompt, "$.style")
+                            == "word"
+                        )
+                        .where(
+                            Function("json_array_length", journeys.prompt, "$.options")
+                            > Parameter("?")
+                        )
+                    ),
+                    [args.data.index],
+                )
+            ],
+            bonus_error_checks=[
+                (
+                    ExistsCriterion(
+                        Query.from_(journeys)
+                        .select(1)
+                        .where(journeys.uid == Parameter("?"))
+                        .where(
+                            Function("json_extract", journeys.prompt, "$.style")
+                            == "word"
+                        )
+                    ),
+                    [args.journey_uid],
+                    lambda: evhelper.CreateJourneyEventResult(
+                        result=None,
+                        error_type="impossible_event",
+                        error_response=Response(
+                            content=StandardErrorResponse[
+                                CREATE_JOURNEY_EVENT_409_TYPES
+                            ](
+                                type="impossible_event",
+                                message=(
+                                    "A word prompt response can only be provided to a "
+                                    "word prompt journey."
+                                ),
+                            ).json(),
+                            headers={
+                                "Content-Type": "application/json; charset=utf-8",
+                            },
+                            status_code=409,
+                        ),
+                    ),
+                ),
+                (
+                    ExistsCriterion(
+                        Query.from_(journeys)
+                        .select(1)
+                        .where(journeys.uid == Parameter("?"))
+                        .where(
+                            Function("json_array_length", journeys.prompt, "$.options")
+                            > Parameter("?")
+                        )
+                    ),
+                    [args.journey_uid, args.data.index],
+                    lambda: evhelper.CreateJourneyEventResult(
+                        result=None,
+                        error_type="impossible_event_data",
+                        error_response=Response(
+                            content=StandardErrorResponse[
+                                CREATE_JOURNEY_EVENT_409_TYPES
+                            ](
+                                type="impossible_event_data",
+                                message=(
+                                    "The given index is outside of the range of the "
+                                    "journey's word prompt."
+                                ),
+                            ).json(),
+                            headers={
+                                "Content-Type": "application/json; charset=utf-8",
+                            },
+                            status_code=409,
+                        ),
+                    ),
+                ),
+            ],
         )
         if not result.success:
             return result.error_response

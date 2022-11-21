@@ -2,7 +2,7 @@
 events.
 """
 import time
-from typing import Any, Dict, Literal, Optional, Generic, TypeVar
+from typing import Any, Callable, Dict, List, Literal, Optional, Generic, Tuple, TypeVar
 from dataclasses import dataclass
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel, Field
@@ -22,6 +22,9 @@ from models import StandardErrorResponse, ERROR_401_TYPE, ERROR_403_TYPE
 import auth
 import journeys.auth
 import secrets
+from pypika import Query, Table, Parameter, Order, Tuple as SqlAliasable
+from pypika.terms import Term, ExistsCriterion, ContainsCriterion
+from pypika.queries import QueryBuilder
 
 
 @dataclass
@@ -175,6 +178,8 @@ class CreateJourneyEventResult(Generic[EventTypeT, EventDataT]):
             "session_already_ended",
             "session_has_later_event",
             "impossible_journey_time",
+            "impossible_event",
+            "impossible_event_data",
         ]
     ]
     """The reasons we might reject a request to create a new journey event,
@@ -216,6 +221,10 @@ async def create_journey_event(
     event_type: EventTypeT,
     event_data: EventDataT,
     journey_time: float,
+    bonus_terms: Optional[List[Tuple[Term, List[Any]]]] = None,
+    bonus_error_checks: Optional[
+        List[Tuple[Term, List[Any], Callable[[], CreateJourneyEventResult]]]
+    ] = None,
 ) -> CreateJourneyEventResult[EventTypeT, EventDataT]:
     """Creates a new journey event for the given journey by the given user with
     the given type, data and journey time. This will assign a uid and created_at
@@ -229,6 +238,104 @@ async def create_journey_event(
         event_type (EventTypeT): The type of the event
         event_data (EventDataT): The data of the event
         journey_time (float): The journey time of the event
+        bonus_terms (list[tuple[Term, list[Any]]], None): If specified, these terms
+            will be added to the where part of the INSERT statement. These terms will
+            be able to reference `journey_sessions` which can be assumed to be
+            for the correct journey session (with the user and journey already
+            verified).
+
+            Example:
+
+    ```py
+    journey_sessions = Table('journey_sessions')
+    other_stuffs = Table('other_stuffs')
+    bonus_terms = [
+        (
+            ExistsCriterion(
+                Query.from_(other_stuffs)
+                .select(1)
+                .where(other_stuffs.journey_session_id == journey_sessions.id)
+                .where(other_stuffs.uid == Parameter('?'))
+            ),
+            ['some-uid']
+        )
+    ]
+    ```
+
+            This would add the following to the where clause:
+
+    ```sql
+    EXISTS (
+        SELECT 1 FROM "other_stuffs"
+        WHERE "other_stuffs"."journey_session_id" = "journey_sessions"."id"
+            AND "other_stuffs"."uid" = ?
+    )
+    ```
+
+            and this will send the query parameter `some-uid` in the appropriate spot.
+        bonus_error_checks (list[tuple[Term, list[Any], () -> CreateJourneyEventResult]], None):
+            If specified, these are usually conceptually the same as the
+            bonus_terms, but augmented to include a function that is called to
+            produce the result of this function if the term fails, to improve
+            the error response.
+
+            Specifically, these terms will be inserted in the columns portion of
+            a select after and only if the insert fails. The term must evaluate
+            to a boolean, typically by being an ExistsCriterion. If the term
+            evaluates to false, the function will be called to produce the
+            result of this function.
+
+            The bonus error checks will have the lower priority than the normal
+            error checks, and will be checked in order. Thus, the bonus error
+            checks can assume that, for example, the journey session exists and
+            is for the correct user/journey.
+
+            These terms will NOT be able to reference `journey_sessions`, though
+            they can get that reference trivially with an exists criterion.
+
+            Example:
+
+    ```py
+    journey_sessions = Table('journey_sessions')
+    other_stuffs = Table('other_stuffs')
+    bonus_error_checks = [
+        (
+            ExistsCriterion(
+                Query.from_(other_stuffs)
+                .select(1)
+                .where(
+                    ExistsCriterion(
+                        Query.from_(journey_sessions)
+                        .where(journey_sessions.id == other_stuffs.journey_session_id)
+                        .where(journey_sessions.uid == Parameter('?'))
+                    )
+                )
+                .where(other_stuffs.uid == Parameter('?'))
+            ),
+            [session_uid, 'some-uid']
+        )
+    ]
+    ```
+
+            This would add the following to the columns portion of the select:
+
+    ```sql
+    (
+        EXISTS (
+            SELECT 1 FROM "other_stuffs"
+            WHERE
+                EXISTS (
+                    SELECT 1 FROM "journey_sessions"
+                    WHERE "journey_sessions"."id" = "other_stuffs"."journey_session_id"
+                        AND "journey_sessions"."uid" = ?
+                )
+                AND "other_stuffs"."uid" = ?
+        )
+    ) "b7"
+    ```
+
+            Note how the column alias is generated to a short unique value to reduce
+            network traffic.
 
     Returns:
         CreateJourneyEventResult: The result of the operation
@@ -240,174 +347,247 @@ async def create_journey_event(
             error_response=ERROR_JOURNEY_IMPOSSIBLE_JOURNEY_TIME_RESPONSE,
         )
 
-    conn = await itgs.conn()
-    cursor = conn.cursor("strong")
-
-    serd_event_data = event_data.json()
-
     event_uid = f"oseh_je_{secrets.token_urlsafe(16)}"
+    serd_event_data = event_data.json()
     created_at = time.time()
-    response = await cursor.execute(
-        """
-        INSERT INTO journey_events (
-            uid, journey_session_id, evtype, data,
-            journey_time, created_at
+
+    journey_events = Table("journey_events")
+    journey_sessions = Table("journey_sessions")
+    users = Table("users")
+    journeys = Table("journeys")
+    content_files = Table("content_files")
+    journey_events_inner = journey_events.alias("je")
+
+    query: QueryBuilder = (
+        Query.into(journey_events)
+        .columns(
+            journey_events.uid,
+            journey_events.journey_session_id,
+            journey_events.evtype,
+            journey_events.data,
+            journey_events.journey_time,
+            journey_events.created_at,
         )
-        SELECT
-            ?, journey_sessions.id, ?, ?, ?, ?
-        FROM journey_sessions
-        WHERE
-            journey_sessions.uid = ?
-            AND EXISTS (
-                SELECT 1 FROM users
-                WHERE users.id = journey_sessions.user_id
-                  AND users.uid = ?
-            )
-            AND EXISTS (
-                SELECT 1 FROM journeys
-                WHERE journeys.id = journey_sessions.journey_id
-                  AND journeys.uid = ?
-                  AND EXISTS (
-                    SELECT 1 FROM content_files
-                    WHERE content_files.id = journeys.audio_content_file_id
-                      AND content_files.duration_seconds <= ?
-                  )
-            )
-            AND (
-                (? != ?) = EXISTS (
-                    SELECT 1 FROM journey_events AS je
-                    WHERE je.journey_session_id = journey_sessions.id
-                )
-            )
-            AND ? NOT IN (
-                SELECT je.evtype FROM journey_events AS je
-                WHERE je.journey_session_id = journey_sessions.id
-                ORDER BY je.journey_time DESC
-                LIMIT 1
-            )
-            AND NOT EXISTS (
-                SELECT 1 FROM journey_events AS je
-                WHERE je.journey_session_id = journey_sessions.id
-                  AND je.journey_time > ?
-            )
-        """,
-        (
-            event_uid,
-            event_type,
-            serd_event_data,
-            journey_time,
-            created_at,
-            session_uid,
-            user_sub,
-            journey_uid,
-            journey_time,
-            event_type,
-            "join",
-            event_type,
-            "leave",
-        ),
+        .select(
+            Parameter("?"),
+            journey_sessions.id,
+            Parameter("?"),
+            Parameter("?"),
+            Parameter("?"),
+            Parameter("?"),
+        )
+        .from_(journey_sessions)
+        .where(journey_sessions.uid == Parameter("?"))
     )
-    if response.rows_affected is None or response.rows_affected < 1:
-        response = await cursor.execute(
-            """
-            SELECT
-                EXISTS (
-                    SELECT 1 FROM journeys
-                    WHERE uid=?
-                ) AS b1,
-                EXISTS (
-                    SELECT 1 FROM journey_sessions
-                    WHERE journey_sessions.uid = ?
-                      AND EXISTS (
-                        SELECT 1 FROM users
-                        WHERE users.id = journey_sessions.user_id
-                          AND users.sub = ?
-                      )
-                      AND EXISTS (
-                        SELECT 1 FROM journeys
-                        WHERE journeys.id = journey_sessions.journey_id
-                          AND journeys.uid = ?
-                      )
-                ) AS b2,
-                EXISTS (
-                    SELECT 1 FROM journey_events
-                    WHERE
-                        EXISTS (
-                            SELECT 1 FROM journey_sessions
-                            WHERE journey_sessions.id = journey_events.journey_session_id
-                              AND journey_sessions.uid = ?
-                        )
-                ) AS b3,
-                (? IN (
-                    SELECT evtype FROM journey_events
-                    WHERE
-                        EXISTS (
-                            SELECT 1 FROM journey_sessions
-                            WHERE journey_sessions.id = journey_events.journey_session_id
-                              AND journey_sessions.uid = ?
-                        )
-                    ORDER BY journey_time DESC
-                    LIMIT 1
-                )) AS b4,
-                EXISTS (
-                    SELECT 1 FROM journey_events AS je
-                    WHERE je.journey_session_id = journey_sessions.id
-                    AND je.journey_time > ?
-                ) AS b5
-            """,
-            (
-                journey_uid,
-                session_uid,
-                user_sub,
-                session_uid,
-                "leave",
-                session_uid,
-                journey_time,
-            ),
+    qargs = [
+        event_uid,
+        event_type,
+        serd_event_data,
+        journey_time,
+        created_at,
+        session_uid,
+    ]
+
+    session_is_for_user: Term = ExistsCriterion(
+        Query.from_(users)
+        .select(1)
+        .where(users.id == journey_sessions.user_id)
+        .where(users.sub == Parameter("?"))
+    )
+    session_is_for_user_qargs = [user_sub]
+
+    query = query.where(session_is_for_user)
+    qargs.extend(session_is_for_user_qargs)
+
+    session_is_for_journey: Term = ExistsCriterion(
+        Query.from_(journeys)
+        .select(1)
+        .where(journeys.id == journey_sessions.journey_id)
+        .where(journeys.uid == Parameter("?"))
+    )
+    session_is_for_journey_qargs = [journey_uid]
+
+    query = query.where(session_is_for_journey)
+    qargs.extend(session_is_for_journey_qargs)
+
+    journey_time_is_at_or_before_end: Term = ExistsCriterion(
+        Query.from_(content_files)
+        .select(1)
+        .where(
+            ExistsCriterion(
+                Query.from_(journeys)
+                .select(1)
+                .where(journeys.id == journey_sessions.journey_id)
+                .where(journeys.audio_content_file_id == content_files.id)
+            )
         )
-        (
-            journey_exists,
-            session_exists,
-            session_started,
-            session_finished,
-            later_event,
-        ) = response.results[0]
-        if not journey_exists:
-            return CreateJourneyEventResult(
-                result=None,
-                error_type="journey_not_found",
-                error_response=ERROR_JOURNEY_NOT_FOUND_RESPONSE,
+        .where(content_files.duration_seconds <= Parameter("?"))
+    )
+    journey_time_is_at_or_before_end_qargs = [journey_time]
+
+    query = query.where(journey_time_is_at_or_before_end)
+    qargs.extend(journey_time_is_at_or_before_end_qargs)
+
+    session_has_event_term: Term = ExistsCriterion(
+        Query.from_(journey_events_inner)
+        .select(1)
+        .where(journey_events_inner.journey_session_id == journey_sessions.id)
+    )
+    session_has_event_qargs = []
+
+    if event_type == "join":
+        query = query.where(~session_has_event_term)
+    else:
+        query = query.where(session_has_event_term)
+
+    qargs.extend(session_has_event_qargs)
+
+    session_is_finished_term: ContainsCriterion = Parameter("?").isin(
+        Query.from_(journey_events_inner)
+        .select(journey_events_inner.evtype)
+        .where(journey_events_inner.journey_session_id == journey_sessions.id)
+        .orderby(journey_events_inner.journey_time, order=Order.desc)
+        .limit(1)
+    )
+    session_is_finished_qargs = ["leave"]
+
+    query = query.where(session_is_finished_term.negate())
+    qargs.extend(session_is_finished_qargs)
+
+    session_has_later_event_term: Term = ExistsCriterion(
+        Query.from_(journey_events_inner)
+        .select(1)
+        .where(journey_events_inner.journey_session_id == journey_sessions.id)
+        .where(journey_events_inner.journey_time > Parameter("?"))
+    )
+    session_has_later_event_qargs = [journey_time]
+
+    query = query.where(~session_has_later_event_term)
+    qargs.extend(session_has_later_event_qargs)
+
+    if bonus_terms:
+        for term, term_qargs in bonus_terms:
+            query = query.where(term)
+            qargs.extend(term_qargs)
+
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+
+    response = await cursor.execute(query.get_sql(), qargs)
+    if response.rows_affected is None or response.rows_affected < 1:
+
+        def wrap_with_journey_sessions(
+            term: Optional[Term], term_args: List[Any], *, is_strict: bool = True
+        ) -> Tuple[Term, List[Any]]:
+            result: QueryBuilder = (
+                Query.from_(journey_sessions)
+                .select(1)
+                .where(journey_sessions.uid == Parameter("?"))
             )
-        if not session_exists:
-            return CreateJourneyEventResult(
-                result=None,
-                error_type="session_not_found",
-                error_response=ERROR_JOURNEY_SESSION_NOT_FOUND_RESPONSE,
-            )
-        if event_type != "join" and not session_started:
-            return CreateJourneyEventResult(
-                result=None,
-                error_type="session_not_started",
-                error_response=ERROR_JOURNEY_SESSION_NOT_STARTED_RESPONSE,
-            )
-        if event_type == "join" and session_started:
-            return CreateJourneyEventResult(
-                result=None,
-                error_type="session_already_started",
-                error_response=ERROR_JOURNEY_SESSION_ALREADY_STARTED_RESPONSE,
-            )
-        if session_finished:
-            return CreateJourneyEventResult(
-                result=None,
-                error_type="session_already_ended",
-                error_response=ERROR_JOURNEY_SESSION_ALREADY_ENDED_RESPONSE,
-            )
-        if later_event:
-            return CreateJourneyEventResult(
-                result=None,
-                error_type="session_has_later_event",
-                error_response=ERROR_JOURNEY_SESSION_HAS_LATER_EVENT_RESPONSE,
-            )
+            result_args = [session_uid]
+
+            if is_strict:
+                # whenever is_strict is false, it should behave the same as when
+                # is_strict is true. we set is_strict to False when we've already
+                # verified these parts, for simplicity of the query & for performance
+                result = result.where(session_is_for_user)
+                result_args.extend(session_is_for_user_qargs)
+
+                result = result.where(session_is_for_journey)
+                result_args.extend(session_is_for_journey_qargs)
+
+            if term is not None:
+                result = result.where(term)
+                result_args.extend(term_args)
+
+            return ExistsCriterion(result), [result_args]
+
+        terms_and_args: List[
+            Tuple[Term, List[Any], Callable[[], CreateJourneyEventResult]]
+        ] = [
+            (
+                ExistsCriterion(
+                    Query.from_(journeys)
+                    .select(1)
+                    .where(journeys.uid == Parameter("?"))
+                ),
+                [journey_uid],
+                lambda: CreateJourneyEventResult(
+                    result=None,
+                    error_type="journey_not_found",
+                    error_response=ERROR_JOURNEY_NOT_FOUND_RESPONSE,
+                ),
+            ),
+            (
+                *wrap_with_journey_sessions(None, []),
+                lambda: CreateJourneyEventResult(
+                    result=None,
+                    error_type="session_not_found",
+                    error_response=ERROR_JOURNEY_SESSION_NOT_FOUND_RESPONSE,
+                ),
+            ),
+            (
+                (
+                    *wrap_with_journey_sessions(
+                        session_has_event_term, session_has_event_qargs, is_strict=False
+                    ),
+                    lambda: CreateJourneyEventResult(
+                        result=None,
+                        error_type="session_not_started",
+                        error_response=ERROR_JOURNEY_SESSION_NOT_STARTED_RESPONSE,
+                    ),
+                )
+                if event_type != "join"
+                else (
+                    *wrap_with_journey_sessions(
+                        ~session_has_event_term,
+                        session_has_event_qargs,
+                        is_strict=False,
+                    ),
+                    lambda: CreateJourneyEventResult(
+                        result=None,
+                        error_type="session_already_started",
+                        error_response=ERROR_JOURNEY_SESSION_ALREADY_STARTED_RESPONSE,
+                    ),
+                )
+            ),
+            (
+                *wrap_with_journey_sessions(
+                    session_is_finished_term, session_is_finished_qargs, is_strict=False
+                ),
+                lambda: CreateJourneyEventResult(
+                    result=None,
+                    error_type="session_already_ended",
+                    error_response=ERROR_JOURNEY_SESSION_ALREADY_ENDED_RESPONSE,
+                ),
+            ),
+            (
+                *wrap_with_journey_sessions(
+                    session_has_later_event_term,
+                    session_has_later_event_qargs,
+                    is_strict=False,
+                ),
+                lambda: CreateJourneyEventResult(
+                    result=None,
+                    error_type="session_has_later_event",
+                    error_response=ERROR_JOURNEY_SESSION_HAS_LATER_EVENT_RESPONSE,
+                ),
+            ),
+        ]
+
+        if bonus_error_checks:
+            terms_and_args.extend(bonus_error_checks)
+
+        query = Query.select()
+        qargs = []
+        for idx, (term, term_args, _) in enumerate(terms_and_args):
+            query = query.select(SqlAliasable(term).as_(f"b{idx}"))
+            qargs.extend(term_args)
+
+        response = await cursor.execute(query.get_sql(), qargs)
+        for success, (_, _, error_fn) in zip(response.results[0], terms_and_args):
+            if not success:
+                return error_fn()
 
         return CreateJourneyEventResult(
             result=None,

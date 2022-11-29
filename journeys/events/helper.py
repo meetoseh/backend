@@ -1,11 +1,23 @@
 """This module contains helper functions for endpoints that create journey
 events.
 """
+import json
 import time
-from typing import Any, Callable, Dict, List, Literal, Optional, Generic, Tuple, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Generic,
+    Tuple,
+    TypeVar,
+    Union,
+)
 from dataclasses import dataclass
 from fastapi.responses import Response, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from pydantic.generics import GenericModel
 from itgs import Itgs
 from journeys.events.models import (
@@ -13,6 +25,7 @@ from journeys.events.models import (
     ERROR_JOURNEY_SESSION_ALREADY_ENDED_RESPONSE,
     ERROR_JOURNEY_SESSION_ALREADY_STARTED_RESPONSE,
     ERROR_JOURNEY_SESSION_HAS_LATER_EVENT_RESPONSE,
+    ERROR_JOURNEY_SESSION_HAS_SAME_EVENT_AT_SAME_TIME_RESPONSE,
     ERROR_JOURNEY_SESSION_NOT_FOUND_RESPONSE,
     ERROR_JOURNEY_SESSION_NOT_STARTED_RESPONSE,
     CreateJourneyEventResponse,
@@ -25,6 +38,8 @@ import secrets
 from pypika import Query, Table, Parameter, Order, Tuple as SqlAliasable
 from pypika.terms import Term, ExistsCriterion, ContainsCriterion
 from pypika.queries import QueryBuilder
+import math
+import re
 
 
 @dataclass
@@ -212,6 +227,313 @@ class JourneyEventPubSubMessage(GenericModel, Generic[EventTypeT, EventDataT]):
     )
 
 
+class CachedJourneyMeta(BaseModel):
+    """Describes cached meta information for a journey"""
+
+    uid: str = Field(description="the uid of the journey")
+    duration_seconds: float = Field(
+        description="the duration of the journey in seconds"
+    )
+    bins: int = Field(description="the number of bins in the fenwick trees", ge=1)
+    prompt: Dict[str, Any] = Field(description="the prompt information for the journey")
+
+    @validator("bins")
+    def bins_is_one_less_than_pow2(cls, v):
+        if v & (v - 1) != 0:
+            raise ValueError("bins must be one less than a power of 2")
+        return v
+
+
+@dataclass
+class PrefixSumUpdate:
+    """Describes an update to a fenwick tree that needs to be performed
+    as a result of a new event. This is intended to be created before
+    accessing the database, and hence this may describe the conditions
+    for an update rather than the updates themselves.
+
+    A simple update would be the fenwick tree for the number of likes.
+    Whenever a user likes an event, the number of likes goes up. This
+    type of update can be entirely described without accessing the
+    database.
+
+    A more complex update would be the number of active numeric responses
+    with a particular rating. It always involves an increment for the new
+    rating, but it may require a decrement based on the sessions previous
+    rating (if there was one). Thus the actual values to update cannot be
+    enumerated prior to the transaction.
+
+    The entire update will be sent within a transaction without waiting
+    for any selects to return. The general idea is that, in sql, we will
+    convert this into
+
+    - increment the new rating at the journey time
+    - decrement the old rating at the journey time
+
+    focusing on the second part, that becomes
+
+    ```txt
+    decrement from each rating at the journey time
+    where there exists a previous event
+        within the same session
+        with that rating
+        without a later numeric response
+    ```
+
+    note that because the fenwick trees are lazily initialized, the increment
+    will need to be an upsert. However the decrement can always be an update.
+    Since updates are a subtype of upserts, we could exclusively use upserts.
+    That would lead to the following type of query:
+
+    ```sql
+    INSERT INTO journey_event_fenwick_trees (
+        journey_id, category, category_value, idx, val
+    )
+    SELECT
+        journeys.id,
+        ?,  /* category */
+        ?,  /* category value; m values to consider */
+        ?,  /* idx to update; at most log(n) values will need updating */
+        ?   /* the amount to initialize at, only used if the row doesn't exist */
+    FROM journeys
+    WHERE
+        journeys.uid = ? /* uid of the journey */
+        /* verifies our event was actually inserted to avoid duplicating sanity checks */
+        AND EXISTS (
+            SELECT 1 FROM journey_events
+            WHERE journey_events.uid = ? /* the event uid we're trying to insert */
+        )
+        AND (
+            /* this would be the condition */
+            1=1
+        )
+    ON CONFLICT (journey_id, category, category_value, idx)
+    DO UPDATE SET val = val + ? /* the amount to add, this will only be used if the row exists */
+    ```
+
+    this results in mlog(n) queries, where m is the number of category values
+    that might need to be updated an n is the number of bins for the fenwick
+    tree, which is approximately the number of seconds in the journey. So,
+    for example, if there are 10 ratings and 60 seconds in the journey, this is
+    10*log_2(64) = 10*6 = 60 queries.
+
+    That's a bit too high to be practical. So we make use of the fact that the
+    decrement is only necessary if there is a previous event.
+
+    ```sql
+    UPDATE journey_event_fenwick_trees
+    SET val = val + ? /* amount to change, negative */
+    WHERE
+        /* verifies event was inserted, allows us to avoid duplicating sanity checks */
+        EXISTS (
+            SELECT 1 FROM journey_events
+            WHERE journey_events.uid = ? /* the event uid we're inserting in this transaction */
+        )
+
+        /* joining clause */
+        AND EXISTS (
+            SELECT 1 FROM journeys
+            WHERE journeys.id = journey_event_fenwick_trees.journey_id
+              AND journeys.uid = ?
+        )
+
+        /* index, at most log(n) values deduced from journey_time */
+        AND journey_event_fenwick_trees.idx IN (?, ?, ?, ?)
+
+        /* conditions for the decrement */
+        /* category */
+        AND journey_event_fenwick_trees.category = ? /* e.g., numeric_active */
+        /* exists an event */
+        AND EXISTS (
+            SELECT 1 FROM journey_events
+            WHERE
+                /* in this session */
+                EXISTS (
+                    SELECT 1 FROM journey_sessions
+                    WHERE journey_sessions.uid = ? /* the session uid */
+                      AND journey_sessions.id = journey_events.journey_session_id
+                )
+
+                /* and with the correct type */
+                AND journey_events.evtype = ? /* e.g., numeric_response */
+                /* and the correct rating */
+                AND json_extract(journey_events.data, '$.rating') = journey_event_fenwick_trees.category_value
+                /* and with no later numeric response */
+                AND NOT EXISTS (
+                    SELECT 1 FROM journey_events je
+                    WHERE je.journey_session_id = journey_events.journey_session_id
+                      AND je.evtype = ? /* e.g., numeric_response */
+                      AND je.journey_time > journey_events.journey_time
+                )
+
+        )
+    ```
+
+    which requires only 1 query for the decrement. Thus a standard
+    increment/decrement pair requires ceil(log(m)) + 1 queries, where m is the
+    number of bins for the fenwick tree. For example, if there are 60 seconds in
+    the journey, it would require 7 queries. For a 1 hour journey, it would
+    require 13 queries. Since the queries are all sent at the same time within a
+    transaction rather than cascading, that's a workable number.
+    """
+
+    category: str
+    """The category of tree being updated, e.g., likes. The categories are
+    enumerated in the journey_event_fenwick_trees database docs
+    """
+
+    amount: int
+    """The amount to change the tree by, typically either +1 or -1"""
+
+    simple: bool
+    """Whether this is a simple upsert, meaning that we are updating exactly
+    one category value and we can determine which one in advance.
+    """
+
+    category_value: Optional[int]
+    """Only relevant is simple is True. The category value to update, which may
+    be null (e.g., the `like` category has no category value).
+
+    If simple is False, this value is ignored, since the category value presumably
+    can't be determined without looking at an earlier event.
+    """
+
+    event_type: Optional[str]
+    """Only relevant if simple is False. The earlier event type that we are
+    looking for to determine which category value to update. For example, if the
+    category is `numeric_active`, this would be `numeric_prompt_response`.
+
+    If simple is True, this value is ignored.
+    """
+
+    event_data_field: Optional[str]
+    """Only relevant if simple is False. This is the field in the journey_events
+    data which contains the category value. For example, if the category is
+    `numeric_active`, this would be `rating`, since for `numeric_prompt_response`
+    the journey event data contains a `rating` field.
+
+    If simple is True, this value is ignored.
+    """
+
+    def to_queries(
+        self,
+        *,
+        journey_event_uid: str,
+        journey_time: int,
+        journey_meta: CachedJourneyMeta,
+    ) -> List[Tuple[str, List[Any]]]:
+        """Produces the required sql queries to update the fenwick tree described
+        by this prefix sum update.
+
+        Args:
+            journey_event_uid (str): The UID of the journey event being inserted. The
+                fenwick tree is only updated if this event is actually inserted.
+            journey_time (float): The journey time of the journey event being inserted.
+            journey_meta (CachedJourneyMeta): Cached meta information about the
+                journey, required to determine what queries are required. This only
+                contains immutable information about the journey and does not effect
+                the atomicity of the queries.
+
+        Returns:
+            The queries to execute, in the form of (query, params) tuples.
+        """
+        bin_width = journey_meta.duration_seconds / journey_meta.bins
+        bin_idx = int(journey_time / bin_width)
+
+        indices = []
+        one_based_idx = bin_idx + 1
+        while one_based_idx <= journey_meta.bins:
+            indices.append(one_based_idx - 1)
+            one_based_idx += one_based_idx & -one_based_idx
+
+        if self.simple:
+            qmark_list = ", ".join(["(?)"] * len(indices))
+            return [
+                (
+                    re.sub(
+                        "\s+",
+                        " ",
+                        f"""
+                        WITH indices(idx) AS (VALUES {qmark_list})
+                        INSERT INTO journey_event_fenwick_trees (
+                            journey_id, category, category_value, idx, val
+                        )
+                        SELECT
+                            journeys.id, ?, ?, indices.idx, ?
+                        FROM journeys, indices
+                        WHERE
+                            journeys.uid = ?
+                            AND EXISTS (SELECT 1 FROM journey_events WHERE journey_events.uid=?)
+                        ON CONFLICT (journey_id, category, category_value, idx)
+                        DO UPDATE SET val = val + ?
+                        """,
+                    ).strip(),
+                    (
+                        *indices,
+                        self.category,
+                        self.category_value,
+                        self.amount,
+                        journey_meta.uid,
+                        journey_event_uid,
+                        self.amount,
+                    ),
+                )
+            ]
+
+        indices_qmark_str = ", ".join(["?"] * len(indices))
+        return [
+            (
+                re.sub(
+                    "\s+",
+                    " ",
+                    f"""
+                    UPDATE journey_event_fenwick_trees
+                    SET val = val + ?
+                    WHERE
+                        EXISTS (
+                            SELECT 1 FROM journeys
+                            WHERE journeys.id = journey_event_fenwick_trees.journey_id
+                            AND journeys.uid = ?
+                        )
+                        AND journey_event_fenwick_trees.category = ?
+                        AND journey_event_fenwick_trees.idx IN ({indices_qmark_str})
+                        AND EXISTS (
+                            SELECT 1 FROM journey_events
+                            WHERE
+                                EXISTS (
+                                    SELECT 1 FROM journey_sessions
+                                    WHERE
+                                        EXISTS (
+                                            SELECT 1 FROM journey_events AS je
+                                            WHERE je.uid = ?
+                                            AND je.journey_session_id = journey_sessions.id
+                                        )
+                                        AND journey_events.journey_session_id = journey_sessions.id
+                                )
+                                AND journey_events.evtype = ?
+                                AND json_extract(journey_events.data, ?) = journey_event_fenwick_trees.category_value
+                                AND NOT EXISTS (
+                                    SELECT 1 FROM journey_events AS je
+                                    WHERE je.journey_session_id = journey_events.journey_session_id
+                                    AND je.evtype = ?
+                                    AND je.journey_time > journey_events.journey_time
+                                )
+                        )
+                    """,
+                ).strip(),
+                (
+                    self.amount,
+                    journey_meta.uid,
+                    self.category,
+                    *indices,
+                    journey_event_uid,
+                    self.event_type,
+                    f"$.{self.event_data_field}",
+                    self.event_type,
+                ),
+            )
+        ]
+
+
 async def create_journey_event(
     itgs: Itgs,
     *,
@@ -225,6 +547,7 @@ async def create_journey_event(
     bonus_error_checks: Optional[
         List[Tuple[Term, List[Any], Callable[[], CreateJourneyEventResult]]]
     ] = None,
+    prefix_sum_updates: Optional[List[PrefixSumUpdate]] = None,
 ) -> CreateJourneyEventResult[EventTypeT, EventDataT]:
     """Creates a new journey event for the given journey by the given user with
     the given type, data and journey time. This will assign a uid and created_at
@@ -336,6 +659,11 @@ async def create_journey_event(
 
             Note how the column alias is generated to a short unique value to reduce
             network traffic.
+
+        prefix_sum_updates (list[PrefixSumUpdate], None): If specified, these
+            prefix sum updates will be performed iff the journey event is
+            stored. This is required for keeping the stats endpoint up to date.
+            See PrefixSumUpdate for more details.
 
     Returns:
         CreateJourneyEventResult: The result of the operation
@@ -465,15 +793,60 @@ async def create_journey_event(
     query = query.where(~session_has_later_event_term)
     qargs.extend(session_has_later_event_qargs)
 
+    session_has_same_event_type_at_same_time_term: Term = ExistsCriterion(
+        Query.from_(journey_events_inner)
+        .select(1)
+        .where(journey_events_inner.journey_session_id == journey_sessions.id)
+        .where(journey_events_inner.journey_time == Parameter("?"))
+        .where(journey_events_inner.evtype == Parameter("?"))
+    )
+    session_has_same_event_type_at_same_time_qargs = [journey_time, event_type]
+
+    query = query.where(~session_has_same_event_type_at_same_time_term)
+    qargs.extend(session_has_same_event_type_at_same_time_qargs)
+
     if bonus_terms:
         for term, term_qargs in bonus_terms:
             query = query.where(term)
             qargs.extend(term_qargs)
 
+    queries: List[Tuple[str, List[Any]]] = [(query.get_sql(), qargs)]
+
+    queries.append(
+        (
+            "INSERT INTO journey_event_counts "
+            "(journey_id, bucket, total) "
+            "SELECT journeys.id, ?, 1 "
+            "FROM journeys "
+            "WHERE"
+            " journeys.uid = ?"
+            " AND EXISTS (SELECT 1 FROM journey_events WHERE journey_events.uid = ?) "
+            "ON CONFLICT (journey_id, bucket) DO UPDATE SET total = journey_event_counts.total + 1",
+            (int(journey_time), event_uid, journey_uid),
+        )
+    )
+
+    journey_meta = await get_journey_meta(itgs, journey_uid)
+    if journey_meta is None:
+        return CreateJourneyEventResult(
+            result=None,
+            error_type="journey_not_found",
+            error_response=ERROR_JOURNEY_NOT_FOUND_RESPONSE,
+        )
+
+    for update in prefix_sum_updates or []:
+        queries.extend(
+            update.to_queries(
+                journey_event_uid=event_uid,
+                journey_time=journey_time,
+                journey_meta=journey_meta,
+            )
+        )
+
     conn = await itgs.conn()
     cursor = conn.cursor("weak")
 
-    response = await cursor.execute(query.get_sql(), qargs)
+    response = (await cursor.executemany3(queries))[0]
     if response.rows_affected is None or response.rows_affected < 1:
 
         def wrap_with_journey_sessions(
@@ -573,6 +946,18 @@ async def create_journey_event(
                     error_response=ERROR_JOURNEY_SESSION_HAS_LATER_EVENT_RESPONSE,
                 ),
             ),
+            (
+                *wrap_with_journey_sessions(
+                    session_has_same_event_type_at_same_time_term,
+                    session_has_same_event_type_at_same_time_qargs,
+                    is_strict=False,
+                ),
+                lambda: CreateJourneyEventResult(
+                    result=None,
+                    error_type="session_has_same_event_at_same_time",
+                    error_response=ERROR_JOURNEY_SESSION_HAS_SAME_EVENT_AT_SAME_TIME_RESPONSE,
+                ),
+            ),
         ]
 
         if bonus_error_checks:
@@ -627,3 +1012,79 @@ async def create_journey_event(
     )
 
     return result
+
+
+async def get_cached_journey_meta(
+    itgs: Itgs, journey_uid: str
+) -> Optional[CachedJourneyMeta]:
+    """Gets the cached journey meta information, if it's already cached"""
+    local_cache = await itgs.local_cache()
+    raw: Union[bytes, bytearray, None] = local_cache.get(f"journeys:{journey_uid}:meta")
+    if raw is None:
+        return None
+
+    return CachedJourneyMeta.parse_raw(raw, content_type="application/json")
+
+
+async def set_cached_journey_meta(
+    itgs: Itgs, journey_uid: str, meta: CachedJourneyMeta
+) -> None:
+    """Stores the cached journey meta information"""
+    local_cache = await itgs.local_cache()
+    local_cache.set(
+        f"journeys:{journey_uid}:meta", meta.json().encode("utf-8"), expire=60 * 60 * 24
+    )
+
+
+async def get_journey_meta_from_database(
+    itgs: Itgs, journey_uid: str
+) -> Optional[CachedJourneyMeta]:
+    """Gets the journey meta information from the database, if a journey with
+    the given uid exists, otherwise returns None
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+
+    response = await cursor.execute(
+        """
+        SELECT
+            journeys.prompt,
+            content_files.duration_seconds
+        FROM journeys
+        JOIN content_files ON journeys.audio_content_file_id = content_files.id
+        WHERE
+            journeys.uid = ?
+        """,
+        (journey_uid,),
+    )
+    if not response.results:
+        return None
+
+    prompt: Dict[str, Any] = json.loads(response.results[0][0])
+    duration_seconds: float = response.results[0][1]
+    bins: int
+    if duration_seconds <= 1:
+        bins = 1
+    else:
+        bins = 2 ** math.ceil(math.log2(duration_seconds)) - 1
+
+    return CachedJourneyMeta(
+        uid=journey_uid, duration_seconds=duration_seconds, bins=bins, prompt=prompt
+    )
+
+
+async def get_journey_meta(itgs: Itgs, journey_uid: str) -> Optional[CachedJourneyMeta]:
+    """Loads the given journey's meta information from the cache, if it's
+    already cached, otherwise from the database and storing it in the cache
+
+    Returns None only if the journey is not available from the database
+    """
+    meta = await get_cached_journey_meta(itgs, journey_uid)
+    if meta is not None:
+        return meta
+
+    meta = await get_journey_meta_from_database(itgs, journey_uid)
+    if meta is not None:
+        await set_cached_journey_meta(itgs, journey_uid, meta)
+
+    return meta

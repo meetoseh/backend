@@ -1,6 +1,6 @@
 # diskcache
 
-the keys we store locally on instances via diskcache
+the keys we store locally on backend instances via diskcache
 
 -   `image_files:playlist:{uid}`: a cache for image file playlists which didn't require
     presigning. [used here](../../image_files/routes/playlist.py)
@@ -47,3 +47,14 @@ the keys we store locally on instances via diskcache
     ```
 -   `content_files:vods:{uid}:m3u`: the m3u8 vod for the given content file export uid.
     [used here](../../content_files/exports/routes/show_m3u_vod.py)
+-   `journeys:{uid}:meta`: meta information about the journey with the given uid.
+    [used here](../../../journeys/helper.py)
+
+    ```json
+    {
+        "uid": "string",
+        "duration_seconds": 0,
+        "bins": 0,
+        "prompt": {}
+    }
+    ```

@@ -22,6 +22,14 @@ See also:
 -   [daily_events](daily_events.md) - the journeys for a particular day
 -   [daily_event_journeys](daily_event_journeys.md) - the relationship
     between journeys and daily events
+-   [journey_event_fenwick_trees](journey_event_fenwick_trees.md) - allows for
+    looking up totals for a particular journey time, i.e., how many likes are
+    there in total 30 seconds into the journey? this is primarily for
+    reconnection handling
+-   [journey_event_counts](journey_event_counts.md) - allows for lookup up
+    how many events occurred in a particular time range, i.e., how many likes
+    occurred between seconds 2-3 seconds of the journey? this is primarily
+    for guiding the sampling rate when streaming events to users
 
 ## Subscriptions
 

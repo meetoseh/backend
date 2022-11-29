@@ -143,6 +143,24 @@ async def respond_to_journey_word_prompt(
                     ),
                 ),
             ],
+            prefix_sum_updates=[
+                evhelper.PrefixSumUpdate(
+                    category="word_active",
+                    amount=1,
+                    simple=True,
+                    category_value=args.data.index,
+                    event_type=None,
+                    event_data_field=None,
+                ),
+                evhelper.PrefixSumUpdate(
+                    category="word_active",
+                    amount=-1,
+                    simple=False,
+                    category_value=None,
+                    event_type="word_prompt_response",
+                    event_data_field="index",
+                ),
+            ],
         )
         if not result.success:
             return result.error_response

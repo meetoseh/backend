@@ -73,7 +73,7 @@ async def respond_to_journey_color_prompt(
                         )
                         .where(
                             Function("json_array_length", journeys.prompt, "$.colors")
-                            > Parameter('?')
+                            > Parameter("?")
                         )
                     ),
                     [args.data.index],
@@ -118,7 +118,7 @@ async def respond_to_journey_color_prompt(
                         .where(journeys.uid == Parameter("?"))
                         .where(
                             Function("json_array_length", journeys.prompt, "$.colors")
-                            > Parameter('?')
+                            > Parameter("?")
                         )
                     ),
                     [args.journey_uid, args.data.index],
@@ -143,6 +143,24 @@ async def respond_to_journey_color_prompt(
                     ),
                 ),
             ],
+            prefix_sum_updates=[
+                evhelper.PrefixSumUpdate(
+                    category='color_active',
+                    amount=1,
+                    simple=True,
+                    category_value=args.data.index,
+                    event_type=None,
+                    event_data_field=None
+                ),
+                evhelper.PrefixSumUpdate(
+                    category='color_active',
+                    amount=-1,
+                    simple=False,
+                    category_value=None,
+                    event_type='color_prompt_response',
+                    event_data_field='index'
+                )
+            ]
         )
         if not result.success:
             return result.error_response

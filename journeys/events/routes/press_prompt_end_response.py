@@ -174,6 +174,16 @@ async def respond_to_journey_press_prompt_end(
                     ),
                 ),
             ],
+            prefix_sum_updates=[
+                evhelper.PrefixSumUpdate(
+                    category="press_active",
+                    amount=-1,
+                    simple=True,
+                    category_value=None,
+                    event_type=None,
+                    event_data_field=None
+                )
+            ]
         )
         if not result.success:
             return result.error_response

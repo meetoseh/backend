@@ -14,3 +14,7 @@ class StandardOperator(str, Enum):
     LESS_THAN_OR_NULL = "ltn"
     LESS_THAN_OR_EQUAL = "lte"
     LESS_THAN_OR_EQUAL_OR_NULL = "lten"
+    BETWEEN = "bt"
+    BETWEEN_OR_NULL = "btn"
+    BETWEEN_EXCLUSIVE_END = "bte"
+    BETWEEN_EXCLUSIVE_END_OR_NULL = "bten"

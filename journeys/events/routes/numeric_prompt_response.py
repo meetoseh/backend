@@ -151,6 +151,24 @@ async def respond_to_journey_numeric_prompt(
                     ),
                 ),
             ],
+            prefix_sum_updates=[
+                evhelper.PrefixSumUpdate(
+                    category="numeric_active",
+                    amount=1,
+                    simple=True,
+                    category_value=args.data.rating,
+                    event_type=None,
+                    event_data_field=None,
+                ),
+                evhelper.PrefixSumUpdate(
+                    category="numeric_active",
+                    amount=-1,
+                    simple=False,
+                    category_value=None,
+                    event_type="numeric_prompt_response",
+                    event_data_field="rating",
+                ),
+            ],
         )
         if not result.success:
             return result.error_response

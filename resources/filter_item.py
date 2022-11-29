@@ -1,6 +1,6 @@
-from typing import Generic, TypeVar, get_args
+from typing import Generic, TypeVar, get_args, Union, List
 from .standard_operator import StandardOperator
-from pydantic import Field
+from pydantic import Field, validator
 from pydantic.generics import GenericModel
 from pypika import Parameter
 from pypika.terms import Term
@@ -20,11 +20,16 @@ class FilterItem(Generic[ValueT]):
     operator: StandardOperator
     """The operator to use when comparing the value to the pseudocolumn"""
 
-    value: ValueT
-    """The value to compare the pseudocolumn to"""
+    value: Union[ValueT, List[ValueT], None]
+    """The value to compare the pseudocolumn to. May be a list of exactly two
+    items for between comparisons.
+    """
 
-    def __init__(self, operator: StandardOperator, value: ValueT) -> None:
+    def __init__(
+        self, operator: StandardOperator, value: Union[ValueT, List[ValueT], None]
+    ) -> None:
         super().__init__()
+
         self.operator = operator
         self.value = value
 
@@ -57,6 +62,17 @@ class FilterItem(Generic[ValueT]):
         formattable_value = self.value
         if isinstance(formattable_value, date):
             formattable_value = formattable_value.isoformat()
+        elif isinstance(formattable_value, bool):
+            formattable_value = int(formattable_value)
+        if isinstance(formattable_value, (list, tuple)):
+            formattable_value = tuple(
+                int(v) if isinstance(v, bool) else v
+                for v in (
+                    v.isoformat() if isinstance(v, date) else v
+                    for v in formattable_value
+                )
+            )
+
         p = Parameter("?")
         if self.operator == StandardOperator.EQUAL:
             if formattable_value is None:
@@ -108,6 +124,18 @@ class FilterItem(Generic[ValueT]):
                 return term.isnull()
             qargs.append(formattable_value)
             return term.isnull() | (term <= p)
+        elif self.operator == StandardOperator.BETWEEN:
+            qargs.append(*formattable_value)
+            return term.between(p, p)
+        elif self.operator == StandardOperator.BETWEEN_OR_NULL:
+            qargs.append(*formattable_value)
+            return term.isnull() | term.between(p, p)
+        elif self.operator == StandardOperator.BETWEEN_EXCLUSIVE_END:
+            qargs.append(*formattable_value)
+            return (term >= p) & (term < p)
+        elif self.operator == StandardOperator.BETWEEN_EXCLUSIVE_END_OR_NULL:
+            qargs.append(*formattable_value)
+            return term.isnull() | ((term >= p) & (term < p))
 
         raise ValueError(f"Unsupported operator: {self.operator}")
 
@@ -133,10 +161,32 @@ class FilterItemModel(GenericModel, Generic[ValueT]):
         ),
     )
 
-    value: ValueT = Field(
+    value: Union[ValueT, List[ValueT], None] = Field(
         title="Value",
-        description="The value to compare the pseudocolumn to",
+        description=(
+            "The value to compare the pseudocolumn to. Must be a list of two items for "
+            "between-like operators, otherwise must be a single item"
+        ),
     )
+
+    @validator("value")
+    def validate_value(cls, value, values):
+        if values["operator"] in (
+            StandardOperator.BETWEEN,
+            StandardOperator.BETWEEN_OR_NULL,
+            StandardOperator.BETWEEN_EXCLUSIVE_END,
+            StandardOperator.BETWEEN_EXCLUSIVE_END_OR_NULL,
+        ):
+            if not isinstance(value, (list, tuple)) or len(value) != 2:
+                raise ValueError(
+                    "Value must be a list of two items for between-like operators"
+                )
+        else:
+            if isinstance(value, (list, tuple)):
+                raise ValueError(
+                    "Value must be a single item for non-between-like operators"
+                )
+        return value
 
     def to_result(self) -> FilterItem[ValueT]:
         """Returns the standard internal representation"""
@@ -146,4 +196,4 @@ class FilterItemModel(GenericModel, Generic[ValueT]):
 
     def __valuet__(self) -> type:
         """The value type for this class"""
-        return self.__fields__["value"].type_
+        return self.__fields__["value"].type_.__args__[0]

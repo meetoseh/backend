@@ -65,7 +65,9 @@ class UserTokenFilter(BaseModel):
 
 
 class ReadUserTokenRequest(BaseModel):
-    filters: Optional[UserTokenFilter] = Field(None, description="the filters to apply")
+    filters: UserTokenFilter = Field(
+        default_factory=UserTokenFilter, description="the filters to apply"
+    )
     sort: Optional[List[UserTokenSortOption]] = Field(
         None, description="the order to sort by"
     )
@@ -114,8 +116,6 @@ async def read_user_tokens(
                 for k, v in args.filters.__dict__.items()
                 if v is not None
             )
-            if args.filters is not None
-            else dict()
         )
         items = await raw_read_user_tokens(itgs, filters_to_apply, sort, args.limit + 1)
         next_page_sort: Optional[List[SortItem]] = None

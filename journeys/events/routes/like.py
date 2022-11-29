@@ -46,6 +46,16 @@ async def like_journey(
             event_type="like",
             event_data=args.data,
             journey_time=args.journey_time,
+            prefix_sum_updates=[
+                journeys.events.helper.PrefixSumUpdate(
+                    category="likes",
+                    amount=1,
+                    simple=True,
+                    category_value=None,
+                    event_type=None,
+                    event_data_field=None,
+                )
+            ],
         )
         if not result.success:
             return result.error_response

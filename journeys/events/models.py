@@ -68,6 +68,7 @@ CREATE_JOURNEY_EVENT_409_TYPES = Literal[
     "session_already_started",
     "session_already_ended",
     "session_has_later_event",
+    "session_has_same_event_at_same_time",
     "impossible_journey_time",
     "impossible_event",
     "impossible_event_data",
@@ -161,6 +162,19 @@ ERROR_JOURNEY_SESSION_HAS_LATER_EVENT_RESPONSE = Response(
 )
 """The response to return when the journey session already has a later journey event then the
 one they are trying to save
+"""
+
+ERROR_JOURNEY_SESSION_HAS_SAME_EVENT_AT_SAME_TIME_RESPONSE = Response(
+    content=StandardErrorResponse[CREATE_JOURNEY_EVENT_409_TYPES](
+        type="session_has_same_event_at_same_time",
+        message="The specified journey session already has a journey event with the same type with the same journey_time",
+    ).json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+    status_code=409,
+)
+"""The response to return when the journey session already has a journey event with the same type
+and journey time as the one they are trying to save. Having multiple events with the same type
+and time results in difficulty in matching events, so this is not allowed.
 """
 
 ERROR_JOURNEY_IMPOSSIBLE_JOURNEY_TIME_RESPONSE = Response(

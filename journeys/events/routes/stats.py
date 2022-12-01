@@ -172,6 +172,7 @@ async def get_journey_stats(
             result.update(part)
 
         bin_width = journey_meta.duration_seconds / journey_meta.bins
+
         return Response(
             JourneyStatsResponse(
                 journey_time=bin * bin_width, bin_width=bin_width, **result
@@ -212,7 +213,7 @@ async def get_single_from_tree(itgs: Itgs, uid: str, bin: int, category: str) ->
         """,
         [uid, category, *indices],
     )
-    return response.results[0][0]
+    return response.results[0][0] or 0
 
 
 async def get_by_category_from_tree(
@@ -247,7 +248,7 @@ async def get_by_category_from_tree(
         """,
         [uid, category, *indices],
     )
-    return dict(response.results)
+    return dict(response.results or [])
 
 
 TCallable = TypeVar("TCallable", bound=Callable)
@@ -260,7 +261,7 @@ def stats_func(func: TCallable) -> TCallable:
     cache_time_seconds: float = 1
     loop = asyncio.get_running_loop()
 
-    async def handler_for_fixed_uid_bin():
+    def handler_for_fixed_uid_bin():
         lock = asyncio.Lock(loop=loop)
         cached_value: Optional[Dict[str, Any]] = None
         cached_time: Optional[float] = None
@@ -322,13 +323,13 @@ def stats_func(func: TCallable) -> TCallable:
 
 @stats_func
 async def get_users(itgs: Itgs, uid: str, bin: int) -> Dict[str, Any]:
-    res = await get_single_from_tree(itgs, uid, bin, "users", None)
+    res = await get_single_from_tree(itgs, uid, bin, "users")
     return {"users": res}
 
 
 @stats_func
 async def get_likes(itgs: Itgs, uid: str, bin: int) -> Dict[str, Any]:
-    res = await get_single_from_tree(itgs, uid, bin, "likes", None)
+    res = await get_single_from_tree(itgs, uid, bin, "likes")
     return {"likes": res}
 
 
@@ -357,10 +358,10 @@ async def get_for_prompt(
 
     if style == "color":
         lookup = await get_by_category_from_tree(itgs, uid, bin, "color_active")
-        return {"color_active": list(lookup[i] for i in range(len(lookup)))}
+        return {"color_active": list(lookup.get(i, 0) for i in range(len(lookup)))}
 
     if style == "word":
         lookup = await get_by_category_from_tree(itgs, uid, bin, "word_active")
-        return {"word_active": list(lookup[i] for i in range(len(lookup)))}
+        return {"word_active": list(lookup.get(i, 0) for i in range(len(lookup)))}
 
     raise ValueError(f"Unknown prompt style: {repr(style)}")

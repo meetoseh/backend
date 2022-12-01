@@ -239,8 +239,8 @@ class CachedJourneyMeta(BaseModel):
 
     @validator("bins")
     def bins_is_one_less_than_pow2(cls, v):
-        if v & (v - 1) != 0:
-            raise ValueError("bins must be one less than a power of 2")
+        if v & (v + 1) != 0:
+            raise ValueError(f"bins must be one less than a power of 2 (got {v})")
         return v
 
 
@@ -279,10 +279,41 @@ class PrefixSumUpdate:
         without a later numeric response
     ```
 
-    note that because the fenwick trees are lazily initialized, the increment
-    will need to be an upsert. However the decrement can always be an update.
-    Since updates are a subtype of upserts, we could exclusively use upserts.
-    That would lead to the following type of query:
+    note that it would seem as if we could always use an update for
+    the decrement operation, however, it's possible that we decrement
+    a previously uninitialized value:
+
+    consider the fenwick tree with 7 bins, and 1 event at bin 1 (1-indexed)
+
+    ```txt
+    {
+        1: 1
+        1...2: 1
+        3: 0 (uninitialized)
+        1...4: 1
+        5: 0 (uninitialized)
+        5...6: 0 (uninitialized)
+        7: 0 (uninitialized)
+    }
+    ```
+
+    If we need to decrement at 3, the new fenwick tree becomes
+
+    ```txt
+    {
+        1: 1,
+        1...2: 1,
+        3: -1,
+        1...4: 0,
+        5: 0 (uninitialized),
+        5...6: 0 (uninitialized),
+        7: 0 (uninitialized)
+    }
+    ```
+
+    here we had to initialize the value at 3. Thus both the increment and
+    decrement will be an upsert operation. Here's what that upsert generally
+    looks like, with a few simplifications:
 
     ```sql
     INSERT INTO journey_event_fenwick_trees (
@@ -310,70 +341,19 @@ class PrefixSumUpdate:
     DO UPDATE SET val = val + ? /* the amount to add, this will only be used if the row exists */
     ```
 
-    this results in mlog(n) queries, where m is the number of category values
-    that might need to be updated an n is the number of bins for the fenwick
-    tree, which is approximately the number of seconds in the journey. So,
-    for example, if there are 10 ratings and 60 seconds in the journey, this is
-    10*log_2(64) = 10*6 = 60 queries.
+    The indices to update can be merged into a single query using
+    the following trick:
 
-    That's a bit too high to be practical. So we make use of the fact that the
-    decrement is only necessary if there is a previous event.
-
-    ```sql
-    UPDATE journey_event_fenwick_trees
-    SET val = val + ? /* amount to change, negative */
-    WHERE
-        /* verifies event was inserted, allows us to avoid duplicating sanity checks */
-        EXISTS (
-            SELECT 1 FROM journey_events
-            WHERE journey_events.uid = ? /* the event uid we're inserting in this transaction */
-        )
-
-        /* joining clause */
-        AND EXISTS (
-            SELECT 1 FROM journeys
-            WHERE journeys.id = journey_event_fenwick_trees.journey_id
-              AND journeys.uid = ?
-        )
-
-        /* index, at most log(n) values deduced from journey_time */
-        AND journey_event_fenwick_trees.idx IN (?, ?, ?, ?)
-
-        /* conditions for the decrement */
-        /* category */
-        AND journey_event_fenwick_trees.category = ? /* e.g., numeric_active */
-        /* exists an event */
-        AND EXISTS (
-            SELECT 1 FROM journey_events
-            WHERE
-                /* in this session */
-                EXISTS (
-                    SELECT 1 FROM journey_sessions
-                    WHERE journey_sessions.uid = ? /* the session uid */
-                      AND journey_sessions.id = journey_events.journey_session_id
-                )
-
-                /* and with the correct type */
-                AND journey_events.evtype = ? /* e.g., numeric_response */
-                /* and the correct rating */
-                AND json_extract(journey_events.data, '$.rating') = journey_event_fenwick_trees.category_value
-                /* and with no later numeric response */
-                AND NOT EXISTS (
-                    SELECT 1 FROM journey_events je
-                    WHERE je.journey_session_id = journey_events.journey_session_id
-                      AND je.evtype = ? /* e.g., numeric_response */
-                      AND je.journey_time > journey_events.journey_time
-                )
-
-        )
+    ```
+    WITH indices(idx) AS (VALUES (?), (?))
+    SELECT * from indices
     ```
 
-    which requires only 1 query for the decrement. Thus a standard
-    increment/decrement pair requires ceil(log(m)) + 1 queries, where m is the
-    number of bins for the fenwick tree. For example, if there are 60 seconds in
-    the journey, it would require 7 queries. For a 1 hour journey, it would
-    require 13 queries. Since the queries are all sent at the same time within a
-    transaction rather than cascading, that's a workable number.
+    which gives two rows.
+
+    For the decrement upsert, we can simplify the query if we find the last
+    event in the session with the type and use that for the category value,
+    rather than enumerating the category values.
     """
 
     category: str
@@ -437,7 +417,7 @@ class PrefixSumUpdate:
             The queries to execute, in the form of (query, params) tuples.
         """
         bin_width = journey_meta.duration_seconds / journey_meta.bins
-        bin_idx = int(journey_time / bin_width)
+        bin_idx = min(max(0, int(journey_time / bin_width)), journey_meta.bins - 1)
 
         indices = []
         one_based_idx = bin_idx + 1
@@ -445,8 +425,14 @@ class PrefixSumUpdate:
             indices.append(one_based_idx - 1)
             one_based_idx += one_based_idx & -one_based_idx
 
+        qmark_list = ", ".join(["(?)"] * len(indices))
+
         if self.simple:
-            qmark_list = ", ".join(["(?)"] * len(indices))
+            conflict_key = (
+                "(journey_id, category, category_value, idx)"
+                if self.category_value is not None
+                else "(journey_id, category, idx) WHERE category_value IS NULL"
+            )
             return [
                 (
                     re.sub(
@@ -463,7 +449,7 @@ class PrefixSumUpdate:
                         WHERE
                             journeys.uid = ?
                             AND EXISTS (SELECT 1 FROM journey_events WHERE journey_events.uid=?)
-                        ON CONFLICT (journey_id, category, category_value, idx)
+                        ON CONFLICT {conflict_key}
                         DO UPDATE SET val = val + ?
                         """,
                     ).strip(),
@@ -479,56 +465,54 @@ class PrefixSumUpdate:
                 )
             ]
 
-        indices_qmark_str = ", ".join(["?"] * len(indices))
         return [
             (
                 re.sub(
                     "\s+",
                     " ",
                     f"""
-                    UPDATE journey_event_fenwick_trees
-                    SET val = val + ?
+                    WITH indices(idx) AS (VALUES {qmark_list})
+                    INSERT INTO journey_event_fenwick_trees (
+                        journey_id, category, category_value, idx, val
+                    )
+                    SELECT
+                        journeys.id, ?, json_extract(journey_events.data, ?), indices.idx, ?
+                    FROM journeys, indices, journey_events
                     WHERE
-                        EXISTS (
-                            SELECT 1 FROM journeys
-                            WHERE journeys.id = journey_event_fenwick_trees.journey_id
-                            AND journeys.uid = ?
-                        )
-                        AND journey_event_fenwick_trees.category = ?
-                        AND journey_event_fenwick_trees.idx IN ({indices_qmark_str})
+                        journeys.uid = ?
+                        AND journey_events.uid != ?
                         AND EXISTS (
-                            SELECT 1 FROM journey_events
-                            WHERE
-                                EXISTS (
-                                    SELECT 1 FROM journey_sessions
-                                    WHERE
-                                        EXISTS (
-                                            SELECT 1 FROM journey_events AS je
-                                            WHERE je.uid = ?
-                                            AND je.journey_session_id = journey_sessions.id
-                                        )
-                                        AND journey_events.journey_session_id = journey_sessions.id
-                                )
-                                AND journey_events.evtype = ?
-                                AND json_extract(journey_events.data, ?) = journey_event_fenwick_trees.category_value
-                                AND NOT EXISTS (
-                                    SELECT 1 FROM journey_events AS je
-                                    WHERE je.journey_session_id = journey_events.journey_session_id
-                                    AND je.evtype = ?
-                                    AND je.journey_time > journey_events.journey_time
-                                )
+                            SELECT 1 FROM journey_events AS je
+                            WHERE je.journey_session_id = journey_events.journey_session_id
+                              AND je.uid = ?
                         )
+                        AND journey_events.evtype = ?
+                        AND NOT EXISTS (
+                            SELECT 1 FROM journey_events AS je
+                            WHERE je.journey_session_id = journey_events.journey_session_id
+                              AND je.evtype = ?
+                              AND je.journey_time > journey_events.journey_time
+                              AND je.uid != ?
+                        )
+                    ON CONFLICT (journey_id, category, category_value, idx)
+                    DO UPDATE SET val = val + ?
+                    ON CONFLICT (journey_id, category, idx) WHERE category_value IS NULL
+                    DO UPDATE SET val = val + ?
                     """,
                 ).strip(),
                 (
+                    *indices,
+                    self.category,
+                    f"$.{self.event_data_field}",
                     self.amount,
                     journey_meta.uid,
-                    self.category,
-                    *indices,
+                    journey_event_uid,
                     journey_event_uid,
                     self.event_type,
-                    f"$.{self.event_data_field}",
                     self.event_type,
+                    journey_event_uid,
+                    self.amount,
+                    self.amount,
                 ),
             )
         ]
@@ -684,7 +668,7 @@ async def create_journey_event(
     users = Table("users")
     journeys = Table("journeys")
     content_files = Table("content_files")
-    journey_events_inner = journey_events.alias("je")
+    journey_events_inner = journey_events.as_("je")
 
     query: QueryBuilder = (
         Query.into(journey_events)
@@ -749,7 +733,7 @@ async def create_journey_event(
                 .where(journeys.audio_content_file_id == content_files.id)
             )
         )
-        .where(content_files.duration_seconds <= Parameter("?"))
+        .where(content_files.duration_seconds >= Parameter("?"))
     )
     journey_time_is_at_or_before_end_qargs = [journey_time]
 
@@ -822,11 +806,18 @@ async def create_journey_event(
             " journeys.uid = ?"
             " AND EXISTS (SELECT 1 FROM journey_events WHERE journey_events.uid = ?) "
             "ON CONFLICT (journey_id, bucket) DO UPDATE SET total = journey_event_counts.total + 1",
-            (int(journey_time), event_uid, journey_uid),
+            (int(journey_time), journey_uid, event_uid),
         )
     )
 
     journey_meta = await get_journey_meta(itgs, journey_uid)
+    if journey_time > journey_meta.duration_seconds:
+        return CreateJourneyEventResult(
+            result=None,
+            error_type="impossible_journey_time",
+            error_response=ERROR_JOURNEY_IMPOSSIBLE_JOURNEY_TIME_RESPONSE,
+        )
+
     if journey_meta is None:
         return CreateJourneyEventResult(
             result=None,
@@ -873,7 +864,7 @@ async def create_journey_event(
                 result = result.where(term)
                 result_args.extend(term_args)
 
-            return ExistsCriterion(result), [result_args]
+            return ExistsCriterion(result), result_args
 
         terms_and_args: List[
             Tuple[Term, List[Any], Callable[[], CreateJourneyEventResult]]
@@ -926,7 +917,9 @@ async def create_journey_event(
             ),
             (
                 *wrap_with_journey_sessions(
-                    session_is_finished_term, session_is_finished_qargs, is_strict=False
+                    ~session_is_finished_term,
+                    session_is_finished_qargs,
+                    is_strict=False,
                 ),
                 lambda: CreateJourneyEventResult(
                     result=None,
@@ -936,7 +929,7 @@ async def create_journey_event(
             ),
             (
                 *wrap_with_journey_sessions(
-                    session_has_later_event_term,
+                    ~session_has_later_event_term,
                     session_has_later_event_qargs,
                     is_strict=False,
                 ),
@@ -948,7 +941,7 @@ async def create_journey_event(
             ),
             (
                 *wrap_with_journey_sessions(
-                    session_has_same_event_type_at_same_time_term,
+                    ~session_has_same_event_type_at_same_time_term,
                     session_has_same_event_type_at_same_time_qargs,
                     is_strict=False,
                 ),
@@ -985,6 +978,7 @@ async def create_journey_event(
             content=CreateJourneyEventResponse(
                 uid=event_uid,
                 user_sub=user_sub,
+                session_uid=session_uid,
                 type=event_type,
                 journey_time=journey_time,
                 data=event_data,

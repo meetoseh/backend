@@ -126,4 +126,8 @@ CREATE TABLE journey_event_fenwick_trees (
 /* uniqueness, foreign key, search */
 CREATE UNIQUE INDEX journey_event_fenwick_trees_journey_id_category_cvalue_idx_idx
     ON journey_event_fenwick_trees (journey_id, category, category_value, idx);
+
+/* uniqueness when category value is null */
+CREATE UNIQUE INDEX journey_event_fenwick_trees_journey_id_category_idx_idx
+    ON journey_event_fenwick_trees (journey_id, category, idx) WHERE category_value IS NULL;
 ```

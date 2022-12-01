@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
+from db.utils import ParenthisizeCriterion
 from journeys.auth import auth_any
 from models import AUTHORIZATION_UNKNOWN_TOKEN, STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
@@ -461,20 +462,20 @@ async def raw_read_journey_events(
     )
     qargs = []
 
-    if dropout_for_total is not None:
+    if dropout_for_total is not None:  # NOT SAFE TO REARRANGE ORDER
+        # we can't use an exists() subquery as the sqlite query planner will
+        # recognize that the subquery is independent of the row and thus evaluate
+        # it only once, which means we either get every row or no rows
+
+        query = query.left_outer_join(journey_event_counts).on(
+            (journey_event_counts.journey_id == journeys.id)
+            & (journey_event_counts.bucket == Parameter("?"))
+        )
         query = query.where(
-            ExistsCriterion(
-                Query.from_(journey_event_counts)
-                .select(1)
-                .where(journey_event_counts.journey_id == journeys.id)
-                .where(journey_event_counts.bucket == Parameter("?"))
-                .where(
-                    (journey_event_counts.total <= Parameter("?"))
-                    | (
-                        Function("random")
-                        < (Parameter("?") / journey_event_counts.total)
-                    )
-                )
+            (Function("COALESCE", journey_event_counts.total, 0) <= Parameter("?"))
+            | (
+                Function("RANDOM")
+                < ParenthisizeCriterion(Parameter("?") / journey_event_counts.total)
             )
         )
         qargs.extend([dropout_bucket, dropout_for_total, float(dropout_for_total)])

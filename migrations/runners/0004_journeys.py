@@ -109,3 +109,45 @@ async def up(itgs: Itgs) -> None:
             ON daily_event_journeys(journey_id)
         """
     )
+
+    await cursor.execute(
+        """
+        CREATE TABLE journey_event_counts (
+            id INTEGER PRIMARY KEY,
+            journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
+            bucket INTEGER NOT NULL,
+            total INTEGER NOT NULL
+        )
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE UNIQUE INDEX journey_event_counts_journey_id_bucket_idx
+            ON journey_event_counts(journey_id, bucket)
+        """
+    )
+
+    await cursor.execute(
+        """
+        CREATE TABLE journey_event_fenwick_trees (
+            id INTEGER PRIMARY KEY,
+            journey_id INTEGER NOT NULL REFERENCES journeys(id) ON DELETE CASCADE,
+            category TEXT NOT NULL,
+            category_value INTEGER NULL,
+            idx INTEGER NOT NULL,
+            val INTEGER NOT NULL
+        )
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE UNIQUE INDEX journey_event_fenwick_trees_journey_id_category_cvalue_idx_idx
+            ON journey_event_fenwick_trees (journey_id, category, category_value, idx)
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE UNIQUE INDEX journey_event_fenwick_trees_journey_id_category_idx_idx
+            ON journey_event_fenwick_trees (journey_id, category, idx) WHERE category_value IS NULL
+        """
+    )

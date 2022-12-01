@@ -125,16 +125,16 @@ class FilterItem(Generic[ValueT]):
             qargs.append(formattable_value)
             return term.isnull() | (term <= p)
         elif self.operator == StandardOperator.BETWEEN:
-            qargs.append(*formattable_value)
+            qargs.extend(formattable_value)
             return term.between(p, p)
         elif self.operator == StandardOperator.BETWEEN_OR_NULL:
-            qargs.append(*formattable_value)
+            qargs.extend(formattable_value)
             return term.isnull() | term.between(p, p)
         elif self.operator == StandardOperator.BETWEEN_EXCLUSIVE_END:
-            qargs.append(*formattable_value)
+            qargs.extend(formattable_value)
             return (term >= p) & (term < p)
         elif self.operator == StandardOperator.BETWEEN_EXCLUSIVE_END_OR_NULL:
-            qargs.append(*formattable_value)
+            qargs.extend(formattable_value)
             return term.isnull() | ((term >= p) & (term < p))
 
         raise ValueError(f"Unsupported operator: {self.operator}")

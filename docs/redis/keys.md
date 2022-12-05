@@ -41,6 +41,41 @@ the keys that we use in redis
     "expected": True key and optionally a "hint" providing more debugging
     context.
 
+-   `entitlements:{user_sub}` goes to a hash where the keys are identifiers
+    of entitlements for the given users, and the values are json objects with
+    the following keys:
+
+    -   `is_active (bool)` - whether the entitlement is active for the user
+    -   `expires_at (float, None)` - if the entitlement will expire unless renewed,
+        this is the unix time in seconds at which it will expire. if the entitlement is
+        perpetual or not active, this is None
+    -   `checked_at (float)`: the unix time in seconds at which the entitlement was
+        last checked
+
+    used [here](../../users/lib/entitlements.py)
+
+-   `revenue_cat_errors` goes to a sorted set where the keys are unique identifiers
+    and the scores are unix times in seconds. When inserting into this sorted set
+    we also clip it only recent errors. When the cardinality of this set reaches
+    a certain threshold, we stop sending requests to revenue cat and instead fail
+    open, i.e., we assume that the user has the entitlement. This ensures that a
+    revenuecat outage has a minimal impact on our users. This key is used in
+    [entitlements.py](../../users/lib/entitlements.py)
+
+-   `entitlements:read:force:ratelimit:{user_sub}` goes to the string '1' if the user
+    is prevented from requesting that we fetch entitlements from the source of truth,
+    rather than from the cache. We use a basic expiring key for this ratelimit. This
+    is used [here](../../users/me/routes/read_entitlements.py)
+
+-   `checkout:stripe:start:ratelimit:{user_sub}` goes to the string '1' if the user
+    is prevented from starting a checkout session. We use a basic expiring key for this
+    ratelimit. This is used [here](../../users/me/routes/start_checkout_stripe.py)
+
+-   `checkout:stripe:finish:ratelimit:{user_sub}` goes to the string '1' if the
+    user is prevented from requesting we check on a checkout session. We use a
+    basic expiring key for this ratelimit. This is used
+    [here](../../users/me/routes/finish_checkout_stripe.py)
+
 ## pubsub keys
 
 -   `ps:job:{job_uid}`: used, if supported, when a job is able to report when it's completed
@@ -59,3 +94,14 @@ the keys that we use in redis
         created_at: float
     ```
     where the data is described in detail under [../db/journey_events.md](../db/journey_events.md).
+-   `ps:entitlements:purge`: used to indicate than any cached information on entitlements for a
+    given user should be purged. The body of the message should be formatted as if by the
+    trivial serialization of the following:
+    ```py
+    class EntitlementsPurgePubSubMessage:
+        user_sub: str
+        min_checked_at: float
+    ```
+    used [here](../../users/lib/entitlements.py). It can be assumed that the redis cache
+    has already been purged prior to this message being sent, so this is primarily for
+    purging the diskcache (if any) on receiving instances.

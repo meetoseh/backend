@@ -1,3 +1,4 @@
+import secrets
 import time
 from typing import Optional
 from fastapi import APIRouter, Header
@@ -46,9 +47,10 @@ async def create_user(authorization: Optional[str] = Header(None)):
             family_name = family_name or implied_family_name
 
         now = time.time()
+        new_revenue_cat_id = f"oseh_u_rc_{secrets.token_urlsafe(16)}"
         conn = await itgs.conn()
         cursor = conn.cursor("none")
-        await cursor.execute(
+        response = await cursor.execute(
             """INSERT INTO users (
                 sub,
                 email,
@@ -58,9 +60,10 @@ async def create_user(authorization: Optional[str] = Header(None)):
                 given_name,
                 family_name,
                 admin,
+                revenue_cat_id,
                 created_at
             )
-            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             WHERE NOT EXISTS (
                 SELECT 1 FROM users
                 WHERE users.sub = ?
@@ -74,10 +77,17 @@ async def create_user(authorization: Optional[str] = Header(None)):
                 given_name,
                 family_name,
                 False,
+                new_revenue_cat_id,
                 now,
                 auth_result.result.sub,
             ),
         )
+
+        if response.rows_affected is not None and response.rows_affected > 0:
+            jobs = await itgs.jobs()
+            await jobs.enqueue(
+                "runners.revenue_cat.ensure_user", user_sub=auth_result.result.sub
+            )
 
         if "picture" in claims:
             jobs = await itgs.jobs()

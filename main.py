@@ -4,10 +4,11 @@ import time
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
-from error_middleware import handle_request_error
+from error_middleware import handle_request_error, handle_error
 from itgs import Itgs
 import secrets
 import updater
+import users.lib.entitlements
 import migrations.main
 import multiprocessing
 import continuous_deployment.router
@@ -17,9 +18,26 @@ import journeys.router
 import file_uploads.router
 import content_files.router
 import urllib.parse
+import asyncio
+
+if (
+    os.environ.get("ENVIRONMENT") != "production"
+    and os.environ.get("OSEH_STRIPE_SECRET_KEY") not in (None, "")
+    and not os.environ["OSEH_STRIPE_SECRET_KEY"].startswith("sk_test_")
+):
+    exc = Exception(
+        "OSEH_STRIPE_SECRET_KEY is not a test key, but we are not "
+        "in production. did you forget to set ENVIRONMENT?"
+    )
+    asyncio.run(handle_error(exc))
+    raise exc
+
 
 multiprocessing.Process(target=updater.listen_forever_sync, daemon=True).start()
 multiprocessing.Process(target=migrations.main.main_sync, daemon=True).start()
+multiprocessing.Process(
+    target=users.lib.entitlements.purge_cache_loop_sync, daemon=True
+).start()
 app = FastAPI(
     title="oseh",
     description="hypersocial daily mindfulness",
@@ -35,7 +53,7 @@ if os.environ.get("ENVIRONMENT") == "dev":
         allow_origins=[os.environ["ROOT_FRONTEND_URL"]],
         allow_credentials=True,
         allow_methods=["GET", "POST", "HEAD", "PUT", "DELETE"],
-        allow_headers=["Authorization"],
+        allow_headers=["Authorization", "Pragma"],
     )
 app.include_router(
     continuous_deployment.router.router,

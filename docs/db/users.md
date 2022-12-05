@@ -38,6 +38,12 @@ authorization header via the sub claim.
     This is set to the issued at time of the JWT when the profile picture
     is updated.
 -   `admin (boolean not null)`: allows access to the admin panel
+-   `revenue_cat_id (text unique not null)`: The revenuecat identifier for this user. This
+    should be treated as privileged information only accessible by the user and
+    admins, unlike the sub. Note that the revenue cat id alone is sufficient for anyone
+    to determine the users entitlements and make some modifications, such as uploading
+    a new apple receipt for the account. The uid prefix is `u_rc`, see
+    [uid_prefixes](../uid_prefixes.md).
 -   `created_at (real not null)`: when this record was created in seconds since
     the unix epoch
 
@@ -57,6 +63,7 @@ CREATE TABLE users(
     picture_image_file_id INTEGER REFERENCES image_files(id) ON DELETE SET NULL,
     picture_image_file_updated_at REAL,
     admin BOOLEAN NOT NULL,
+    revenue_cat_id TEXT UNIQUE NOT NULL,
     created_at REAL NOT NULL
 );
 

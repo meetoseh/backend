@@ -58,3 +58,28 @@ the keys we store locally on backend instances via diskcache
         "prompt": {}
     }
     ```
+
+-   `entitlements:{user_sub}` goes to a json object in the following form:
+
+    ```json
+    {
+        "entitlements": {
+            "identifier": {
+                "is_active": true,
+                "expires_at": 1670000000.0,
+                "checked_at": 1669995902.5340445
+            }
+        }
+    }
+    ```
+
+    where `identifier` is the identifier of the entitlement (e.g., `pro`), and
+
+    -   `is_active (bool)` - whether the entitlement is active for the user
+    -   `expires_at (float, None)` - if the entitlement will expire unless renewed,
+        this is the unix time in seconds at which it will expire. if the entitlement is
+        perpetual or not active, this is None
+    -   `checked_at (float)`: the unix time in seconds at which the entitlement was
+        last checked
+
+    used [here](../../users/lib/entitlements.py)

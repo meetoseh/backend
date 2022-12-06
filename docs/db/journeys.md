@@ -61,6 +61,9 @@ class WordPrompt:
     id of the audio content file
 -   `background_image_file_id (integer not null references image_files(id) on delete cascade)`: the
     id of the background image file
+-   `title (text not null)`: the title of the journey, typically short
+-   `description (text not null)`: the description of the journey, typically longer but still short
+-   `journey_subcategory_id (integer not null references journey_subcategories(id) on delete restrict)`: the id of the journey subcategory
 -   `prompt (text not null)`: the prompt and corresponding settings as a json dictionary. the
     prompt format is described in the Prompts section
 -   `created_at (real not null)`: when this record was created in seconds since the unix epoch
@@ -73,6 +76,9 @@ CREATE TABLE journeys(
     uid TEXT UNIQUE NOT NULL,
     audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
     background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    journey_subcategory_id INTEGER NOT NULL REFERENCES journey_subcategories(id) ON DELETE RESTRICT,
     prompt TEXT NOT NULL,
     created_at REAL NOT NULL
 );
@@ -82,6 +88,9 @@ CREATE INDEX journeys_audio_content_file_id_idx ON journeys(audio_content_file_i
 
 /* foreign key */
 CREATE INDEX journeys_background_image_file_id_idx ON journeys(background_image_file_id);
+
+/* foreign key, sort */
+CREATE INDEX journeys_journey_subcategory_id_created_at_idx ON journeys(journey_subcategory_id, created_at);
 
 /* sort */
 CREATE INDEX journeys_created_at_idx ON journeys(created_at);

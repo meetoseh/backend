@@ -76,6 +76,140 @@ the keys that we use in redis
     basic expiring key for this ratelimit. This is used
     [here](../../users/me/routes/finish_checkout_stripe.py)
 
+-   `stats:journey_sessions:count` goes to the number of journey sessions that have
+    ever been started. This is used for the admin dashboard, which gets its information
+    from [here](../../admin/routes/total_journey_sessions.py)
+
+-   `stats:journey_sessions:monthly:{unix_month}:count` goes to the number of journey sessions
+    started in the given number of months since the unix epoch. This is used for the
+    admin dashboard and is deleted once it's no longer that month as it can be retrieved
+    from the journey subcategory view stats. The earliest month available is stored in
+    the `stats:journey_sessions:monthly:earliest` key
+
+-   `stats:journey_sessions:monthly:earliest` goes to a string representing the unix month
+    of the earliest available `stats:journey_sessions:monthly:{unix_month}:count` key, in
+    case the job to delete old keys is delayed
+
+-   `stats:users:count` goes to the number of users that have ever been created. This is used
+    in the admin dashboard
+
+-   `stats:users:monthly:{unix_month}:count` goes to the number of users created in the given
+    number of months since the unix epoch. This is used in the admin dashboard and is deleted
+    once it's no longer that month as it's not a particularly useful stat compared to new adds
+    or active users
+
+-   `stats:users:monthly:earliest` goes to a string representing the unix month of the earliest
+    available `stats:users:monthly:{unix_month}:count` key, in case the job to delete old keys
+    is delayed
+
+-   TODO `stats:instructors:count` goes to the number of instructors that have ever been created. This
+    is used in the admin dashboard
+
+-   TODO `stats:instructors:monthly:{unix_month}:count` goes to the number of instructors created in the
+    given number of months since the unix epoch. This is used in the admin dashboard and is deleted
+    once it's no longer that month as it's not a particularly useful stat
+
+-   TODO `stats:instructors:monthly:earliest` goes to a string representing the unix month of the earliest
+    available `stats:instructors:monthly:{unix_month}:count` key, in case the job to delete old keys
+    is delayed
+
+-   TODO `stats:journeys:count` goes to the number of journeys that have ever been created. This is used
+    in the admin dashboard
+
+-   TODO `stats:journeys:monthly:{unix_month}:count` goes to the number of journeys created in the given
+    number of months since the unix epoch. This is used in the admin dashboard and is deleted once
+    it's no longer that month as it's not a particularly useful stat
+
+-   TODO `stats:journeys:monthly:earliest` goes to a string representing the unix month of the earliest
+    available `stats:journeys:monthly:{unix_month}:count` key, in case the job to delete old keys
+    is delayed
+
+-   `stats:journey_sessions:{subcategory}:{unix_date}:subs` where:
+
+    -   `subcategory` is the subcategory of the journey that the journey session is for, e.g.
+        `spoken-word-meditation`
+    -   `unix_date` is the number of days since the unix epoch
+
+    goes to a set containing the subs of all the users who have started a journey
+    session for the given subcategory on the given date. This is moved to the database
+    once per day, into the `journey_subcategory_view_stats` table. In order to know
+    the earliest date which has not yet been moved to the database, we use the
+    `stats:journey_sessions:bysubcat:earliest` key.
+
+-   `stats:journey_sessions:bysubcat:earliest` goes to a hash where the keys are
+    subcategories and the values are the unix dates, expressed as the number of
+    days since January 1st, 1970, of the earliest date for which we have not yet
+    moved the data to the database for that subcategory. This is used to avoid
+    leaking keys if the job which is supposed to move the data to the database
+    is delayed.
+
+-   `stats:journey_sessions:bysubcat:subcategories` goes to a set containing all
+    the subcategories for which we have journey session stats. This is used to
+    avoid leaking keys if the job which is supposed to move the data to the database
+    is delayed.
+
+-   `stats:retention:{period}:{retained}:{unix_date}` where:
+
+    -   `period` is one of `0day`, `1day`, `7day`, `30day`, `90day`
+    -   `retained` is one of `true`, `false`
+    -   `unix_date` is the date that the contained users were created, represented
+        as the number of days since the unix epoch for the date. For example, if
+        the date is Jan 1, 1970, this is 0. If it's Jan 2, 1970, this is 1, and
+        if it's Dec 5, 2022 it's 19,331. Note that just like the `YYYY-MM-DD` format,
+        this format does not indicate timezone. Unix dates are easier to compare
+        than dates in the `YYYY-MM-DD` format, since they are just numbers.
+
+    goes to a set where the values are the subs of users. When a user is
+    created, they are added to the unretained (`retained=False`) set for all
+    periods for the date they were created _in Seattle time_ (so PDT during
+    daylight savings, PST otherwise). When they have a journey session which is
+    at least the `period` after their creation, they are removed from the
+    unretained set and added to the retained set. Note that sessions more than
+    182 days after the user was created are ignored for the purposes of this
+    value. This can be done atomically, without having to check if they were
+    already in the retained set.
+
+    For sets which have become immutable under this definition because more than
+    182 days have passed, the cardinality of the set is stored in the
+    `retention_stats` table.
+
+    In order to know what keys to delete if the job is delayed for more than
+    a day, we maintain `stats:retention:{period}:{retained}:earliest`
+
+-   `stats:retention:{period}:{retained}:earliest` goes to a string representing
+    the earliest date, as a unix date number, for which we have data in redis for the
+    given period and retention status. This is updated atomically using either
+    redis transactions or, more commonly, lua scripts.
+
+-   `stats:daily_active_users:{unix_date}` where `unix_date` is formatted as the
+    number of days since January 1st, 1970, goes to a set containing the sub of
+    every user which created a journey session on that day, in Seattle time.
+    This is rotated to the database once per day, to the `daily_active_user_stats`
+    table.
+
+-   `stats:daily_active_users:earliest` goes to a string representing the earliest
+    date, as a unix date number, for which there may be a daily active users count
+    still in redis
+
+-   `stats:monthly_active_users:{unix_month}` where `unix_month` is formatted as
+    the number of months since January, 1970, goes to a set containing the sub of
+    every user which created a journey session in that month, in Seattle time.
+    This is rotated to the database once per month, to the `monthly_active_user_stats`
+    table.
+
+-   `stats:monthly_active_users:earliest` goes to a string representing the earliest
+    month, as a unix month number, for which there may be a monthly active users count
+    still in redis
+
+-   `stats:daily_new_users:{unix_date}` where `unix_date` is formatted as the
+    number of days since January 1st, 1970, goes to a string acting as the number
+    of users created on that day, in Seattle time. This is rotated to the
+    database once per day, to the `new_user_stats` table.
+
+-   `stats:daily_new_users:earliest` goes to a string representing the earliest
+    date, as a unix date number, for which there may be a daily new users count
+    still in redis
+
 ## pubsub keys
 
 -   `ps:job:{job_uid}`: used, if supported, when a job is able to report when it's completed

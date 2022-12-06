@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from auth import auth_cognito
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE
+import users.lib.stats
 
 router = APIRouter()
 
@@ -88,6 +89,7 @@ async def create_user(authorization: Optional[str] = Header(None)):
             await jobs.enqueue(
                 "runners.revenue_cat.ensure_user", user_sub=auth_result.result.sub
             )
+            await users.lib.stats.on_user_created(itgs, auth_result.result.sub, now)
 
         if "picture" in claims:
             jobs = await itgs.jobs()

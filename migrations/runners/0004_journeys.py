@@ -8,11 +8,31 @@ async def up(itgs: Itgs) -> None:
 
     await cursor.execute(
         """
+        CREATE TABLE journey_subcategories(
+            id INTEGER PRIMARY KEY,
+            uid TEXT UNIQUE NOT NULL,
+            internal_name TEXT NOT NULL,
+            external_name TEXT NOT NULL
+        )
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE INDEX journey_subcategories_internal_name_idx
+            ON journey_subcategories(internal_name)
+        """
+    )
+
+    await cursor.execute(
+        """
         CREATE TABLE journeys(
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
             audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
             background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            journey_subcategory_id INTEGER NOT NULL REFERENCES journey_subcategories(id) ON DELETE RESTRICT,
             prompt TEXT NOT NULL,
             created_at REAL NOT NULL
         )
@@ -23,6 +43,9 @@ async def up(itgs: Itgs) -> None:
     )
     await cursor.execute(
         "CREATE INDEX journeys_background_image_file_id_idx ON journeys(background_image_file_id)"
+    )
+    await cursor.execute(
+        "CREATE INDEX journeys_journey_subcategory_id_created_at_idx ON journeys(journey_subcategory_id, created_at)"
     )
     await cursor.execute("CREATE INDEX journeys_created_at_idx ON journeys(created_at)")
 

@@ -41,23 +41,6 @@ async def up(itgs: Itgs) -> None:
 
     await cursor.execute(
         """
-        CREATE TABLE instructor_profile_pictures (
-            id INTEGER PRIMARY KEY,
-            uid TEXT UNIQUE NOT NULL,
-            image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
-            uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL
-        )
-        """
-    )
-    await cursor.execute(
-        """
-        CREATE INDEX instructor_profile_pictures_uploaded_by_user_id_idx
-            ON instructor_profile_pictures (uploaded_by_user_id)
-        """
-    )
-
-    await cursor.execute(
-        """
         CREATE TABLE journeys(
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
@@ -68,7 +51,8 @@ async def up(itgs: Itgs) -> None:
             description TEXT NOT NULL,
             journey_subcategory_id INTEGER NOT NULL REFERENCES journey_subcategories(id) ON DELETE RESTRICT,
             prompt TEXT NOT NULL,
-            created_at REAL NOT NULL
+            created_at REAL NOT NULL,
+            deleted_at REAL NULL
         )
         """
     )
@@ -84,7 +68,9 @@ async def up(itgs: Itgs) -> None:
     await cursor.execute(
         "CREATE INDEX journeys_journey_subcategory_id_created_at_idx ON journeys(journey_subcategory_id, created_at)"
     )
-    await cursor.execute("CREATE INDEX journeys_created_at_idx ON journeys(created_at)")
+    await cursor.execute(
+        "CREATE INDEX journeys_created_at_idx ON journeys(created_at) WHERE deleted_at IS NULL"
+    )
 
     await cursor.execute(
         """

@@ -47,7 +47,8 @@ class ParenthisizeCriterion(Criterion):
         self.criterion = criterion
 
     def get_sql(self, *args, **kwargs) -> str:
-        return f"({self.criterion.get_sql(*args, **kwargs)})"
+        _as = f" AS \"{self.alias}\"" if self.alias else ""
+        return f"({self.criterion.get_sql(*args, **kwargs)}){_as}"
 
 
 class CaseInsensitiveCriterion(Criterion):

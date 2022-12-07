@@ -65,7 +65,8 @@ async def up(itgs: Itgs) -> None:
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
             image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
-            uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL
+            uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+            last_uploaded_at REAL NOT NULL
         )
         """
     )
@@ -75,6 +76,12 @@ async def up(itgs: Itgs) -> None:
             ON journey_background_images (uploaded_by_user_id)
         """
     )
+    await cursor.execute(
+        """
+        CREATE INDEX journey_background_images_last_uploaded_at_idx
+            ON journey_background_images (last_uploaded_at)
+        """
+    )
 
     await cursor.execute(
         """
@@ -82,12 +89,36 @@ async def up(itgs: Itgs) -> None:
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
             content_file_id INTEGER UNIQUE NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
-            uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL
+            uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+            last_uploaded_at REAL NOT NULL
         )"""
     )
     await cursor.execute(
         """
         CREATE INDEX journey_audio_contents_uploaded_by_user_id_idx
             ON journey_audio_contents (uploaded_by_user_id)
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE INDEX journey_audio_contents_last_uploaded_at_idx
+            ON journey_audio_contents (last_uploaded_at)
+        """
+    )
+
+    await cursor.execute(
+        """
+        CREATE TABLE instructor_profile_pictures (
+            id INTEGER PRIMARY KEY,
+            uid TEXT UNIQUE NOT NULL,
+            image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
+            uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL
+        )
+        """
+    )
+    await cursor.execute(
+        """
+        CREATE INDEX instructor_profile_pictures_uploaded_by_user_id_idx
+            ON instructor_profile_pictures (uploaded_by_user_id)
         """
     )

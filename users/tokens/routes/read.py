@@ -3,7 +3,7 @@ from pypika.queries import QueryBuilder
 from pypika.terms import Term
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_cognito
 from models import STANDARD_ERRORS_BY_CODE
@@ -77,7 +77,7 @@ class ReadUserTokenRequest(BaseModel):
 
 class ReadUserTokenResponse(BaseModel):
     items: List[UserToken] = Field(
-        description="the items matching the results in the given sort"
+        description="the items matching the request in the given sort"
     )
     next_page_sort: Optional[List[UserTokenSortOption]] = Field(
         description="if there is a next page of results, the sort to use to get the next page"
@@ -132,13 +132,14 @@ async def read_user_tokens(
         if first_item is not None or last_item is not None:
             next_page_sort = get_next_page_sort(first_item, last_item, sort)
 
-        return JSONResponse(
+        return Response(
             content=ReadUserTokenResponse(
                 items=items,
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).dict()
+            ).json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
 

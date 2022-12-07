@@ -69,6 +69,8 @@ class WordPrompt:
 -   `prompt (text not null)`: the prompt and corresponding settings as a json dictionary. the
     prompt format is described in the Prompts section
 -   `created_at (real not null)`: when this record was created in seconds since the unix epoch
+-   `deleted_at (real null)`: when this record was deleted in seconds since the unix epoch,
+    if it has been soft-deleted
 
 ## Schema
 
@@ -83,7 +85,8 @@ CREATE TABLE journeys(
     description TEXT NOT NULL,
     journey_subcategory_id INTEGER NOT NULL REFERENCES journey_subcategories(id) ON DELETE RESTRICT,
     prompt TEXT NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    deleted_at REAL NULL
 );
 
 /* foreign key */
@@ -99,5 +102,5 @@ CREATE INDEX journeys_instructor_id_created_at_idx ON journeys(instructor_id, cr
 CREATE INDEX journeys_journey_subcategory_id_created_at_idx ON journeys(journey_subcategory_id, created_at);
 
 /* sort */
-CREATE INDEX journeys_created_at_idx ON journeys(created_at);
+CREATE INDEX journeys_created_at_idx ON journeys(created_at) WHERE deleted_at IS NULL;
 ```

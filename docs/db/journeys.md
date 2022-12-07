@@ -61,6 +61,8 @@ class WordPrompt:
     id of the audio content file
 -   `background_image_file_id (integer not null references image_files(id) on delete cascade)`: the
     id of the background image file
+-   `instructor_id (integer not null references instructors(id) on delete cascade)`: the id of the
+    instructor for this journey
 -   `title (text not null)`: the title of the journey, typically short
 -   `description (text not null)`: the description of the journey, typically longer but still short
 -   `journey_subcategory_id (integer not null references journey_subcategories(id) on delete restrict)`: the id of the journey subcategory
@@ -76,6 +78,7 @@ CREATE TABLE journeys(
     uid TEXT UNIQUE NOT NULL,
     audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
     background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
+    instructor_id INTEGER NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT NOT NULL,
     journey_subcategory_id INTEGER NOT NULL REFERENCES journey_subcategories(id) ON DELETE RESTRICT,
@@ -88,6 +91,9 @@ CREATE INDEX journeys_audio_content_file_id_idx ON journeys(audio_content_file_i
 
 /* foreign key */
 CREATE INDEX journeys_background_image_file_id_idx ON journeys(background_image_file_id);
+
+/* foreign key, sort */
+CREATE INDEX journeys_instructor_id_created_at_idx ON journeys(instructor_id, created_at);
 
 /* foreign key, sort */
 CREATE INDEX journeys_journey_subcategory_id_created_at_idx ON journeys(journey_subcategory_id, created_at);

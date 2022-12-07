@@ -17,6 +17,7 @@ import image_files.router
 import journeys.router
 import file_uploads.router
 import content_files.router
+import instructors.router
 import urllib.parse
 import asyncio
 
@@ -70,6 +71,9 @@ app.include_router(
 )
 app.include_router(
     content_files.router.router, prefix="/api/1/content_files", tags=["content_files"]
+)
+app.include_router(
+    instructors.router.router, prefix="/api/1/instructors", tags=["instructors"]
 )
 app.router.redirect_slashes = False
 

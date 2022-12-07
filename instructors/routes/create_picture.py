@@ -10,23 +10,32 @@ from itgs import Itgs
 router = APIRouter()
 
 
-class CreateJourneyBackgroundImageRequest(BaseModel):
+class CreateInstructorProfilePictureRequest(BaseModel):
+    uid: str = Field(
+        description=(
+            "The UID of the instructor to attach the profile picture to, if "
+            "and when the image is successfully uploaded and processed"
+        )
+    )
+
     file_size: int = Field(description="The size of the file in bytes", ge=1)
 
 
 @router.post(
-    "/",
+    "/pictures/",
     response_model=FileUploadResponse,
     responses=STANDARD_ERRORS_BY_CODE,
     status_code=201,
 )
-async def create_journey_background_image(
-    args: CreateJourneyBackgroundImageRequest,
+async def create_instructor_profile_picture(
+    args: CreateInstructorProfilePictureRequest,
     authorization: Optional[str] = Header(None),
 ):
-    """Starts the process to create a new journey background image. Background images
-    are cropped to the center, and at least 1920x1920 is suggested for maximum support;
-    1920x1080 for desktop, 1080x1920 for instagram
+    """Starts the process to create a new instructor profile picture. These
+    pictures are cropped to the center, are exported square, and at least
+    512x512 is suggested for maximum support. The instructor image is attached
+    to the instructor with the given UID, if and when the image is successfully
+    uploaded and processed.
 
     See [file_uploads](#/file_uploads) for more information on the file upload process.
 
@@ -40,8 +49,11 @@ async def create_journey_background_image(
         res = await start_upload(
             itgs,
             file_size=args.file_size,
-            success_job_name="runners.process_journey_background_image",
-            success_job_kwargs={"uploaded_by_user_sub": auth_result.result.sub},
+            success_job_name="runners.process_instructor_profile_picture",
+            success_job_kwargs={
+                "uploaded_by_user_sub": auth_result.result.sub,
+                "instructor_uid": args.uid,
+            },
             failure_job_name="runners.delete_file_upload",
             failure_job_kwargs=dict(),
         )

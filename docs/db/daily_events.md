@@ -21,7 +21,7 @@ See also: [daily_event_journeys.md](daily_event_journeys.md)
 -   `available_at (real null)`: when this daily event becomes available in seconds since the
     unix epoch, or null if it has not been scheduled yet. Note that the time is important.
     This is generally unique, but if there are duplicates, break ties for which is available
-    by preferring a lower uid
+    by preferring a lower uid when comparing lexicographically.
 -   `created_at (real not null)`: when this record was created in seconds since the unix epoch
 
 ## Schema

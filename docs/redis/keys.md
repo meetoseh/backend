@@ -111,25 +111,25 @@ rather than external functionality.
     available `stats:users:monthly:{unix_month}:count` key, in case the job to delete old keys
     is delayed
 
--   TODO `stats:instructors:count` goes to the number of instructors that have ever been created. This
+-   `stats:instructors:count` goes to the number of instructors that have ever been created. This
     is used in the admin dashboard
 
--   TODO `stats:instructors:monthly:{unix_month}:count` goes to the number of instructors created in the
+-   `stats:instructors:monthly:{unix_month}:count` goes to the number of instructors created in the
     given number of months since the unix epoch. This is used in the admin dashboard and is deleted
     once it's no longer that month as it's not a particularly useful stat
 
--   TODO `stats:instructors:monthly:earliest` goes to a string representing the unix month of the earliest
+-   `stats:instructors:monthly:earliest` goes to a string representing the unix month of the earliest
     available `stats:instructors:monthly:{unix_month}:count` key, in case the job to delete old keys
     is delayed
 
--   TODO `stats:journeys:count` goes to the number of journeys that have ever been created. This is used
+-   `stats:journeys:count` goes to the number of journeys that have ever been created. This is used
     in the admin dashboard
 
--   TODO `stats:journeys:monthly:{unix_month}:count` goes to the number of journeys created in the given
+-   `stats:journeys:monthly:{unix_month}:count` goes to the number of journeys created in the given
     number of months since the unix epoch. This is used in the admin dashboard and is deleted once
     it's no longer that month as it's not a particularly useful stat
 
--   TODO `stats:journeys:monthly:earliest` goes to a string representing the unix month of the earliest
+-   `stats:journeys:monthly:earliest` goes to a string representing the unix month of the earliest
     available `stats:journeys:monthly:{unix_month}:count` key, in case the job to delete old keys
     is delayed
 

@@ -12,6 +12,7 @@ from instructors.routes.read import Instructor
 from itgs import Itgs
 from journeys.subcategories.routes.read import JourneySubcategory
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
+import journeys.lib.stats
 import time
 
 
@@ -348,6 +349,7 @@ async def create_journey(
                 status_code=503,
             )
 
+        await journeys.lib.stats.on_journey_created(itgs, created_at=now)
         return Response(
             content=CreateJourneyResponse(
                 uid=uid,

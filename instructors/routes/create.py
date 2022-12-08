@@ -7,6 +7,7 @@ from typing import Optional
 from auth import auth_admin
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE
+import instructors.lib.stats
 
 
 router = APIRouter()
@@ -65,6 +66,7 @@ async def create_instructor(
             (uid, args.name, now),
         )
 
+        await instructors.lib.stats.on_instructor_created(itgs, created_at=now)
         return Response(
             content=CreateInstructorResponse(
                 uid=uid, name=args.name, created_at=now

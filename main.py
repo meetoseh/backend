@@ -18,6 +18,7 @@ import journeys.router
 import file_uploads.router
 import content_files.router
 import instructors.router
+import daily_events.router
 import urllib.parse
 import asyncio
 
@@ -74,6 +75,9 @@ app.include_router(
 )
 app.include_router(
     instructors.router.router, prefix="/api/1/instructors", tags=["instructors"]
+)
+app.include_router(
+    daily_events.router.router, prefix="/api/1/daily_events", tags=["daily_events"]
 )
 app.router.redirect_slashes = False
 

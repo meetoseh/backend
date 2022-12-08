@@ -1,7 +1,7 @@
 import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, Function
+from pypika.terms import Term, Function, ExistsCriterion
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -14,20 +14,13 @@ from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from itgs import Itgs
-from resources.standard_text_operator import StandardTextOperator
 from content_files.models import ContentFileRef
 import content_files.auth as content_files_auth
 from image_files.models import ImageFileRef
 import image_files.auth as image_files_auth
 from instructors.routes.read import Instructor
 from journeys.subcategories.routes.read import JourneySubcategory
-from journeys.routes.create import (
-    NumericPrompt,
-    PressPrompt,
-    ColorPrompt,
-    WordPrompt,
-    Prompt,
-)
+from journeys.routes.create import Prompt
 
 
 class Journey(BaseModel):
@@ -56,6 +49,9 @@ class Journey(BaseModel):
     )
     deleted_at: Optional[float] = Field(
         description="The timestamp of when this journey was soft-deleted"
+    )
+    daily_event_uid: Optional[str] = Field(
+        description="If the journey is assigned to a daily event, the uid of that event"
     )
 
 
@@ -109,6 +105,9 @@ class JourneyFilter(BaseModel):
     )
     deleted_at: Optional[FilterItemModel[Optional[float]]] = Field(
         None, description="when the journey was deleted in seconds since the unix epoch"
+    )
+    daily_event_uid: Optional[FilterItemModel[Optional[str]]] = Field(
+        None, description="the uid of the daily event the journey belongs to"
     )
 
 
@@ -200,6 +199,8 @@ async def raw_read_journeys(
     journey_subcategories = Table("journey_subcategories")
     instructors = Table("instructors")
     instructor_pictures = image_files.as_("instructor_pictures")
+    daily_event_journeys = Table("daily_event_journeys")
+    daily_events = Table("daily_events")
 
     query: QueryBuilder = (
         Query.from_(journeys)
@@ -220,6 +221,7 @@ async def raw_read_journeys(
             journeys.prompt,
             journeys.created_at,
             journeys.deleted_at,
+            daily_events.uid,
         )
         .join(content_files)
         .on(content_files.id == journeys.audio_content_file_id)
@@ -231,6 +233,15 @@ async def raw_read_journeys(
         .on(instructors.id == journeys.instructor_id)
         .left_outer_join(instructor_pictures)
         .on(instructor_pictures.id == instructors.picture_image_file_id)
+        .left_outer_join(daily_events)
+        .on(
+            ExistsCriterion(
+                Query.from_(daily_event_journeys)
+                .select(1)
+                .where(daily_event_journeys.journey_id == journeys.id)
+                .where(daily_event_journeys.daily_event_id == daily_events.id)
+            )
+        )
     )
     qargs = []
 
@@ -251,6 +262,8 @@ async def raw_read_journeys(
             return instructors.uid
         elif key == "prompt_style":
             return Function("json_extract", journeys.prompt, "style")
+        elif key == "daily_event_uid":
+            return daily_events.uid
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:
@@ -300,6 +313,7 @@ async def raw_read_journeys(
                 prompt=json.loads(row[13]),
                 created_at=row[14],
                 deleted_at=row[15],
+                daily_event_uid=row[16],
             )
         )
     return items

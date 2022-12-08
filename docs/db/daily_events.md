@@ -18,8 +18,10 @@ See also: [daily_event_journeys.md](daily_event_journeys.md)
 -   `id (integer primary key)`: the internal identifier for the row
 -   `uid (text unique not null)`: the primary external identifier for the row. The
     uid prefix is `de`: see [uid_prefixes](../uid_prefixes.md).
--   `available_at (real not null)`: when this daily event becomes available in seconds since the unix epoch.
-    Note that the time is important.
+-   `available_at (real null)`: when this daily event becomes available in seconds since the
+    unix epoch, or null if it has not been scheduled yet. Note that the time is important.
+    This is generally unique, but if there are duplicates, break ties for which is available
+    by preferring a lower uid
 -   `created_at (real not null)`: when this record was created in seconds since the unix epoch
 
 ## Schema
@@ -28,7 +30,7 @@ See also: [daily_event_journeys.md](daily_event_journeys.md)
 CREATE TABLE daily_events(
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
-    available_at REAL NOT NULL,
+    available_at REAL NULL,
     created_at REAL NOT NULL
 );
 

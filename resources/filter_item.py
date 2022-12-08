@@ -77,11 +77,19 @@ class FilterItem(Generic[ValueT]):
         if self.operator == StandardOperator.EQUAL:
             if formattable_value is None:
                 return term.isnull()
+            if self.value is True:
+                return term
+            if self.value is False:
+                return ~term
             qargs.append(formattable_value)
             return term == p
         elif self.operator == StandardOperator.NOT_EQUAL:
             if formattable_value is None:
                 return term.isnotnull()
+            if self.value is True:
+                return ~term
+            if self.value is False:
+                return term
             qargs.append(formattable_value)
             return term != p
         elif self.operator == StandardOperator.GREATER_THAN:

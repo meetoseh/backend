@@ -120,7 +120,7 @@ async def up(itgs: Itgs) -> None:
         CREATE TABLE daily_events(
             id INTEGER PRIMARY KEY,
             uid TEXT UNIQUE NOT NULL,
-            available_at REAL NOT NULL,
+            available_at REAL NULL,
             created_at REAL NOT NULL
         )
         """

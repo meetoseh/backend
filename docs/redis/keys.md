@@ -76,6 +76,15 @@ the keys that we use in redis
     basic expiring key for this ratelimit. This is used
     [here](../../users/me/routes/finish_checkout_stripe.py)
 
+-   `daily_events:jwt:revoked:{jti}` goes to the string '1' if the given jti has been
+    revoked. This is used [here](../../daily_events/auth.py). These keys expire when
+    the jwt expires
+
+### Stats namespace
+
+These are regular keys which are primarily for statistics, i.e., internal purposes,
+rather than external functionality.
+
 -   `stats:journey_sessions:count` goes to the number of journey sessions that have
     ever been started. This is used for the admin dashboard, which gets its information
     from [here](../../admin/routes/total_journey_sessions.py)

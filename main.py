@@ -19,6 +19,8 @@ import file_uploads.router
 import content_files.router
 import instructors.router
 import daily_events.router
+import admin.router
+import admin.routes.read_journey_subcategory_view_stats
 import urllib.parse
 import asyncio
 
@@ -39,6 +41,10 @@ multiprocessing.Process(target=updater.listen_forever_sync, daemon=True).start()
 multiprocessing.Process(target=migrations.main.main_sync, daemon=True).start()
 multiprocessing.Process(
     target=users.lib.entitlements.purge_cache_loop_sync, daemon=True
+).start()
+multiprocessing.Process(
+    target=admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever_sync,
+    daemon=True,
 ).start()
 app = FastAPI(
     title="oseh",
@@ -79,6 +85,7 @@ app.include_router(
 app.include_router(
     daily_events.router.router, prefix="/api/1/daily_events", tags=["daily_events"]
 )
+app.include_router(admin.router.router, prefix="/api/1/admin", tags=["admin"])
 app.router.redirect_slashes = False
 
 

@@ -83,3 +83,108 @@ the keys we store locally on backend instances via diskcache
         last checked
 
     used [here](../../users/lib/entitlements.py)
+
+-   `daily_active_users:{unix_date}`: goes to a json object in the following form:
+
+    ```json
+    {
+        "labels": ["2021-01-01", "2021-01-02", "2021-01-03"],
+        "values": [1, 4, 2]
+    }
+    ```
+
+    where the date range ends on the unix date (exclusive) and starts 182 days earlier.
+    This is used for [the admin dashboard](../../admin/routes/read_daily_active_users.py)
+    and expires once unix_date is in the past, since the admin dashboard only shows the
+    current version of this data.
+
+-   `new_users:{unix_date}`: goes to a json object in the following form:
+
+    ```json
+    {
+        "labels": ["2021-01-01", "2021-01-02", "2021-01-03"],
+        "values": [1, 4, 2]
+    }
+    ```
+
+    where the date range ends on the unix date (exclusive) and starts 182 days earlier.
+    This is used for [the admin dashboard](../../admin/routes/read_new_users.py)
+    and expires once unix_date is in the past, since the admin dashboard only shows the
+    current version of this data.
+
+-   `monthly_active_users:{unix_date}:{labelled_by}` goes to a json object in the following
+    form:
+
+    ```json
+    {
+        "labelled_by": "string",
+        "labels": ["2021-01-01", "2021-01-02", "2021-01-03"],
+        "values": [1, 4, 2]
+    }
+    ```
+
+    where the date range ends on the unix date (exclusive) and starts 182 days earlier.
+    `labelled_by` is either `day` or `month`. The data is only available monthly,
+    representing the number of active users that month, so when `labelled_by` is
+    `month` the labels are in the form "YYYY-MM" and every value is meaningful,
+    but when `labelled_by` is `day` the labels are in the form "YYYY-MM-DD" and
+    values are repeated as necessary to fill in the gaps.
+
+    This is used by the [admin dashboard](../../admin/routes/read_monthly_active_users.py)
+    and expires once `unix_date` is in the past, since the admin dashboard only shows the
+    current version of this data.
+
+    Technically the monthly version could be expired less often, but it's also pretty
+    cheap to compute, so it's not worth the complexity.
+
+-   `retention_stats:{unix_date}:{period}` goes to a json object in the following form:
+
+    ```json
+    {
+        "period": "7day",
+        "period_label": "7 days",
+        "labels": ["2021-01-01", "2021-01-02", "2021-01-03"],
+        "retained": [1, 4, 2],
+        "unretained": [1, 4, 3],
+        "retention_rate": [0.5, 0.5, 0.4]
+    }
+    ```
+
+    where `unix_date` is specified as the number of days since the unix epoch for when the
+    chart was generated, and the `period` is one of `0day`, `1day`, `7day`, `30day` or `90day`
+    defining how long after a user was created they must have been active to count as retained.
+
+    The retained for a given date is the number of users created on that date retained according
+    to the period. The unretained is the number of users created on that date that were not
+    retained. The retention rate is the retained divided by the sum of retained and unretained.
+
+    This is used by the [admin dashboard](../../admin/routes/read_retention_stats.py) and expires
+    once `unix_date` is in the past, since the admin dashboard only shows the current version of
+    this data.
+
+-   `journey_subcategory_view_stats:{unix_date}` goes to a json object in the following form:
+
+    ```json
+    {
+        "items": [
+            {
+                "subcategory": "string",
+                "total_journey_sessions": 123123,
+                "recent": {
+                    "labels": ["2021-01-01", "2021-01-02", "2021-01-03"],
+                    "values": [1, 4, 2]
+                }
+            }
+        ]
+    }
+    ```
+
+    where `unix_date` is specified as the number of days since the unix epoch for when the
+    chart was generated. The `items` are in descending `total_journey_sessions`, and the `recent`
+    charts have from 30 days before `unix_date` to the day before `unix_date`. The `recent`
+    chart only counts at most one view per user per day, whereas the `total_journey_sessions`
+    counts all views before `unix_date`.
+
+    This is used by the [admin dashboard](../../admin/routes/read_journey_subcategory_view_stats.py)
+    and expires once `unix_date` is in the past, since the admin dashboard only shows the
+    current version of this data.

@@ -79,6 +79,19 @@ def unix_date_to_date(unix_date: int) -> datetime.date:
     return midnight_utc.date()
 
 
+def date_to_unix_date(date: datetime.date) -> int:
+    """Converts the given date to a unix date.
+
+    Args:
+        date (datetime.date): The date to convert
+
+    Returns:
+        int: The unix date
+    """
+    as_naive_datetime = datetime.datetime.combine(date, datetime.time())
+    return int(as_naive_datetime.timestamp() // 86400)
+
+
 def unix_month_to_date_of_first(unix_month: int) -> datetime.date:
     """Converts the given unix month to a timezone-naive date object
     representing the first day of the month.

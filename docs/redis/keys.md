@@ -87,7 +87,7 @@ rather than external functionality.
 
 -   `stats:journey_sessions:count` goes to the number of journey sessions that have
     ever been started. This is used for the admin dashboard, which gets its information
-    from [here](../../admin/routes/total_journey_sessions.py)
+    from [here](../../admin/routes/read_total_journey_sessions.py)
 
 -   `stats:journey_sessions:monthly:{unix_month}:count` goes to the number of journey sessions
     started in the given number of months since the unix epoch. This is used for the
@@ -157,6 +157,24 @@ rather than external functionality.
     avoid leaking keys if the job which is supposed to move the data to the database
     is delayed.
 
+-   `stats:journey_sessions:bysubcat:totals` goes to a hash where the keys are the
+    internal names of subcategories and the values are the total number of journey
+    sessions for that subcategory, excluding days at and including
+    `stats:journey_sessions:bysubcat:totals:earliest`
+
+-   `stats:journey_sessions:bysubcat:totals:{unix_date}` goes to a hash where the
+    keys are the internal names of subcategories and the values are the total number
+    of journey sessions for that subcategory on the given date, expressed as the
+    number of days since January 1st, 1970. This is used to ensure that the journey
+    session view totals only update once per day, to improve caching. The difference
+    between this and the `stats:journey_sessions:{subcategory}:{unix_date}:subs`
+    hash is this does not deduplicate users.
+
+-   `stats:journey_sessions:bysubcat:totals:earliest` goes to a string representing
+    the earliest unix_date for which `stats:journey_sessions:bysubcat:totals:{unix_date}`
+    hasn't yet been rotated into `stats:journey_sessions:bysubcat:totals`. This is used
+    to prevent leaking keys if the job which is supposed to rotate the data is delayed.
+
 -   `stats:retention:{period}:{retained}:{unix_date}` where:
 
     -   `period` is one of `0day`, `1day`, `7day`, `30day`, `90day`
@@ -222,10 +240,13 @@ rather than external functionality.
 ## pubsub keys
 
 -   `ps:job:{job_uid}`: used, if supported, when a job is able to report when it's completed
+
 -   `updates:{repo}`: used to indicate that the main branch of the given repository was updated
+
 -   `ps:journeys:{uid}:events`: used to indicate that a new journey event was created for the journey
     with the given uid. The body
     of the message should be formatted as if by the trivial serialization of the following:
+
     ```py
     class JourneyEventPubSubMessage:
         uid: str
@@ -236,15 +257,25 @@ rather than external functionality.
         journey_time: float
         created_at: float
     ```
+
     where the data is described in detail under [../db/journey_events.md](../db/journey_events.md).
+
 -   `ps:entitlements:purge`: used to indicate than any cached information on entitlements for a
     given user should be purged. The body of the message should be formatted as if by the
     trivial serialization of the following:
+
     ```py
     class EntitlementsPurgePubSubMessage:
         user_sub: str
         min_checked_at: float
     ```
+
     used [here](../../users/lib/entitlements.py). It can be assumed that the redis cache
     has already been purged prior to this message being sent, so this is primarily for
     purging the diskcache (if any) on receiving instances.
+
+-   `ps:journey_subcategory_view_stats`: used to fill all backend instances local cache for the
+    key `journey_subcategory_view_stats:{unix_date}` whenever any one of them produces it in
+    response to a request. The body of the message should be interpreted in bytes, where the
+    first 4 bytes are the unix date number as a big-endian 32-bit unsigned integer, and
+    the remainder is the utf-8 encoded response.

@@ -54,6 +54,8 @@ async def on_journey_session_started(
     - `stats:journey_sessions:{subcategory}:{unix_date}:subs`
     - `stats:journey_sessions:bysubcat:earliest`
     - `stats:journey_sessions:bysubcat:subcategories`
+    - `stats:journey_sessions:bysubcat:totals:{unix_date}`
+    - `stats:journey_sessions:bysubcat:totals:earliest`
 
     Args:
         itgs (Itgs): The integrations for networked services
@@ -90,5 +92,13 @@ async def on_journey_session_started(
             "stats:journey_sessions:bysubcat:earliest",
             unix_date,
         )
-        await pipe.sadd(f"stats:journey_sessions:bysubcat:subcategories", subcategory)
+        await pipe.sadd("stats:journey_sessions:bysubcat:subcategories", subcategory)
+        await pipe.hincrby(
+            f"stats:journey_sessions:bysubcat:totals:{unix_date}", subcategory, 1
+        )
+        await set_if_lower(
+            pipe,
+            "stats:journey_sessions:bysubcat:totals:earliest",
+            unix_date,
+        )
         await pipe.execute()

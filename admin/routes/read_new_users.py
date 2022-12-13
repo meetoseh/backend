@@ -62,7 +62,7 @@ async def read_new_users(authorization: Optional[str] = Header(None)):
         today = unix_dates.unix_timestamp_to_unix_date(
             time.time(), tz=pytz.timezone("America/Los_Angeles")
         )
-        return get_new_users(itgs, today)
+        return await get_new_users(itgs, today)
 
 
 async def get_new_users_from_local_cache(

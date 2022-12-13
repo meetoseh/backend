@@ -116,6 +116,10 @@ def convert_monthly_to_daily(
             new_values.append(value)
             next_date += datetime.timedelta(days=1)
 
+    return ReadMonthlyActiveUsersResponse(
+        labelled_by="day", labels=new_labels, values=new_values
+    )
+
 
 async def get_monthly_active_users_from_local_cache(
     itgs: Itgs, unix_date: int, labelled_by: Literal["day", "month"]
@@ -164,9 +168,12 @@ async def set_monthly_active_users_in_local_cache(
         tomorrow_date, datetime.time()
     )
     tomorrow_midnight_naive_unix = tomorrow_midnight_naive_datetime.timestamp()
-    tomorrow_midnight = tomorrow_midnight_naive_unix + pytz.timezone(
-        "America/Los_Angeles"
-    ).utcoffset(tomorrow_midnight_naive_datetime)
+    tomorrow_midnight = (
+        tomorrow_midnight_naive_unix
+        + pytz.timezone("America/Los_Angeles")
+        .utcoffset(tomorrow_midnight_naive_datetime)
+        .total_seconds()
+    )
 
     local_cache = await itgs.local_cache()
     local_cache.set(

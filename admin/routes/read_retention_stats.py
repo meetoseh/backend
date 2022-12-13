@@ -260,6 +260,13 @@ async def get_retention_stats_from_source(
     )
 
     if earliest_available_unix_date < end_unix_date:
+        for missing_unix_date in range(
+            expected_next_unix_date, earliest_available_unix_date
+        ):
+            labels.append(unix_dates.unix_date_to_date(missing_unix_date).isoformat())
+            retained.append(0)
+            unretained.append(0)
+
         async with redis.pipeline() as pipe:
             for redis_unix_date in range(earliest_available_unix_date, end_unix_date):
                 for retained_s in ("true", "false"):

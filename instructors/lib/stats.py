@@ -35,4 +35,5 @@ async def on_instructor_created(itgs: Itgs, *, created_at: str) -> None:
         pipe.multi()
         await pipe.incr("stats:instructors:count")
         await pipe.incr(f"stats:instructors:monthly:{unix_month}:count")
-        await set_if_lower("stats:instructors:monthly:earliest", unix_month)
+        await set_if_lower(pipe, "stats:instructors:monthly:earliest", unix_month)
+        await pipe.execute()

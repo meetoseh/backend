@@ -37,7 +37,8 @@ async def on_journey_created(itgs: Itgs, *, created_at: str) -> None:
         pipe.multi()
         await pipe.incr("stats:journeys:count")
         await pipe.incr(f"stats:journeys:monthly:{unix_month}:count")
-        await set_if_lower("stats:journeys:monthly:earliest", unix_month)
+        await set_if_lower(pipe, "stats:journeys:monthly:earliest", unix_month)
+        await pipe.execute()
 
 
 async def on_journey_session_started(

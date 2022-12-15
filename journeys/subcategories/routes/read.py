@@ -151,6 +151,9 @@ async def raw_read_journey_subcategories(
             return journey_subcategories.field(key)
         raise ValueError(f"unknown key: {key}")
 
+    for key, filter in filters_to_apply:
+        query = query.where(filter.applied_to(pseudocolumn(key), qargs))
+
     query = query.where(sort_criterion(sort, pseudocolumn, qargs))
 
     for srt in sort:

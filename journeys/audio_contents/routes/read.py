@@ -60,6 +60,9 @@ class JourneyAudioContentFilter(BaseModel):
     content_file_created_at: Optional[FilterItemModel[float]] = Field(
         None, description="the timestamp of when the content file was created"
     )
+    original_file_sha512: Optional[FilterTextItemModel] = Field(
+        None, description="the sha512 of the original file"
+    )
     uploaded_by_user_sub: Optional[FilterTextItemModel] = Field(
         None,
         description="the sub of the user who uploaded the content file, if available",
@@ -118,7 +121,9 @@ async def read_journey_audio_content(
                 if v is not None
             )
         )
-        items = await raw_read_journey_audio_content(itgs, filters_to_apply, sort, args.limit + 1)
+        items = await raw_read_journey_audio_content(
+            itgs, filters_to_apply, sort, args.limit + 1
+        )
         next_page_sort: Optional[List[SortItem]] = None
         last_item: Optional[Dict[str, Any]] = None
         if len(items) > args.limit:
@@ -127,7 +132,9 @@ async def read_journey_audio_content(
         first_item: Optional[Dict[str, Any]] = None
         if items and any(s.after is not None for s in sort):
             rev_sort = reverse_sort(sort, "make_exclusive")
-            rev_items = await raw_read_journey_audio_content(itgs, filters_to_apply, rev_sort, 1)
+            rev_items = await raw_read_journey_audio_content(
+                itgs, filters_to_apply, rev_sort, 1
+            )
             if rev_items:
                 first_item = item_pseudocolumns(items[0])
 
@@ -177,6 +184,8 @@ async def raw_read_journey_audio_content(
             return content_files.created_at
         elif key == "content_file_uid":
             return content_files.uid
+        elif key == "original_file_sha512":
+            return content_files.original_sha512
         elif key == "uploaded_by_user_sub":
             return users.sub
         elif key in ("uid", "last_uploaded_at"):

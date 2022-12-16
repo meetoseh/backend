@@ -3,7 +3,7 @@ but not enough to warrant pypika.
 """
 from pypika.terms import Criterion, Term, ComplexCriterion
 from pypika.enums import Comparator
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 
 def question_mark_list(num: int) -> str:
@@ -164,7 +164,8 @@ class ParenthisizeCriterion(Criterion):
         criterion (Criterion): The criterion to parenthesize.
     """
 
-    def __init__(self, criterion: Criterion):
+    def __init__(self, criterion: Criterion, alias: Optional[str] = None):
+        super().__init__(alias=alias)
         self.criterion = criterion
 
     def get_sql(self, *args, **kwargs) -> str:

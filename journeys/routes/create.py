@@ -218,6 +218,9 @@ async def create_journey(
                       AND journey_background_images.image_file_id = image_files.id
                 )
             )
+            LEFT OUTER JOIN journey_subcategories ON (
+                journey_subcategories.uid = ?
+            )
             LEFT OUTER JOIN instructors ON (
                 instructors.uid = ?
                 AND instructors.deleted_at IS NULL
@@ -229,6 +232,7 @@ async def create_journey(
             (
                 args.journey_audio_content_uid,
                 args.journey_background_image_uid,
+                args.journey_subcategory_uid,
                 args.instructor_uid,
             ),
         )
@@ -371,7 +375,7 @@ async def create_journey(
                     name=instructor_name,
                     picture=ImageFileRef(
                         uid=instructor_picture_image_file_uid,
-                        jwt=image_files.auth.create_jwt(
+                        jwt=await image_files.auth.create_jwt(
                             itgs, instructor_picture_image_file_uid
                         ),
                     ),

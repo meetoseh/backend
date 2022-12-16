@@ -60,6 +60,9 @@ class JourneyBackgroundImageFilter(BaseModel):
     image_file_created_at: Optional[FilterItemModel[float]] = Field(
         None, description="the timestamp of when the image file was created"
     )
+    original_file_sha512: Optional[FilterTextItemModel] = Field(
+        None, description="the sha512 of the original file"
+    )
     uploaded_by_user_sub: Optional[FilterTextItemModel] = Field(
         None,
         description="the sub of the user who uploaded the image file, if available",
@@ -181,6 +184,8 @@ async def raw_read_journey_background_images(
             return image_files.created_at
         elif key == "image_file_uid":
             return image_files.uid
+        elif key == "original_file_sha512":
+            return image_files.original_sha512
         elif key == "uploaded_by_user_sub":
             return users.sub
         elif key in ("uid", "last_uploaded_at"):

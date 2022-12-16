@@ -49,7 +49,7 @@ async def join_journey(
 
         # required for stats
         user_created_at, journey_subcategory = await asyncio.gather(
-            get_user_created_at(itgs, sub=auth_result.result.sub),
+            get_user_created_at(itgs, sub=auth_result.result.user_sub),
             get_journey_subcategory(itgs, uid=args.journey_uid),
         )
 
@@ -108,7 +108,7 @@ async def join_journey(
 
 async def get_user_created_at(itgs: Itgs, *, sub: str) -> Optional[float]:
     conn = await itgs.conn()
-    cursor = conn.cursor('none')
+    cursor = conn.cursor("none")
 
     response = await cursor.execute(
         "SELECT created_at FROM users WHERE sub = ?",
@@ -122,7 +122,7 @@ async def get_user_created_at(itgs: Itgs, *, sub: str) -> Optional[float]:
 
 async def get_journey_subcategory(itgs: Itgs, *, uid: str) -> Optional[str]:
     conn = await itgs.conn()
-    cursor = conn.cursor('none')
+    cursor = conn.cursor("none")
 
     response = await cursor.execute(
         """

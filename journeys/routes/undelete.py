@@ -45,7 +45,7 @@ async def undelete_journey(uid: str, authorization: Optional[str] = Header(None)
             SET deleted_at = NULL
             WHERE uid = ? AND deleted_at IS NOT NULL
             """,
-            (now, uid),
+            (uid,),
         )
         if response.rows_affected is not None and response.rows_affected > 0:
             return Response(status_code=200)

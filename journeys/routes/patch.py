@@ -2,7 +2,7 @@ import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, constr
-from typing import Optional, Literal
+from typing import Any, List, Optional, Literal
 from auth import auth_admin
 from content_files.models import ContentFileRef
 import content_files.auth as content_files_auth
@@ -16,7 +16,7 @@ from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from pypika import Query, Table, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import ExistsCriterion
+from pypika.terms import ExistsCriterion, Term
 from db.utils import ParenthisizeCriterion
 
 
@@ -130,7 +130,7 @@ async def patch_journey(
             and args.prompt is None
         ):
             return Response(
-                content=StandardErrorResponse[ERROR_404_TYPES](
+                content=StandardErrorResponse[ERROR_400_TYPES](
                     type="nothing_to_patch",
                     message="No fields were specified to be patched",
                 ).json(),
@@ -317,68 +317,105 @@ async def patch_journey(
         assert journey_description is not None
         assert journey_prompt is not None
 
-        query = Query.update(journeys)
+        update_and_set_query: QueryBuilder = Query.update(journeys)
+        from_query: QueryBuilder = Query.select(1)
         del qargs
         set_qargs = []
         join_qargs = []
         where_qargs = []
 
+        is_first_join = True
+
+        def join_on(table: Table, on: Term, qargs: List[Any]) -> QueryBuilder:
+            nonlocal is_first_join
+
+            if is_first_join:
+                is_first_join = False
+                where_qargs.extend(qargs)
+                return from_query.from_(table).where(on)
+
+            join_qargs.extend(qargs)
+            return from_query.join(table).on(on)
+
         if args.journey_audio_content_uid is not None:
-            query = query.set(journeys.audio_content_file_id, content_files.id)
-            query = query.join(content_files).on(
+            update_and_set_query = update_and_set_query.set(
+                journeys.audio_content_file_id, content_files.id
+            )
+            from_query = join_on(
+                content_files,
                 ExistsCriterion(
                     Query.from_(journey_audio_contents)
                     .select(1)
                     .where(journey_audio_contents.content_file_id == content_files.id)
                     .where(journey_audio_contents.uid == Parameter("?"))
-                )
+                ),
+                [args.journey_audio_content_uid],
             )
-            join_qargs.append(args.journey_audio_content_uid)
 
         if args.journey_background_image_uid is not None:
-            query = query.set(journeys.background_image_file_id, image_files.id)
-            query = query.join(image_files).on(
+            update_and_set_query = update_and_set_query.set(
+                journeys.background_image_file_id, image_files.id
+            )
+            from_query = join_on(
+                image_files,
                 ExistsCriterion(
                     Query.from_(journey_background_images)
                     .select(1)
                     .where(journey_background_images.image_file_id == image_files.id)
                     .where(journey_background_images.uid == Parameter("?"))
-                )
+                ),
+                [args.journey_background_image_uid],
             )
-            join_qargs.append(args.journey_background_image_uid)
 
         if args.journey_subcategory_uid is not None:
-            query = query.set(journeys.journey_subcategory_id, journey_subcategories.id)
-            query = query.join(journey_subcategories).on(
-                journey_subcategories.uid == Parameter("?")
+            update_and_set_query = update_and_set_query.set(
+                journeys.journey_subcategory_id, journey_subcategories.id
             )
-            join_qargs.append(args.journey_subcategory_uid)
+            from_query = join_on(
+                journey_subcategories,
+                journey_subcategories.uid == Parameter("?"),
+                [args.journey_subcategory_uid],
+            )
 
         if args.instructor_uid is not None:
-            query = query.set(journeys.instructor_id, instructors.id)
-            query = query.join(instructors).on(instructors.uid == Parameter("?"))
-            join_qargs.append(args.instructor_uid)
+            update_and_set_query = update_and_set_query.set(
+                journeys.instructor_id, instructors.id
+            )
+            from_query = join_on(
+                instructors, instructors.uid == Parameter("?"), [args.instructor_uid]
+            )
 
         if args.title is not None:
-            query = query.set(journeys.title, Parameter("?"))
+            update_and_set_query = update_and_set_query.set(
+                journeys.title, Parameter("?")
+            )
             set_qargs.append(args.title)
 
         if args.description is not None:
-            query = query.set(journeys.description, Parameter("?"))
+            update_and_set_query = update_and_set_query.set(
+                journeys.description, Parameter("?")
+            )
             set_qargs.append(args.description)
 
         if args.prompt is not None:
-            query = query.set(journeys.prompt, Parameter("?"))
+            update_and_set_query = update_and_set_query.set(
+                journeys.prompt, Parameter("?")
+            )
             set_qargs.append(args.prompt.json())
 
-        query = query.where(journeys.uid == Parameter("?")).where(
+        from_query = from_query.where(journeys.uid == Parameter("?")).where(
             journeys.deleted_at.isnull()
         )
         where_qargs.append(uid)
 
-        response = await cursor.execute(
-            query.get_sql(), set_qargs + join_qargs + where_qargs
+        query = (
+            update_and_set_query._update_sql(with_namespace=True)
+            + update_and_set_query._set_sql(with_namespace=True)
+            + " "
+            + from_query.get_sql().lstrip("SELECT 1 ")
         )
+
+        response = await cursor.execute(query, set_qargs + join_qargs + where_qargs)
         if response.rows_affected is None or response.rows_affected < 1:
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](

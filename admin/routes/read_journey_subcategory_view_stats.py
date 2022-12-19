@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, NoReturn, Optional, Union
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
 from content_files.helper import read_in_parts
+import perpetual_pub_sub as pps
 from loguru import logger
 import unix_dates
 import datetime
@@ -119,9 +120,12 @@ async def set_journey_subcategory_view_stats_in_local_cache(
     tomorrow_naive_midnight = datetime.datetime.combine(
         tomorrow_naive_date, datetime.time(0, 0, 0)
     )
-    tomorrow_midnight = tomorrow_naive_midnight.timestamp() + pytz.timezone(
-        "America/Los_Angeles"
-    ).utcoffset(tomorrow_naive_midnight)
+    tomorrow_midnight = (
+        tomorrow_naive_midnight.timestamp()
+        + pytz.timezone("America/Los_Angeles")
+        .utcoffset(tomorrow_naive_midnight)
+        .total_seconds()
+    )
 
     local_cache = await itgs.local_cache()
     local_cache.set(
@@ -151,40 +155,21 @@ async def notify_backend_instances_of_response(
     await redis.publish(b"ps:journey_subcategory_view_stats", unix_date_bytes + encoded)
 
 
-async def listen_available_responses_forever():
+async def listen_available_responses_forever() -> NoReturn:
     """Listens for available responses from other backend instances and stores
-    them in the local cache. This is an infinite loop and should be run in a
-    separate process.
+    them in the local cache.
     """
     async with Itgs() as itgs:
-        redis = await itgs.redis()
-        pubsub = redis.pubsub()
-        await pubsub.subscribe("ps:journey_subcategory_view_stats")
-        while True:
-            while (
-                message := await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=5
+        async with pps.PPSSubscription(
+            pps.instance, "ps:journey_subcategory_view_stats", "purge_subcat_cache"
+        ) as sub:
+            async for data in sub:
+                memview = memoryview(data)
+                unix_date = int.from_bytes(memview[:4], "big", signed=False)
+                encoded = memview[4:]
+                await set_journey_subcategory_view_stats_in_local_cache(
+                    itgs, unix_date, encoded
                 )
-            ) is None:
-                pass
-
-            if message["type"] != "message":
-                continue
-
-            data: bytes = message["data"]
-            memview = memoryview(data)
-            unix_date = int.from_bytes(memview[:4], "big", signed=False)
-            encoded = memview[4:]
-            await set_journey_subcategory_view_stats_in_local_cache(
-                itgs, unix_date, encoded
-            )
-
-
-def listen_available_responses_forever_sync():
-    """Synchronous entry point for the above function, which can be used as
-    a target for a process.
-    """
-    asyncio.run(listen_available_responses_forever())
 
 
 async def get_journey_subcategory_view_stats_from_source(

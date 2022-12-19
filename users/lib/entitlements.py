@@ -1,6 +1,5 @@
 """This module handles caching basic entitlement information on users, with the
-ability to purge the cache. It requires a background process for purging the
-cache
+ability to purge the cache.
 
 This is a two-stage cache: RevenueCat -> redis -> diskcache
 """
@@ -8,6 +7,7 @@ import asyncio
 import time
 from typing import Dict, Optional, Set
 from typing import NoReturn as Never
+import perpetual_pub_sub as pps
 from pydantic import BaseModel, Field
 from error_middleware import handle_error
 from itgs import Itgs
@@ -237,9 +237,8 @@ async def purge_entitlements_from_local(itgs: Itgs, *, user_sub: str) -> None:
     """Purges any entitlements stored about the given user from the local
     cache.
 
-    This is typically called from the entitlements purging loop which is a
-    background process started with the webserver. Prefer `get_entitlement` with
-    `force=True` to calling this directly.
+    This is typically called from the entitlements purging loop. Prefer
+    `get_entitlement` with `force=True` to calling this directly.
 
     Args:
         itgs (Itgs): the integrations for networked services
@@ -453,44 +452,27 @@ async def purge_cache_loop_async() -> Never:
     """The main function run to handle purging the cache when a notification
     is received on the appropriate redis channel
     """
-    async with Itgs() as itgs:
-        redis = await itgs.redis()
-        pubsub = redis.pubsub()
-        await pubsub.subscribe("ps:entitlements:purge")
+    async with pps.PPSSubscription(
+        pps.instance, "ps:entitlements:purge", "entitlements"
+    ) as sub:
         while True:
-            while (
-                message := await pubsub.get_message(
-                    ignore_subscribe_messages=True, timeout=5
-                )
-            ) is None:
-                pass
-
-            if message["type"] != "message":
-                continue
-
+            raw_data = await sub.read()
             data = EntitlementsPurgePubSubMessage.parse_raw(
-                message["data"], content_type="application/json"
+                raw_data, content_type="application/json"
             )
 
-            local = await get_entitlements_from_local(itgs, user_sub=data.user_sub)
-            if local is None:
-                continue
+            async with Itgs() as itgs:
+                local = await get_entitlements_from_local(itgs, user_sub=data.user_sub)
+                if local is None:
+                    continue
 
-            old_len = len(local.entitlements)
-            local.entitlements = dict(
-                (k, v)
-                for k, v in local.entitlements.items()
-                if v.checked_at >= data.min_checked_at
-            )
-            if old_len > len(local.entitlements):
-                await set_entitlements_to_local(
-                    itgs, user_sub=data.user_sub, entitlements=local
+                old_len = len(local.entitlements)
+                local.entitlements = dict(
+                    (k, v)
+                    for k, v in local.entitlements.items()
+                    if v.checked_at >= data.min_checked_at
                 )
-
-
-def purge_cache_loop_sync() -> Never:
-    """Loops infinitely to handle purging the cache when a notification is
-    received on the appropriate redis channel. This should be run in its
-    own process without an existing event loop.
-    """
-    asyncio.run(purge_cache_loop_async())
+                if old_len > len(local.entitlements):
+                    await set_entitlements_to_local(
+                        itgs, user_sub=data.user_sub, entitlements=local
+                    )

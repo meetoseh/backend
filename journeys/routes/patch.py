@@ -10,6 +10,7 @@ import image_files.auth as image_files_auth
 from instructors.routes.read import Instructor
 from journeys.routes.create import Prompt, CreateJourneyResponse
 from journeys.subcategories.routes.read import JourneySubcategory
+from journeys.events.helper import purge_journey_meta
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from pypika import Query, Table, Parameter
@@ -376,6 +377,7 @@ async def patch_journey(
                 status_code=503,
             )
 
+        await purge_journey_meta(itgs, uid)
         return Response(
             content=PatchJourneyResponse(
                 uid=uid,

@@ -274,6 +274,19 @@ rather than external functionality.
     has already been purged prior to this message being sent, so this is primarily for
     purging the diskcache (if any) on receiving instances.
 
+-   `ps:journeys:meta:purge`: used to indicate than any cached meta information on the
+    given journey should be purged. The body of the message should be formatted as if by the
+    trivial serialization of the following:
+
+    ```py
+    class JourneyMetaPurgePubSubMessage:
+        journey_uid: str
+        min_checked_at: float
+    ```
+
+    used [here](../../journeys/events/helper.py). This is primarily for purging the diskcache,
+    though currently there is no other cache.
+
 -   `ps:journey_subcategory_view_stats`: used to fill all backend instances local cache for the
     key `journey_subcategory_view_stats:{unix_date}` whenever any one of them produces it in
     response to a request. The body of the message should be interpreted in bytes, where the

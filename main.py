@@ -6,11 +6,11 @@ from fastapi.responses import JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error, handle_error
 from itgs import Itgs
+import perpetual_pub_sub
 import secrets
 import updater
 import users.lib.entitlements
 import migrations.main
-import multiprocessing
 import continuous_deployment.router
 import users.router
 import image_files.router
@@ -21,8 +21,10 @@ import instructors.router
 import daily_events.router
 import admin.router
 import admin.routes.read_journey_subcategory_view_stats
+import journeys.events.helper
 import urllib.parse
 import asyncio
+
 
 if (
     os.environ.get("ENVIRONMENT") != "production"
@@ -36,16 +38,16 @@ if (
     asyncio.run(handle_error(exc))
     raise exc
 
+if perpetual_pub_sub.instance is None:
+    perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
 
-multiprocessing.Process(target=updater.listen_forever_sync, daemon=True).start()
-multiprocessing.Process(target=migrations.main.main_sync, daemon=True).start()
-multiprocessing.Process(
-    target=users.lib.entitlements.purge_cache_loop_sync, daemon=True
-).start()
-multiprocessing.Process(
-    target=admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever_sync,
-    daemon=True,
-).start()
+asyncio.ensure_future(updater.listen_forever())
+asyncio.ensure_future(migrations.main.main())
+asyncio.ensure_future(users.lib.entitlements.purge_cache_loop_async())
+asyncio.ensure_future(
+    admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
+)
+asyncio.ensure_future(journeys.events.helper.purge_journey_meta_loop())
 app = FastAPI(
     title="oseh",
     description="hypersocial daily mindfulness",

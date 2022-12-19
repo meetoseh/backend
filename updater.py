@@ -1,8 +1,7 @@
 """Handles updating when the repository is updated"""
-from itgs import Itgs
-import asyncio
 import subprocess
 import platform
+import perpetual_pub_sub as pps
 import os
 
 
@@ -10,14 +9,9 @@ async def _listen_forever():
     """Subscribes to the redis channel updates:backend and upon
     recieving a message, calls /home/ec2-user/update_webapp.sh
     """
-    async with Itgs() as itgs:
-        redis = await itgs.redis()
-        pubsub = redis.pubsub()
-        await pubsub.subscribe("updates:backend")
-        while (
-            await pubsub.get_message(ignore_subscribe_messages=True, timeout=5)
-        ) is None:
-            pass
+    async with pps.PPSSubscription(pps.instance, "updates:backend", "updater") as sub:
+        await sub.read()
+
     if platform.platform().lower().startswith("linux"):
         subprocess.Popen(
             "bash /home/ec2-user/update_webapp.sh > /dev/null 2>&1",
@@ -47,10 +41,3 @@ async def listen_forever():
         await _listen_forever()
     finally:
         os.unlink("updater.lock")
-
-
-def listen_forever_sync():
-    """Subscribes to the redis channel updates:backend and upon
-    recieving a message, calls /home/ec2-user/update_webapp.sh
-    """
-    asyncio.run(listen_forever())

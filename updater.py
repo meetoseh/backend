@@ -35,9 +35,11 @@ async def listen_forever():
     """
     if os.path.exists("updater.lock"):
         return
-    with open("updater.lock", "w"):
-        pass
+    with open("updater.lock", "w") as f:
+        f.write(str(os.getpid()))
+
     try:
         await _listen_forever()
     finally:
         os.unlink("updater.lock")
+        print("updater shutdown")

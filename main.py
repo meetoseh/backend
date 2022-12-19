@@ -41,13 +41,20 @@ if (
 if perpetual_pub_sub.instance is None:
     perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
 
-asyncio.ensure_future(updater.listen_forever())
-asyncio.ensure_future(migrations.main.main())
-asyncio.ensure_future(users.lib.entitlements.purge_cache_loop_async())
-asyncio.ensure_future(
-    admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
+background_tasks = set()
+background_tasks.add(asyncio.create_task(updater.listen_forever()))
+background_tasks.add(asyncio.create_task(migrations.main.main()))
+background_tasks.add(
+    asyncio.create_task(users.lib.entitlements.purge_cache_loop_async())
 )
-asyncio.ensure_future(journeys.events.helper.purge_journey_meta_loop())
+background_tasks.add(
+    asyncio.create_task(
+        admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
+    )
+)
+background_tasks.add(
+    asyncio.create_task(journeys.events.helper.purge_journey_meta_loop())
+)
 app = FastAPI(
     title="oseh",
     description="hypersocial daily mindfulness",
@@ -62,7 +69,7 @@ if os.environ.get("ENVIRONMENT") == "dev":
         CORSMiddleware,
         allow_origins=[os.environ["ROOT_FRONTEND_URL"]],
         allow_credentials=True,
-        allow_methods=["GET", "POST", "HEAD", "PUT", "DELETE"],
+        allow_methods=["GET", "POST", "HEAD", "PUT", "DELETE", "PATCH"],
         allow_headers=["Authorization", "Pragma"],
     )
 app.include_router(

@@ -309,7 +309,7 @@ async def get_entitlement(
             get_entitlements_from_source(itgs, user_sub=user_sub, now=now), timeout=5
         )
     except Exception as exc:
-        asyncio.ensure_future(handle_error(exc))
+        await handle_error(exc)
         await record_revenue_cat_error(itgs, now=now)
         return await fail_open_entitlement(
             itgs, user_sub=user_sub, identifier=identifier
@@ -452,27 +452,32 @@ async def purge_cache_loop_async() -> Never:
     """The main function run to handle purging the cache when a notification
     is received on the appropriate redis channel
     """
-    async with pps.PPSSubscription(
-        pps.instance, "ps:entitlements:purge", "entitlements"
-    ) as sub:
-        while True:
-            raw_data = await sub.read()
-            data = EntitlementsPurgePubSubMessage.parse_raw(
-                raw_data, content_type="application/json"
-            )
-
-            async with Itgs() as itgs:
-                local = await get_entitlements_from_local(itgs, user_sub=data.user_sub)
-                if local is None:
-                    continue
-
-                old_len = len(local.entitlements)
-                local.entitlements = dict(
-                    (k, v)
-                    for k, v in local.entitlements.items()
-                    if v.checked_at >= data.min_checked_at
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:entitlements:purge", "entitlements"
+        ) as sub:
+            while True:
+                raw_data = await sub.read()
+                data = EntitlementsPurgePubSubMessage.parse_raw(
+                    raw_data, content_type="application/json"
                 )
-                if old_len > len(local.entitlements):
-                    await set_entitlements_to_local(
-                        itgs, user_sub=data.user_sub, entitlements=local
+
+                async with Itgs() as itgs:
+                    local = await get_entitlements_from_local(
+                        itgs, user_sub=data.user_sub
                     )
+                    if local is None:
+                        continue
+
+                    old_len = len(local.entitlements)
+                    local.entitlements = dict(
+                        (k, v)
+                        for k, v in local.entitlements.items()
+                        if v.checked_at >= data.min_checked_at
+                    )
+                    if old_len > len(local.entitlements):
+                        await set_entitlements_to_local(
+                            itgs, user_sub=data.user_sub, entitlements=local
+                        )
+    finally:
+        print("entitlements purge loop exiting")

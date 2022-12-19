@@ -1109,12 +1109,15 @@ async def purge_journey_meta(itgs: Itgs, journey_uid: str) -> None:
     """
     redis = await itgs.redis()
     await redis.publish(
-        'ps:journeys:meta:purge'.encode('ascii'),
+        "ps:journeys:meta:purge".encode("ascii"),
         JourneyMetaPurgePubSubMessage(
             journey_uid=journey_uid,
             min_checked_at=time.time(),
-        ).json().encode('utf-8'),
+        )
+        .json()
+        .encode("utf-8"),
     )
+
 
 async def purge_journey_meta_loop() -> NoReturn:
     """This loop will listen for purge requests from ps:journeys:meta:purge and
@@ -1123,9 +1126,16 @@ async def purge_journey_meta_loop() -> NoReturn:
     in the background and is invoked by the admin journey update endpoint(s) via
     the purge_journey_meta function
     """
-    async with pps.PPSSubscription(pps.instance, 'ps:journeys:meta:purge', hint='journey_meta') as sub:
-        async for raw_data in sub:
-            message = JourneyMetaPurgePubSubMessage.parse_raw(raw_data, content_type='application/json')
-            async with Itgs() as itgs:
-                local_cache = await itgs.local_cache()
-                local_cache.delete(f'journeys:{message.journey_uid}:meta')
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:journeys:meta:purge", hint="journey_meta"
+        ) as sub:
+            async for raw_data in sub:
+                message = JourneyMetaPurgePubSubMessage.parse_raw(
+                    raw_data, content_type="application/json"
+                )
+                async with Itgs() as itgs:
+                    local_cache = await itgs.local_cache()
+                    local_cache.delete(f"journeys:{message.journey_uid}:meta")
+    finally:
+        print("purge journey meta loop exiting")

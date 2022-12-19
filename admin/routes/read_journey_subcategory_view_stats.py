@@ -159,17 +159,20 @@ async def listen_available_responses_forever() -> NoReturn:
     """Listens for available responses from other backend instances and stores
     them in the local cache.
     """
-    async with Itgs() as itgs:
-        async with pps.PPSSubscription(
-            pps.instance, "ps:journey_subcategory_view_stats", "purge_subcat_cache"
-        ) as sub:
-            async for data in sub:
-                memview = memoryview(data)
-                unix_date = int.from_bytes(memview[:4], "big", signed=False)
-                encoded = memview[4:]
-                await set_journey_subcategory_view_stats_in_local_cache(
-                    itgs, unix_date, encoded
-                )
+    try:
+        async with Itgs() as itgs:
+            async with pps.PPSSubscription(
+                pps.instance, "ps:journey_subcategory_view_stats", "purge_subcat_cache"
+            ) as sub:
+                async for data in sub:
+                    memview = memoryview(data)
+                    unix_date = int.from_bytes(memview[:4], "big", signed=False)
+                    encoded = memview[4:]
+                    await set_journey_subcategory_view_stats_in_local_cache(
+                        itgs, unix_date, encoded
+                    )
+    finally:
+        print('journey subcategory view stats loop exiting')
 
 
 async def get_journey_subcategory_view_stats_from_source(

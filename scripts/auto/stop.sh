@@ -12,6 +12,17 @@ main() {
             break
         fi
     done
+    if [ -f updater.lock ]
+    then
+        # sigquit
+        screen -S webapp -X quit
+        sleep 1
+        if [ -f updater.lock ]
+        then
+            # sigkill
+            kill -9 $(cat updater.lock)
+        fi
+    fi
     rm -f updater.lock
 }
 

@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, constr
@@ -168,7 +169,11 @@ async def patch_journey(
                 instructors.name,
                 instructor_pictures.uid,
                 instructors.created_at,
+                instructors.deleted_at,
                 journeys.created_at,
+                journeys.title,
+                journeys.description,
+                journeys.prompt,
             )
             .left_join(journeys)
             .on((journeys.uid == Parameter("?")) & journeys.deleted_at.isnull())
@@ -220,14 +225,17 @@ async def patch_journey(
                 query.inner_join(instructors)
                 .on(instructors.id == journeys.instructor_id)
                 .left_outer_join(instructor_pictures)
-                .on(instructor_pictures.id == instructors.picture_file_id)
+                .on(instructor_pictures.id == instructors.picture_image_file_id)
             )
         else:
             query = (
                 query.left_outer_join(instructors)
-                .on(instructors.uid == Parameter("?"))
+                .on(
+                    (instructors.uid == Parameter("?"))
+                    & instructors.deleted_at.isnull()
+                )
                 .left_outer_join(instructor_pictures)
-                .on(instructor_pictures.id == instructors.picture_file_id)
+                .on(instructor_pictures.id == instructors.picture_image_file_id)
             )
             qargs.append(args.instructor_uid)
 
@@ -244,7 +252,11 @@ async def patch_journey(
         instructor_name: Optional[str] = response.results[0][7]
         instructor_picture_file_uid: Optional[str] = response.results[0][8]
         instructor_created_at: Optional[float] = response.results[0][9]
-        journey_created_at: Optional[float] = response.results[0][10]
+        instructor_deleted_at: Optional[float] = response.results[0][10]
+        journey_created_at: Optional[float] = response.results[0][11]
+        journey_title: Optional[str] = response.results[0][12]
+        journey_description: Optional[str] = response.results[0][13]
+        journey_prompt: Optional[str] = response.results[0][14]
 
         if not journey_exists:
             return Response(
@@ -301,6 +313,9 @@ async def patch_journey(
         assert instructor_name is not None
         assert instructor_created_at is not None
         assert journey_created_at is not None
+        assert journey_title is not None
+        assert journey_description is not None
+        assert journey_prompt is not None
 
         query = Query.update(journeys)
         del qargs
@@ -407,10 +422,16 @@ async def patch_journey(
                         if instructor_picture_file_uid is not None
                         else None
                     ),
+                    created_at=instructor_created_at,
+                    deleted_at=instructor_deleted_at,
                 ),
-                title=args.title,
-                description=args.description,
-                prompt=args.prompt,
+                title=args.title if args.title is not None else journey_title,
+                description=args.description
+                if args.description is not None
+                else journey_description,
+                prompt=args.prompt
+                if args.prompt is not None
+                else json.loads(journey_prompt),
                 created_at=journey_created_at,
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},

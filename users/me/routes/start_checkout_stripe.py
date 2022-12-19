@@ -141,7 +141,7 @@ async def start_checkout_stripe(
                 ],
             )
         except Exception as exc:
-            asyncio.ensure_future(handle_error(exc))
+            await handle_error(exc)
             raise UserSafeError(
                 f"Failed to create checkout session for {auth_result.result.sub=}",
                 Response(
@@ -157,12 +157,10 @@ async def start_checkout_stripe(
             )
 
         async def cancel_session():
-            asyncio.ensure_future(
-                run_in_threadpool(
-                    stripe.checkout.Session.expire,
-                    session.id,
-                    api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
-                )
+            await run_in_threadpool(
+                stripe.checkout.Session.expire,
+                session.id,
+                api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
             )
 
         try:
@@ -250,7 +248,7 @@ async def ensure_stripe_customer(itgs: Itgs, user_sub: str) -> str:
             metadata={"user_sub": user_sub, "created_for": "start_checkout_stripe"},
         )
     except Exception as exc:
-        asyncio.ensure_future(handle_error(exc))
+        await handle_error(exc)
         raise UserSafeError(
             f"Failed to create stripe customer for {user_sub=}",
             Response(

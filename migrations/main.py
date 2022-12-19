@@ -20,50 +20,55 @@ async def main():
     """Acquires a lock and runs any outstanding migrations which have not
     been run before.
     """
-    async with Itgs() as itgs:
-        redis = await itgs.redis()
+    try:
+        async with Itgs() as itgs:
+            redis = await itgs.redis()
 
-        acquired_lock = await redis.setnx("backend:migrations-lock", str(time.time()))
-        if not acquired_lock:
-            return
-
-        try:
-            conn = await itgs.conn()
-            cursor = conn.cursor()
-            await cursor.execute(
-                "CREATE TABLE IF NOT EXISTS migrations ("
-                "  id INTEGER PRIMARY KEY,"
-                "  name TEXT UNIQUE NOT NULL,"
-                "  run_at REAL NOT NULL"
-                ")"
+            acquired_lock = await redis.setnx(
+                "backend:migrations-lock", str(time.time())
             )
+            if not acquired_lock:
+                return
 
-            slack = await itgs.slack()
-            migrations_to_run: List[str] = []
-            for path in os.scandir(os.path.join("migrations", "runners")):
-                if path.is_file() and path.name.endswith(".py"):
-                    response = await cursor.execute(
-                        "SELECT 1 FROM migrations WHERE name = ?", (path.name,)
-                    )
-                    if response.rowcount is None or response.rowcount == 0:
-                        migrations_to_run.append(path.name)
-
-            migrations_to_run.sort()
-            for migration in migrations_to_run:
-                mod_path = "migrations.runners." + migration[:-3]
-                print(f"{mod_path=}")
-                mod = importlib.import_module(mod_path)
-                await mod.up(itgs)
+            try:
+                conn = await itgs.conn()
+                cursor = conn.cursor()
                 await cursor.execute(
-                    "INSERT INTO migrations (name, run_at) VALUES (?, ?)",
-                    (migration, time.time()),
+                    "CREATE TABLE IF NOT EXISTS migrations ("
+                    "  id INTEGER PRIMARY KEY,"
+                    "  name TEXT UNIQUE NOT NULL,"
+                    "  run_at REAL NOT NULL"
+                    ")"
                 )
-                await slack.send_ops_message(f"ran migration `{migration}`")
-            print("all done")
-        except Exception as e:
-            await handle_error(e)
-        finally:
-            await redis.delete("backend:migrations-lock")
+
+                slack = await itgs.slack()
+                migrations_to_run: List[str] = []
+                for path in os.scandir(os.path.join("migrations", "runners")):
+                    if path.is_file() and path.name.endswith(".py"):
+                        response = await cursor.execute(
+                            "SELECT 1 FROM migrations WHERE name = ?", (path.name,)
+                        )
+                        if response.rowcount is None or response.rowcount == 0:
+                            migrations_to_run.append(path.name)
+
+                migrations_to_run.sort()
+                for migration in migrations_to_run:
+                    mod_path = "migrations.runners." + migration[:-3]
+                    print(f"{mod_path=}")
+                    mod = importlib.import_module(mod_path)
+                    await mod.up(itgs)
+                    await cursor.execute(
+                        "INSERT INTO migrations (name, run_at) VALUES (?, ?)",
+                        (migration, time.time()),
+                    )
+                    await slack.send_ops_message(f"ran migration `{migration}`")
+                print("all done")
+            except Exception as e:
+                await handle_error(e)
+            finally:
+                await redis.delete("backend:migrations-lock")
+    finally:
+        print("migrations shutdown")
 
 
 def main_sync():

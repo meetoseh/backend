@@ -135,7 +135,7 @@ async def finish_checkout_stripe(
                 api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
             )
         except Exception as exc:
-            asyncio.ensure_future(handle_error(exc))
+            await handle_error(exc)
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="stripe_error",
@@ -177,7 +177,7 @@ async def finish_checkout_stripe(
                 stripe_checkout_session_id=stripe_checkout_session_id,
             )
         except Exception as exc:
-            asyncio.ensure_future(handle_error(exc))
+            await handle_error(exc)
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="revenue_cat_error",

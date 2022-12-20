@@ -44,13 +44,13 @@ INSTRUCTOR_SORT_OPTIONS = [
     SortItem[Literal["uid"], str],
     SortItem[Literal["name"], str],
     SortItem[Literal["created_at"], float],
-    SortItem[Literal["deleted_at"], Optional[float]],
+    SortItem[Literal["deleted_at"], float],
 ]
 InstructorSortOption = Union[
     SortItemModel[Literal["uid"], str],
     SortItemModel[Literal["name"], str],
     SortItemModel[Literal["created_at"], float],
-    SortItemModel[Literal["deleted_at"], Optional[float]],
+    SortItemModel[Literal["deleted_at"], float],
 ]
 
 

@@ -43,16 +43,16 @@ async def remove_journey_from_daily_event(
 
         response = await cursor.execute(
             """
-            DELETE FROM daily_events_journeys
+            DELETE FROM daily_event_journeys
             WHERE
                 EXISTS (
                     SELECT 1 FROM daily_events
-                    WHERE daily_events.id = daily_events_journeys.daily_event_id
+                    WHERE daily_events.id = daily_event_journeys.daily_event_id
                       AND daily_events.uid = ?
                 )
                 AND EXISTS (
                     SELECT 1 FROM journeys
-                    WHERE journeys.id = daily_events_journeys.journey_id
+                    WHERE journeys.id = daily_event_journeys.journey_id
                       AND journeys.uid = ?
                 )
             """,

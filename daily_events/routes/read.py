@@ -37,13 +37,13 @@ class DailyEvent(BaseModel):
 
 DAILY_EVENT_SORT_OPTIONS = [
     SortItem[Literal["uid"], str],
-    SortItem[Literal["available_at"], Optional[float]],
+    SortItem[Literal["available_at"], float],
     SortItem[Literal["created_at"], float],
     SortItem[Literal["number_of_journeys"], int],
 ]
 DailyEventSortOption = Union[
     SortItemModel[Literal["uid"], str],
-    SortItemModel[Literal["available_at"], Optional[float]],
+    SortItemModel[Literal["available_at"], float],
     SortItemModel[Literal["created_at"], float],
     SortItemModel[Literal["number_of_journeys"], int],
 ]
@@ -171,7 +171,8 @@ async def raw_read_daily_events(
             .select(
                 daily_event_journeys.daily_event_id, Count(Star()).as_("num_journeys")
             )
-            .groupby(daily_event_journeys.daily_event_id)
+            .groupby(daily_event_journeys.daily_event_id),
+            daily_event_num_journeys.get_table_name(),
         )
         .from_(daily_events)
         .select(

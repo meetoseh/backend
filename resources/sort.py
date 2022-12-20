@@ -144,8 +144,27 @@ def cleanup_sort(
         raise UnknownSortItemError(unknown_keys)
 
     if any(s.__valuet__() != valid_items[s.key] for s in sort):
+        incorrectly_optional_keys = [
+            s for s in sort if Optional[s.__valuet__()] == valid_items[s.key]
+        ]
+
+        if incorrectly_optional_keys:
+            raise InvalidSortError(
+                f"Sort keys {[s.key for s in incorrectly_optional_keys]} are incorrectly marked "
+                "optional; they will be marked optional for you. "
+                f'Look for SortItem[Literal["{incorrectly_optional_keys[0].key}"], Optional[{incorrectly_optional_keys[0].__valuet__().__name__}]], '
+                f'which should be SortItem[Literal["{incorrectly_optional_keys[0].key}"], {incorrectly_optional_keys[0].__valuet__().__name__}]'
+            )
+
         mismatched_keys = [s.key for s in sort if s.__valuet__() != valid_items[s.key]]
-        raise InvalidSortError(f"Sort keys {mismatched_keys} have mismatched types")
+        mismatched_keys_explanations = "; ".join(
+            f"{s.key=}: {s.__valuet__()=} != {valid_items[s.key]=}"
+            for s in sort
+            if s.__valuet__() != valid_items[s.key]
+        )
+        raise InvalidSortError(
+            f"Sort keys {mismatched_keys} have mismatched types: {mismatched_keys_explanations}"
+        )
 
     cleaned_sort = list(sort)
 

@@ -59,13 +59,13 @@ JOURNEY_SORT_OPTIONS = [
     SortItem[Literal["uid"], str],
     SortItem[Literal["title"], str],
     SortItem[Literal["created_at"], float],
-    SortItem[Literal["deleted_at"], Optional[float]],
+    SortItem[Literal["deleted_at"], float],
 ]
 JourneySortOption = Union[
     SortItemModel[Literal["uid"], str],
     SortItemModel[Literal["title"], str],
     SortItemModel[Literal["created_at"], float],
-    SortItemModel[Literal["deleted_at"], Optional[float]],
+    SortItemModel[Literal["deleted_at"], float],
 ]
 
 

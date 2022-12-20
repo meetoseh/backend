@@ -362,7 +362,11 @@ class PerpetualPubSub:
                         send_pipe.send_bytes(b"closed")
                         logger.debug(f"sent closed to {uid}")
                     except BrokenPipeError:
-                        logger.debug(f"could not send closed to {uid}")
+                        logger.debug(f"could not send closed to {uid} (broken pipe)")
+                    except OSError:
+                        logger.debug(
+                            f"could not send closed to {uid} (generic os error)"
+                        )
             raise
         finally:
             logger.info("PerpetualPubSub shutting down")

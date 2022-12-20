@@ -152,6 +152,7 @@ async def add_journey_to_daily_event(
                 args.journey_uid,
                 args.daily_event_uid,
                 args.journey_uid,
+                args.journey_uid,
             ),
         )
         assert len(response.results) == 1

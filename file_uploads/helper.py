@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from typing import List, Union
 from file_uploads.auth import create_jwt
 from itgs import Itgs
-from functools import cache
+from functools import lru_cache
 import itertools
 import secrets
 
@@ -165,7 +165,7 @@ async def start_upload(
     def get_qmarks(num_inserts: int) -> str:
         return ",".join([qmarks_1] * num_inserts)
 
-    @cache
+    @lru_cache(maxsize=None)
     def get_query(num_inserts: int) -> str:
         return (
             "INSERT INTO s3_file_upload_parts "

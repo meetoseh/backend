@@ -3,6 +3,7 @@ from fastapi.responses import Response
 from typing import Optional, Literal
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
+from daily_events.lib.read_one_external import evict_external_daily_event
 from itgs import Itgs
 
 
@@ -60,6 +61,7 @@ async def remove_journey_from_daily_event(
         )
 
         if response.rows_affected is not None and response.rows_affected > 0:
+            await evict_external_daily_event(itgs, uid=de_uid)
             return Response(status_code=204)
 
         response = await cursor.execute(

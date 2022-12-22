@@ -1,11 +1,12 @@
 import secrets
 import time
 from fastapi import APIRouter, Header
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
+from daily_events.lib.read_one_external import evict_external_daily_event
 from itgs import Itgs
 
 
@@ -101,6 +102,7 @@ async def add_journey_to_daily_event(
             (uid, created_at, args.daily_event_uid, args.journey_uid),
         )
         if response.rows_affected is not None and response.rows_affected > 0:
+            await evict_external_daily_event(itgs, uid=args.daily_event_uid)
             return Response(
                 content=AddJourneyResponse(
                     uid=uid,

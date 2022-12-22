@@ -1028,7 +1028,10 @@ async def set_cached_journey_meta(
     """Stores the cached journey meta information"""
     local_cache = await itgs.local_cache()
     local_cache.set(
-        f"journeys:{journey_uid}:meta", meta.json().encode("utf-8"), expire=60 * 60 * 24
+        f"journeys:{journey_uid}:meta",
+        meta.json().encode("utf-8"),
+        expire=60 * 60 * 24,
+        tag="collab",
     )
 
 

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error, handle_error
-from itgs import Itgs
+from itgs import Itgs, our_diskcache
 import perpetual_pub_sub
 import secrets
 import updater
@@ -22,6 +22,9 @@ import daily_events.router
 import admin.router
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.events.helper
+import daily_events.lib.has_started_one
+import daily_events.lib.read_one_external
+import daily_events.routes.now
 import urllib.parse
 import asyncio
 
@@ -41,6 +44,13 @@ if (
 if perpetual_pub_sub.instance is None:
     perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
 
+# Collaboratively locally cached items are items which we cache on this
+# instance, but our cache time relies on other instances informing us
+# about updates. If we were just restarted, we may have missed updates,
+# and hence need to evict our cache and pull from source next time.
+while our_diskcache.evict(tag="collab") > 0:
+    ...
+
 background_tasks = set()
 background_tasks.add(asyncio.create_task(updater.listen_forever()))
 background_tasks.add(asyncio.create_task(migrations.main.main()))
@@ -55,6 +65,13 @@ background_tasks.add(
 background_tasks.add(
     asyncio.create_task(journeys.events.helper.purge_journey_meta_loop())
 )
+background_tasks.add(
+    asyncio.create_task(daily_events.lib.has_started_one.purge_loop())
+)
+background_tasks.add(
+    asyncio.create_task(daily_events.lib.read_one_external.cache_push_loop())
+)
+background_tasks.add(asyncio.create_task(daily_events.routes.now.purge_loop()))
 app = FastAPI(
     title="oseh",
     description="hypersocial daily mindfulness",

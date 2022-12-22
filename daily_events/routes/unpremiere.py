@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, Literal
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
+from daily_events.routes.now import evict_current_daily_event
 from itgs import Itgs
 
 
@@ -56,6 +57,8 @@ async def unpremiere_daily_event(uid: str, authorization: Optional[str] = Header
         )
 
         if response.rows_affected is not None and response.rows_affected > 0:
+            # this is overly aggressive but should be fine
+            await evict_current_daily_event(itgs)
             return Response(status_code=204)
 
         response = await cursor.execute(

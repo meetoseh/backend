@@ -15,7 +15,7 @@ import revenue_cat
 
 
 our_diskcache: diskcache.Cache = diskcache.Cache(
-    "tmp/diskcache", eviction_policy="least-recently-stored"
+    "tmp/diskcache", eviction_policy="least-recently-stored", tag_index=True
 )
 """diskcache does a particularly good job ensuring it's safe to reuse a single Cache object
 without having to worry, and doing so offers significant performance gains. In particular,

@@ -78,7 +78,19 @@ the keys that we use in redis
 
 -   `daily_events:jwt:revoked:{jti}` goes to the string '1' if the given jti has been
     revoked. This is used [here](../../daily_events/auth.py). These keys expire when
-    the jwt expires
+    the jwt expires, plus a little time to account for clock drift
+
+-   `daily_events:external:cache_lock:{uid}:{level}` goes to the string '1' if the
+    daily event with the given uid at the level indicated is currently being filled
+    in by one of the instances. This is used
+    [here](../../daily_events/lib/read_one_external.py) and has a similar purpose
+    to load shedding, where we don't want a cache eviction to suddenly cause a
+    huge load spike downstream of the cache, which would then cause downstream
+    errors that prevent the cache from being filled in, causing more errors, etc.
+
+-   `daily_events:has_started_one:{daily_event_uid}:{user_sub}` goes to the string '1' if the
+    user has started a journey within the daily event with the given uid, and goes to '0' or
+    nothing if they have not. This is used [here](../../daily_events/lib/has_started_one.py)
 
 ### Stats namespace
 
@@ -292,3 +304,63 @@ rather than external functionality.
     response to a request. The body of the message should be interpreted in bytes, where the
     first 4 bytes are the unix date number as a big-endian 32-bit unsigned integer, and
     the remainder is the utf-8 encoded response.
+
+-   `ps:daily_events:external:push_cache` used to purge / fill backend instances local cache
+    for the local cache key `daily_events:external:{uid}:{level}`. Messages start with a 4
+    byte unsigned big-endian integer representing the size of the first messge part, followed
+    by that many bytes for the json-serialization of the following:
+
+    ```py
+    class DailyEventsExternalPushCachePubSubMessage:
+        uid: str
+        min_checked_at: float
+        level: Optional[str]
+    ```
+
+    if `level` is not `None`, then the message continues with a 4 byte unsigned
+    integer representing the `jwt_insert_index`, a 4 byte unsigned integer representing
+    the length of `serialized_without_jwt`, and then `serialized_without_jwt` itself.
+
+    These fields mean:
+
+    -   `uid`: The uid of the daily event which may have been updated
+    -   `min_checked_at`: Any cached representation made before this should be considered invalid,
+        and if a cached representation is provided, this is the time it was made.
+    -   `level`: If None, this is a purge message, i.e., it typically comes from an admin
+        endpoint which modified a relevant field. If this is not None, this is another instance
+        which just had to fill their local cache, and this is the level of the cache which was
+        filled. The level refers to the level of the JWT that can be inserted into the serialized
+        representation provided, as a comma-separated list in ascending order.
+    -   `jwt_insert_index`: The index of the closing comma for `jwt: ""` in `serialized_without_jwt`.
+        This is used to avoid a deserialization/serialization step when using the cached reperesentation
+        to generate a response, since every response has a different jwt
+    -   `serialized_without_jwt`: The response to return, where the jwt is a blank string, for a
+        request for this uid at this level.
+
+    This is primarily used [here](../../daily_events/lib/read_one_external.py)
+
+-   `ps:daily_events:now:purge_cache`: a message is sent to this channel whenever there was a change
+    that may have modified the current daily event besides time, or when the time when the next
+    daily event will start changes. The body of the message is formatted as if by the trivial
+    serialization of the following:
+
+    ```py
+    class DailyEventsNowPurgeCachePubSubMessage:
+        min_checked_at: float
+    ```
+
+    This is primarily used [here](../../daily_events/routes/now.py)
+
+-   `ps:daily_events:has_started_one`: a message is sent to this channel whenever either a user
+    without a pro entitlement starts a journey within a daily event, or another instance went
+    to check and it was found they had not yet, and it wasn't in redis. The body of the message
+    is formatted as if by the trivial serialization of the following:
+
+    ```py
+    class DailyEventsHasStartedOnePubSubMessage:
+        daily_event_uid: str
+        user_sub: str
+        started_one: bool
+    ```
+
+    This is primarily used [here](../../daily_events/lib/has_started_one.py)

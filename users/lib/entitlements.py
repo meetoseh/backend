@@ -230,6 +230,7 @@ async def set_entitlements_to_local(
         f"entitlements:{user_sub}",
         entitlements.json().encode("utf-8"),
         expire=60 * 60 * 24,
+        tag="collab",
     )
 
 

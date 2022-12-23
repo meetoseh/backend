@@ -311,7 +311,9 @@ def convert_external_daily_event_to_cache_format(event: ExternalDailyEvent) -> b
     for idx, journey in enumerate(event.journeys):
         if idx != 0:
             result.write(b",")
-        result.write(b'{"category":{"external_name":')
+        result.write(b'{"uid":"')
+        result.write(journey.uid.encode("ascii"))
+        result.write(b'","category":{"external_name":')
         result.write(json.dumps(journey.category.external_name).encode("utf-8"))
         result.write(b'},"title":')
         result.write(json.dumps(journey.title).encode("utf-8"))
@@ -477,7 +479,8 @@ async def read_one_external_from_db(
             journeys.title,
             instructors.name,
             journeys.description,
-            image_files.uid
+            image_files.uid,
+            journeys.uid
         FROM journeys
         JOIN journey_subcategories ON journey_subcategories.id = journeys.journey_subcategory_id
         JOIN image_files ON image_files.id = journeys.background_image_file_id
@@ -513,6 +516,7 @@ async def read_one_external_from_db(
                 access=ExternalDailyEventJourneyAccess(
                     start="start_full" in level,
                 ),
+                uid=row[5],
             )
             for row in response.results
         ],

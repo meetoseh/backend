@@ -45,6 +45,10 @@ class ExternalDailyEventJourney(BaseModel):
     reasonably concisely (result.category.icon) without breaking clients.
     """
 
+    uid: str = Field(
+        description="The primary stable external identifier for this journey"
+    )
+
     category: ExternalDailyEventJourneyCategory = Field(
         description="How the journey is categorized"
     )

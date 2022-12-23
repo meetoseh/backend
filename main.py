@@ -41,8 +41,6 @@ if (
     asyncio.run(handle_error(exc))
     raise exc
 
-if perpetual_pub_sub.instance is None:
-    perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
 
 # Collaboratively locally cached items are items which we cache on this
 # instance, but our cache time relies on other instances informing us
@@ -51,27 +49,6 @@ if perpetual_pub_sub.instance is None:
 while our_diskcache.evict(tag="collab") > 0:
     ...
 
-background_tasks = set()
-background_tasks.add(asyncio.create_task(updater.listen_forever()))
-background_tasks.add(asyncio.create_task(migrations.main.main()))
-background_tasks.add(
-    asyncio.create_task(users.lib.entitlements.purge_cache_loop_async())
-)
-background_tasks.add(
-    asyncio.create_task(
-        admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
-    )
-)
-background_tasks.add(
-    asyncio.create_task(journeys.events.helper.purge_journey_meta_loop())
-)
-background_tasks.add(
-    asyncio.create_task(daily_events.lib.has_started_one.purge_loop())
-)
-background_tasks.add(
-    asyncio.create_task(daily_events.lib.read_one_external.cache_push_loop())
-)
-background_tasks.add(asyncio.create_task(daily_events.routes.now.purge_loop()))
 app = FastAPI(
     title="oseh",
     description="hypersocial daily mindfulness",
@@ -113,6 +90,46 @@ app.include_router(
 )
 app.include_router(admin.router.router, prefix="/api/1/admin", tags=["admin"])
 app.router.redirect_slashes = False
+
+
+background_tasks = set()
+
+print("initializing pps")
+if perpetual_pub_sub.instance is None:
+    perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
+    print("initializing pps done")
+
+
+@app.on_event("startup")
+def register_background_tasks():
+
+    print("registering background tasks")
+    background_tasks.add(asyncio.create_task(updater.listen_forever()))
+    background_tasks.add(asyncio.create_task(migrations.main.main()))
+    background_tasks.add(
+        asyncio.create_task(users.lib.entitlements.purge_cache_loop_async())
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(journeys.events.helper.purge_journey_meta_loop())
+    )
+    background_tasks.add(
+        asyncio.create_task(daily_events.lib.has_started_one.purge_loop())
+    )
+    background_tasks.add(
+        asyncio.create_task(daily_events.lib.read_one_external.cache_push_loop())
+    )
+    background_tasks.add(asyncio.create_task(daily_events.routes.now.purge_loop()))
+
+
+@app.on_event("shutdown")
+def cleanly_shutdown_perpetual_pub_sub():
+    perpetual_pub_sub.instance.exit_event.set()
+    perpetual_pub_sub.instance.exitted_event.wait()
 
 
 @app.get("/api/1")

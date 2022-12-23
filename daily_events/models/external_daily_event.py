@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import List
 
+from image_files.models import ImageFileRef
+
 
 class ExternalDailyEventJourneyCategory(BaseModel):
     """A category as represented for the external-facing daily-events now endpoint"""
@@ -55,6 +57,10 @@ class ExternalDailyEventJourney(BaseModel):
 
     description: ExternalDailyEventJourneyDescription = Field(
         description="The description of the journey"
+    )
+
+    background_image: ImageFileRef = Field(
+        description="The background image for the journey"
     )
 
     access: ExternalDailyEventJourneyAccess = Field(

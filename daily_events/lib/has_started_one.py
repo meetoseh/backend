@@ -38,12 +38,12 @@ async def has_started_one(itgs: Itgs, *, user_sub: str, daily_event_uid: str) ->
 
     async with redis.pipeline() as pipe:
         pipe.multi()
-        await pipe.set(cache_key, "0", ex=60 * 60 * 24 * 2, nx=True)
+        await pipe.set(cache_key, b"0", ex=60 * 60 * 24 * 2, nx=True)
         await pipe.get(cache_key)
         did_set, cached = await pipe.execute()
 
     started_one = bool(int(str(cached, "ascii")))
-    local_cache.set(cache_key, str(int(started_one)), tag="collab")
+    local_cache.set(cache_key, bytes(str(int(started_one)), "ascii"), tag="collab")
     if did_set:
         # technically this can still race, wcyd, worst case occassionally a user
         # gets an extra journey
@@ -68,7 +68,10 @@ async def on_started_one(itgs: Itgs, *, user_sub: str, daily_event_uid: str) -> 
             started a journey within
     """
     redis = await itgs.redis()
-    await redis.set(f"daily_events:has_started_one:{daily_event_uid}:{user_sub}", "1")
+    await redis.set(
+        f"daily_events:has_started_one:{daily_event_uid}:{user_sub}".encode("utf-8"),
+        b"1",
+    )
 
     message = DailyEventsHasStartedOnePubSubMessage(
         daily_event_uid=daily_event_uid, user_sub=user_sub, started_one=True
@@ -94,8 +97,10 @@ async def purge_loop() -> NoReturn:
             async with Itgs() as itgs:
                 local_cache = await itgs.local_cache()
                 local_cache.set(
-                    f"daily_events:has_started_one:{message.daily_event_uid}:{message.user_sub}",
-                    str(int(message.started_one)),
+                    f"daily_events:has_started_one:{message.daily_event_uid}:{message.user_sub}".encode(
+                        "utf-8"
+                    ),
+                    bytes(str(int(message.started_one)), "ascii"),
                     tag="collab",
                 )
 

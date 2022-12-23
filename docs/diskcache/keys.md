@@ -189,16 +189,22 @@ the keys we store locally on backend instances via diskcache
     and expires once `unix_date` is in the past, since the admin dashboard only shows the
     current version of this data.
 
--   `daily_events:external:{uid}:{level}` starts with 4 bytes representing an unsigned int in
-    big-endian format which represent the jwt_insert_index. The remainder is the serialized
-    representation of an [ExternalDailyEvent](../../daily_events/models/external_daily_event.py),
-    where the jwt is set to "". This is used [here](../../daily_events/lib/read_one_external.py).
+-   `daily_events:external:{uid}:{level}` is formatted as repeated blocks of
+    (len, type, value) where len is 4 bytes representing an unsigned int in
+    big-endian format for the length of the value, type is a single byte acting
+    as an enum, and value is the value of the field. The types are:
+
+    -   `1`: part of the serialized daily event
+    -   `2`: a marker to indicate that the daily event jwt should be inserted here. the length
+        is always 0
+    -   `3`: a marker to indicate that an image file jwt should be inserted here. The value is
+        the uid of the image file.
 
     The level is the level that the injected JWT should be, formatted as a comma-separated list
     in ascending alphabetical order. This is required since we elaborate on the access levels
     in the serialized representation so it is more easily consumable by the client.
 
-    Note that this format allows us to inject the JWT without a deserialize/serialize round trip,
+    Note that this format allows us to inject the JWTs without a deserialize/serialize round trip,
     which can be a significant performance improvement.
 
 -   `daily_events:current` goes to a string representing the uid of the current daily event.

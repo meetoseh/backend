@@ -38,7 +38,7 @@ async def get_current_daily_event(authorization: Optional[str] = Header(None)):
 
     Note that you can call this endpoint multiple times before consuming earlier
     JWTs, but in that case, you may have fewer permissions available than indicated
-    by both the response and the JWT. For example, if you call this two get two jwt's
+    by both the response and the JWT. For example, if you call this twice and get two jwt's
     both with permission to start a random journey, and you consume the second one,
     the first may no longer work. Hence, these JWTs in particular should be thought of
     as an implementation detail more than reducing network traffic.

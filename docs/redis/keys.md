@@ -317,25 +317,8 @@ rather than external functionality.
         level: Optional[str]
     ```
 
-    if `level` is not `None`, then the message continues with a 4 byte unsigned
-    integer representing the `jwt_insert_index`, a 4 byte unsigned integer representing
-    the length of `serialized_without_jwt`, and then `serialized_without_jwt` itself.
-
-    These fields mean:
-
-    -   `uid`: The uid of the daily event which may have been updated
-    -   `min_checked_at`: Any cached representation made before this should be considered invalid,
-        and if a cached representation is provided, this is the time it was made.
-    -   `level`: If None, this is a purge message, i.e., it typically comes from an admin
-        endpoint which modified a relevant field. If this is not None, this is another instance
-        which just had to fill their local cache, and this is the level of the cache which was
-        filled. The level refers to the level of the JWT that can be inserted into the serialized
-        representation provided, as a comma-separated list in ascending order.
-    -   `jwt_insert_index`: The index of the closing comma for `jwt: ""` in `serialized_without_jwt`.
-        This is used to avoid a deserialization/serialization step when using the cached reperesentation
-        to generate a response, since every response has a different jwt
-    -   `serialized_without_jwt`: The response to return, where the jwt is a blank string, for a
-        request for this uid at this level.
+    if `level` is not `None`, then the message continues in the exact format of
+    the diskcached key `daily_events:external:{uid}:{level}`
 
     This is primarily used [here](../../daily_events/lib/read_one_external.py)
 

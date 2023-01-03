@@ -12,7 +12,7 @@ async def handle_request_error(request: Request, exc: Exception) -> Response:
 
 async def handle_error(exc: Exception) -> None:
     """Handles a generic request, potentially outside of the request context"""
-    traceback.print_exception(type(exc), value=exc, tb=exc.__traceback__)
+    traceback.print_exception(type(exc), exc, exc.__traceback__)
 
     message = "\n".join(
         traceback.format_exception(type(exc), exc, exc.__traceback__)[-5:]

@@ -259,10 +259,9 @@ def stats_func(func: TCallable) -> TCallable:
     will cache the result in memory for a short duration.
     """
     cache_time_seconds: float = 1
-    loop = asyncio.get_running_loop()
 
     def handler_for_fixed_uid_bin():
-        lock = asyncio.Lock(loop=loop)
+        lock = asyncio.Lock()
         cached_value: Optional[Dict[str, Any]] = None
         cached_time: Optional[float] = None
         clear_future: Optional[asyncio.Future] = None

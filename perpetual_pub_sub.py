@@ -127,9 +127,8 @@ class PerpetualPubSub:
         # This variable can be interpreted as "subcriptions which we recently removed because
         # we detected the pipe was broken"
 
-        loop = asyncio.get_running_loop()
-        exit_event_async = asyncio.Event(loop=loop)
-        exit_event_thread = threading.Thread(target=mp_event_to_asyncio_event, args=(self.exit_event, exit_event_async))
+        exit_event_async = asyncio.Event()
+        exit_event_thread = threading.Thread(target=mp_event_to_asyncio_event, args=(asyncio.get_running_loop(), self.exit_event, exit_event_async))
         exit_event_thread.start()
 
         def shutdown_cleanly():
@@ -405,10 +404,14 @@ class PerpetualPubSub:
             logger.info("PerpetualPubSub shutting down")
 
 
-def mp_event_to_asyncio_event(loop: asyncio.AbstractEventLoop, mp_event: multiprocessing.synchronize.Event, aio_event: asyncio.Event) -> Never:
+def mp_event_to_asyncio_event(
+    loop: asyncio.AbstractEventLoop, 
+    mp_event: multiprocessing.synchronize.Event, 
+    aio_event: asyncio.Event
+) -> Never:
     """A thread target for setting an asyncio event when a multiprocessing event is set."""
     mp_event.wait()
-    loop.run_soon_threadsafe(aio_event.set)
+    loop.call_soon_threadsafe(aio_event.set)
 
 class PPSSubscription:
     """A convenient interface to a subscription to a perpetual pub sub connection. This

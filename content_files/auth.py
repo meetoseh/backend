@@ -133,7 +133,7 @@ async def create_jwt(itgs: Itgs, content_file_uid: str, duration: int = 1800) ->
             "sub": content_file_uid,
             "iss": "oseh",
             "aud": "oseh-content",
-            "iat": now,
+            "iat": now - 1,
             "exp": now + duration,
         },
         os.environ["OSEH_CONTENT_FILE_JWT_SECRET"],

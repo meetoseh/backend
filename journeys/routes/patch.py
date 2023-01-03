@@ -450,7 +450,9 @@ async def patch_journey(
             """,
             (uid,),
         )
-        daily_event_uid: Optional[str] = response.results[0][0] if response.results else None
+        daily_event_uid: Optional[str] = (
+            response.results[0][0] if response.results else None
+        )
         if daily_event_uid:
             await evict_external_daily_event(itgs, uid=daily_event_uid)
 

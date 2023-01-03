@@ -133,7 +133,7 @@ async def create_jwt(itgs: Itgs, file_upload_uid: str, duration: int = 1800) -> 
             "sub": file_upload_uid,
             "iss": "oseh",
             "aud": "oseh-file-upload",
-            "iat": now,
+            "iat": now - 1,
             "exp": now + duration,
         },
         os.environ["OSEH_FILE_UPLOAD_JWT_SECRET"],

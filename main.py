@@ -204,7 +204,7 @@ async def dev_login(sub: str):
     development mode"""
     if os.environ.get("ENVIRONMENT") != "dev":
         return Response(status_code=403)
-    now = time.time()
+    now = int(time.time())
     encoded_jwt = jwt.encode(
         {
             "sub": sub,
@@ -221,7 +221,7 @@ async def dev_login(sub: str):
                 if sub == "timothy"
                 else f"https://avatars.dicebear.com/api/bottts/{urllib.parse.quote(sub)}.svg"
             ),
-            "iat": now,
+            "iat": now - 1,
             "token_use": "id",
         },
         os.environ["DEV_SECRET_KEY"],

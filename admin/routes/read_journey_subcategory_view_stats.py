@@ -172,7 +172,7 @@ async def listen_available_responses_forever() -> NoReturn:
                         itgs, unix_date, encoded
                     )
     finally:
-        print('journey subcategory view stats loop exiting')
+        print("journey subcategory view stats loop exiting")
 
 
 async def get_journey_subcategory_view_stats_from_source(

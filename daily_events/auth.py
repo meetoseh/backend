@@ -194,7 +194,7 @@ async def create_jwt(
             "oseh:level": ",".join(sorted(level)),
             "iss": "oseh",
             "aud": "oseh-daily-events",
-            "iat": now,
+            "iat": now - 1,
             "exp": now + duration,
             "jti": secrets.token_urlsafe(16),
         },

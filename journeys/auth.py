@@ -133,7 +133,7 @@ async def create_jwt(itgs: Itgs, journey_uid: str, duration: int = 1800) -> str:
             "sub": journey_uid,
             "iss": "oseh",
             "aud": "oseh-journey",
-            "iat": now,
+            "iat": now - 1,
             "exp": now + duration,
         },
         os.environ["OSEH_JOURNEY_JWT_SECRET"],

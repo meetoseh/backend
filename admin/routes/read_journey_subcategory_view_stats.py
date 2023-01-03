@@ -104,7 +104,9 @@ async def get_journey_subcategory_view_stats_from_local_cache(
     a file-like object depending on its size and hardware factors.
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(f"journey_subcategory_view_stats:{unix_date}", read=True)
+    return local_cache.get(
+        f"journey_subcategory_view_stats:{unix_date}".encode("utf-8"), read=True
+    )
 
 
 async def set_journey_subcategory_view_stats_in_local_cache(
@@ -129,7 +131,7 @@ async def set_journey_subcategory_view_stats_in_local_cache(
 
     local_cache = await itgs.local_cache()
     local_cache.set(
-        f"journey_subcategory_view_stats:{unix_date}",
+        f"journey_subcategory_view_stats:{unix_date}".encode("ascii"),
         encoded,
         expire=tomorrow_midnight - now,
     )

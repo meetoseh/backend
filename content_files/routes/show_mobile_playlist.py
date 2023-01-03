@@ -209,7 +209,7 @@ async def set_cached_mobile_playlist(
 
     is_bytesio_like = not isinstance(playlist, (bytes, bytearray))
     local_cache.set(
-        f"content_files:playlists:mobile:{uid}",
+        f"content_files:playlists:mobile:{uid}".encode("utf-8"),
         playlist,
         expire=900,
         read=is_bytesio_like,

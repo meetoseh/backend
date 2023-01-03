@@ -142,7 +142,7 @@ async def get_image_playlist(
         if not presign:
             local_cache = await itgs.local_cache()
             result: Optional[Union[io.BytesIO, bytes]] = local_cache.get(
-                f"image_files:playlist:{uid}", read=True
+                f"image_files:playlist:{uid}".encode("utf-8"), read=True
             )
             if result is not None:
                 if isinstance(result, (bytes, bytearray)):
@@ -232,7 +232,9 @@ async def get_image_playlist(
 
         content_bytes = bytes(result.json(), "utf-8")
         local_cache = await itgs.local_cache()
-        local_cache.set(f"image_files:playlist:{uid}", content_bytes, expire=60)
+        local_cache.set(
+            f"image_files:playlist:{uid}".encode("utf-8"), content_bytes, expire=60
+        )
         return Response(
             content=content_bytes,
             status_code=200,

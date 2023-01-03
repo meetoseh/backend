@@ -40,7 +40,7 @@ async def get_cached_cfep_metadata(
     """Gets the cached metadata for the content file export with the given
     uid, if it's in the cache.
     """
-    raw_bytes = local_cache.get(f"content_files:exports:parts:{uid}")
+    raw_bytes = local_cache.get(f"content_files:exports:parts:{uid}".encode("utf-8"))
     if raw_bytes is not None:
         return CachedContentFileExportPartMetadata(**json.loads(raw_bytes))
 
@@ -58,7 +58,7 @@ async def set_cached_cfep_metadata(
     the cache entry should live in seconds.
     """
     local_cache.set(
-        f"content_files:exports:parts:{uid}",
+        f"content_files:exports:parts:{uid}".encode("utf-8"),
         bytes(json.dumps(meta.__dict__), "utf-8"),
         expire=exp,
     )
@@ -167,7 +167,10 @@ async def serve_cfep(itgs: Itgs, meta: CachedContentFileExportPartMetadata) -> R
 
             with open(tmp_file, "rb") as f:
                 local_cache.set(
-                    f"s3_files:{meta.s3_file_uid}", f, read=True, expire=900
+                    f"s3_files:{meta.s3_file_uid}".encode("utf-8"),
+                    f,
+                    read=True,
+                    expire=900,
                 )
 
     resp = await serve_cfep_from_cache(local_cache, meta)
@@ -184,7 +187,7 @@ async def serve_cfep_from_cache(
     The response will be streamed if the file is sufficiently large.
     """
     cached_data: Optional[Union[io.BytesIO, bytes]] = local_cache.get(
-        f"s3_files:{meta.s3_file_uid}", read=True
+        f"s3_files:{meta.s3_file_uid}".encode("utf-8"), read=True
     )
     if cached_data is None:
         return None
@@ -313,7 +316,9 @@ async def get_cached_m3u(
     well formatted, presigning can be done effectively without loading the
     entire file into memory, or even parsing most of it.
     """
-    cached_data: Optional[Union[bytes, io.BytesIO]] = local_cache.get(key, read=True)
+    cached_data: Optional[Union[bytes, io.BytesIO]] = local_cache.get(
+        key.encode("utf-8"), read=True
+    )
     if cached_data is None:
         return None
 

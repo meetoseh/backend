@@ -215,3 +215,19 @@ the keys we store locally on backend instances via diskcache
 -   `daily_events:has_started_one:{daily_event_uid}:{user_sub}` goes to the string '1' if the
     user has started a journey within the daily event with the given uid, goes to '0' if they
     have not, and goes to nothing if we haven't checked yet.
+
+-   `journeys:external:{uid}` is formatted as repeated blocks of
+    (len, type, value) where len is 4 bytes representing an unsigned int in
+    big-endian format for the length of the value, type is a single byte acting
+    as an enum, and value is the value of the field. The types are:
+
+    -   `1`: part of the serialized journey
+    -   `2`: a marker to indicate that the session uid should be inserted here. no value.
+    -   `3`: a marker to indicate that the journey jwt should be inserted here. no value.
+    -   `4`: a marker to indicate that an image file jwt should be inserted here. The value is
+        the uid of the image file.
+    -   `5`: a marker to indicate that a content file jwt should be inserted here. The value is
+        the uid of the content file.
+
+    Note that this format allows us to inject the JWTs without a deserialize/serialize round trip,
+    which can be a significant performance improvement.

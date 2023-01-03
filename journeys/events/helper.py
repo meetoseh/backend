@@ -1015,7 +1015,9 @@ async def get_cached_journey_meta(
 ) -> Optional[CachedJourneyMeta]:
     """Gets the cached journey meta information, if it's already cached"""
     local_cache = await itgs.local_cache()
-    raw: Union[bytes, bytearray, None] = local_cache.get(f"journeys:{journey_uid}:meta")
+    raw: Union[bytes, bytearray, None] = local_cache.get(
+        f"journeys:{journey_uid}:meta".encode("utf-8")
+    )
     if raw is None:
         return None
 
@@ -1028,7 +1030,7 @@ async def set_cached_journey_meta(
     """Stores the cached journey meta information"""
     local_cache = await itgs.local_cache()
     local_cache.set(
-        f"journeys:{journey_uid}:meta",
+        f"journeys:{journey_uid}:meta".encode("utf-8"),
         meta.json().encode("utf-8"),
         expire=60 * 60 * 24,
         tag="collab",

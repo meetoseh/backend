@@ -34,7 +34,7 @@ import time
 import io
 
 
-ALL_LEVELS: List[str] = ("read,start_full", "read,start_random", "read,start_one")
+ALL_LEVELS: List[str] = ("read,start_full", "read,start_random", "read,start_none")
 """All the levels we actually use, so that we can evict all the caches when
 necessary
 """
@@ -194,7 +194,9 @@ async def get_locally_cached(
         *bytes: The serialized response in parts
     """
     cache = await itgs.local_cache()
-    result = cache.get(f"daily_events:external:{uid}:{level}", read=True)
+    result = cache.get(
+        f"daily_events:external:{uid}:{level}".encode("utf-8"), read=True
+    )
     if result is None:
         yield False
         return
@@ -348,7 +350,7 @@ def evict_locally_cached(cache: diskcache.Cache, *, uid: str, level: str) -> Non
     Args:
 
     """
-    cache.delete(f"daily_events:external:{uid}:{level}")
+    cache.delete(f"daily_events:external:{uid}:{level}".encode("utf-8"))
 
 
 async def evict_external_daily_event(itgs: Itgs, *, uid: str) -> None:
@@ -395,10 +397,12 @@ async def push_to_local_caches(itgs: Itgs, *, uid: str, level: str, raw: bytes) 
     )
 
     message_bytes = message.json().encode("utf-8")
-    pubsub_message = message_bytes + raw
+    pubsub_message = (
+        len(message_bytes).to_bytes(4, "big", signed=False) + message_bytes + raw
+    )
 
     redis = await itgs.redis()
-    await redis.publish(b"ps:daily_events:external:push_cache", bytes(pubsub_message))
+    await redis.publish(b"ps:daily_events:external:push_cache", pubsub_message)
 
 
 async def cache_push_loop() -> NoReturn:
@@ -406,8 +410,6 @@ async def cache_push_loop() -> NoReturn:
     Anything which modifies one of the cached fields will publish a message to
     `ps:daily_events:external:push_cache` to notify instances to purge their local
     cache.
-
-    Whenever we receive a messag
     """
     async with pps.PPSSubscription(
         pps.instance, "ps:daily_events:external:push_cache", "de_ext"

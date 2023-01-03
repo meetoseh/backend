@@ -83,7 +83,7 @@ async def get_new_users_from_local_cache(
             file-like object, or None if not available
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(f"new_users:{unix_date}", read=True)
+    return local_cache.get(f"new_users:{unix_date}".encode("utf-8"), read=True)
 
 
 async def set_new_users_in_local_cache(

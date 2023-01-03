@@ -201,3 +201,31 @@ async def create_jwt(
         os.environ["OSEH_DAILY_EVENT_JWT_SECRET"],
         algorithm="HS256",
     )
+
+
+async def revoke_auth(itgs: Itgs, *, result: SuccessfulAuthResult) -> None:
+    """Revokes the authorization returned from the given result, if it's possible
+    to do so, otherwise raises a ValueError.
+
+    Args:
+        itgs (Itgs): The integrations to use to connect to networked services
+        result (SuccessfulAuthResult): The result of a successful authentication
+
+    Raises:
+        ValueError: If the result could not be revoked
+    """
+    if (
+        result.claims is None
+        or "jti" not in result.claims
+        or "exp" not in result.claims
+    ):
+        raise ValueError("Cannot revoke this result")
+
+    time_until_expiration = result.claims["exp"] - int(time.time())
+
+    redis = await itgs.redis()
+    await redis.set(
+        f"daily_events:jwt:revoked:{result.claims['jti']}",
+        "1",
+        ex=time_until_expiration + 30,
+    )

@@ -136,7 +136,7 @@ async def get_cached_raw_web_playlist(
     Returns None if the value is not in the cache
     """
     local_cache = await itgs.local_cache()
-    raw_bytes = local_cache.get(f"content_files:playlists:web:{uid}")
+    raw_bytes = local_cache.get(f"content_files:playlists:web:{uid}".encode("utf-8"))
     if raw_bytes is None:
         return None
 
@@ -159,7 +159,7 @@ async def get_cached_raw_web_playlist_as_response(
     """
     local_cache = await itgs.local_cache()
     raw_result: Union[bytes, io.BytesIO] = local_cache.get(
-        f"content_files:playlists:web:{uid}", read=True
+        f"content_files:playlists:web:{uid}".encode("utf-8"), read=True
     )
 
     if isinstance(raw_result, (bytes, bytearray)):
@@ -188,7 +188,7 @@ async def set_cached_raw_web_playlist(
     """
     local_cache = await itgs.local_cache()
     local_cache.set(
-        f"content_files:playlists:web:{uid}",
+        f"content_files:playlists:web:{uid}".encode("utf-8"),
         bytes(response.json(), "utf-8"),
         expire=900,
     )

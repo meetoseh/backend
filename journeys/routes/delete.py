@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from daily_events.lib.read_one_external import evict_external_daily_event
+from journeys.lib.read_one_external import evict_external_journey
 from auth import auth_admin
 from itgs import Itgs
 
@@ -99,6 +100,7 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
             if daily_event_uid is not None:
                 await evict_external_daily_event(itgs, uid=daily_event_uid)
 
+            await evict_external_journey(itgs, uid=uid)
             return Response(
                 content=DeleteJourneyResponse(deleted_at=now).json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},

@@ -25,6 +25,7 @@ import journeys.events.helper
 import daily_events.lib.has_started_one
 import daily_events.lib.read_one_external
 import daily_events.routes.now
+import journeys.lib.read_one_external
 import urllib.parse
 import asyncio
 
@@ -124,6 +125,9 @@ def register_background_tasks():
         asyncio.create_task(daily_events.lib.read_one_external.cache_push_loop())
     )
     background_tasks.add(asyncio.create_task(daily_events.routes.now.purge_loop()))
+    background_tasks.add(
+        asyncio.create_task(journeys.lib.read_one_external.cache_push_loop())
+    )
 
 
 @app.on_event("shutdown")

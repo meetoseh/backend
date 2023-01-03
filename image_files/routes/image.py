@@ -125,7 +125,10 @@ async def serve_ife(itgs: Itgs, meta: CachedImageFileExportMetadata) -> Response
 
             with open(tmp_file, "rb") as f:
                 local_cache.set(
-                    f"s3_files:{meta['s3_file_uid']}", f, read=True, expire=900
+                    f"s3_files:{meta['s3_file_uid']}".encode("utf-8"),
+                    f,
+                    read=True,
+                    expire=900,
                 )
 
     resp = await serve_ife_from_cache(local_cache, meta)
@@ -137,7 +140,7 @@ async def serve_ife_from_cache(
     local_cache: diskcache.Cache, meta: CachedImageFileExportMetadata
 ) -> Optional[Response]:
     cached_data: Optional[Union[io.BytesIO, bytes]] = local_cache.get(
-        f"s3_files:{meta['s3_file_uid']}", read=True
+        f"s3_files:{meta['s3_file_uid']}".encode("utf-8"), read=True
     )
     if cached_data is None:
         return None
@@ -164,7 +167,9 @@ async def get_ife_metadata(
     This returns None if the metadata was not in the cache or the database
     """
     local_cache = await itgs.local_cache()
-    raw_bytes = local_cache.get(f"image_files:exports:{image_file_export_uid}")
+    raw_bytes = local_cache.get(
+        f"image_files:exports:{image_file_export_uid}".encode("utf-8")
+    )
     if raw_bytes is not None:
         return json.loads(raw_bytes)
 
@@ -200,7 +205,7 @@ async def get_ife_metadata(
     }
 
     local_cache.set(
-        f"image_files:exports:{image_file_export_uid}",
+        f"image_files:exports:{image_file_export_uid}".encode("utf-8"),
         bytes(json.dumps(result_dict), "utf-8"),
         expire=900,
     )

@@ -9,6 +9,7 @@ import content_files.auth as content_files_auth
 from image_files.models import ImageFileRef
 import image_files.auth as image_files_auth
 from instructors.routes.read import Instructor
+from journeys.lib.read_one_external import evict_external_journey
 from journeys.routes.create import Prompt, CreateJourneyResponse
 from journeys.subcategories.routes.read import JourneySubcategory
 from journeys.events.helper import purge_journey_meta
@@ -457,6 +458,7 @@ async def patch_journey(
             await evict_external_daily_event(itgs, uid=daily_event_uid)
 
         await purge_journey_meta(itgs, uid)
+        await evict_external_journey(itgs, uid=uid)
         return Response(
             content=PatchJourneyResponse(
                 uid=uid,

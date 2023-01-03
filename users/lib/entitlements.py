@@ -203,7 +203,7 @@ async def get_entitlements_from_local(
     """
     local_cache = await itgs.local_cache()
 
-    raw: Optional[bytes] = local_cache.get(f"entitlements:{user_sub}")
+    raw: Optional[bytes] = local_cache.get(f"entitlements:{user_sub}".encode("utf-8"))
     if raw is None:
         return None
 
@@ -227,7 +227,7 @@ async def set_entitlements_to_local(
     local_cache = await itgs.local_cache()
 
     local_cache.set(
-        f"entitlements:{user_sub}",
+        f"entitlements:{user_sub}".encode("utf-8"),
         entitlements.json().encode("utf-8"),
         expire=60 * 60 * 24,
         tag="collab",

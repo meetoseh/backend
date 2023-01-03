@@ -3,6 +3,8 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Literal, Optional
 from daily_events.lib.read_one_external import evict_external_daily_event
+from journeys.events.helper import purge_journey_meta
+from journeys.lib.read_one_external import evict_external_journey
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_admin
 from itgs import Itgs
@@ -87,6 +89,8 @@ async def undelete_journey(uid: str, authorization: Optional[str] = Header(None)
         if response.rows_affected is not None and response.rows_affected > 0:
             if daily_event_uid is not None:
                 await evict_external_daily_event(itgs, uid=daily_event_uid)
+            await evict_external_journey(itgs, uid=uid)
+            await purge_journey_meta(itgs, journey_uid=uid)
             return Response(status_code=200)
 
         return Response(

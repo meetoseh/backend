@@ -165,7 +165,7 @@ async def get_cached_m3u_vod_meta(itgs: Itgs, uid: str) -> Optional[M3UVodMetada
     if it exists, otherwise returns None.
     """
     local_cache = await itgs.local_cache()
-    raw = local_cache.get(f"content_files:vods:{uid}:meta")
+    raw = local_cache.get(f"content_files:vods:{uid}:meta".encode("utf-8"))
     if raw is None:
         return None
 
@@ -176,7 +176,7 @@ async def set_cached_m3u_vod_meta(itgs: Itgs, uid: str, meta: M3UVodMetadata) ->
     """Caches the m3u vod metadata for the content file export with the given uid"""
     local_cache = await itgs.local_cache()
     raw = bytes(json.dumps(meta.__dict__), "utf-8")
-    local_cache.set(f"content_files:vods:{uid}:meta", raw, expire=900)
+    local_cache.set(f"content_files:vods:{uid}:meta".encode("utf-8"), raw, expire=900)
 
 
 async def get_m3u_vod_meta_from_db(
@@ -255,7 +255,7 @@ async def set_cached_m3u_vod(
 
     is_bytesio_like = not isinstance(vod, (bytes, bytearray))
     local_cache.set(
-        f"content_files:vods:{uid}:m3u",
+        f"content_files:vods:{uid}:m3u".encode("utf-8"),
         vod,
         expire=900,
         read=is_bytesio_like,

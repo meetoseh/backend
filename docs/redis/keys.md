@@ -92,6 +92,14 @@ the keys that we use in redis
     user has started a journey within the daily event with the given uid, and goes to '0' or
     nothing if they have not. This is used [here](../../daily_events/lib/has_started_one.py)
 
+-   `journeys:external:cache_lock:{uid}` goes to the string '1' if the
+    daily event with the given uid at the level indicated is currently being filled
+    in by one of the instances. This is used
+    [here](../../journeys/lib/read_one_external.py) and has a similar purpose
+    to load shedding, where we don't want a cache eviction to suddenly cause a
+    huge load spike downstream of the cache, which would then cause downstream
+    errors that prevent the cache from being filled in, causing more errors, etc.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -347,3 +355,20 @@ rather than external functionality.
     ```
 
     This is primarily used [here](../../daily_events/lib/has_started_one.py)
+
+-   `ps:journeys:external:push_cache` used to purge / fill backend instances local cache
+    for the local cache key `journeys:external:{uid}`. Messages start with a 4
+    byte unsigned big-endian integer representing the size of the first messge part, followed
+    by that many bytes for the json-serialization of the following:
+
+    ```py
+    class JourneysExternalPushCachePubSubMessage:
+        uid: str
+        min_checked_at: float
+        have_updated: bool
+    ```
+
+    if `have_updated` is `True`, then the message continues in the exact format of
+    the diskcached key `journeys:external:{uid}`
+
+    This is primarily used [here](../../journeys/lib/read_one_external.py)

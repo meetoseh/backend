@@ -140,7 +140,9 @@ async def get_monthly_active_users_from_local_cache(
         Optional[Union[bytes, io.BytesIO]]: The chart, or None if it doesn't exist
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(f"monthly_active_users:{unix_date}:{labelled_by}", read=True)
+    return local_cache.get(
+        f"monthly_active_users:{unix_date}:{labelled_by}".encode("utf-8"), read=True
+    )
 
 
 async def set_monthly_active_users_in_local_cache(
@@ -177,7 +179,7 @@ async def set_monthly_active_users_in_local_cache(
 
     local_cache = await itgs.local_cache()
     local_cache.set(
-        f"monthly_active_users:{unix_date}:{labelled_by}",
+        f"monthly_active_users:{unix_date}:{labelled_by}".encode("utf-8"),
         chart,
         expire=tomorrow_midnight - now,
     )

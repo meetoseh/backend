@@ -284,7 +284,7 @@ async def auth_admin(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
         return result
 
     local_cache = await itgs.local_cache()
-    cache_key = f"auth:is_admin:{result.result.sub}"
+    cache_key = f"auth:is_admin:{result.result.sub}".encode("utf-8")
     cached_is_admin = local_cache.get(cache_key)
     if cached_is_admin == b"1":
         return result

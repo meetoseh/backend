@@ -131,7 +131,9 @@ async def get_retention_stats_from_local_cache(
     data and hardware factors.
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(f"retention_stats:{unix_date}:{period}", read=True)
+    return local_cache.get(
+        f"retention_stats:{unix_date}:{period}".encode("utf-8"), read=True
+    )
 
 
 async def set_retention_stats_in_local_cache(
@@ -160,7 +162,7 @@ async def set_retention_stats_in_local_cache(
 
     local_cache = await itgs.local_cache()
     local_cache.set(
-        f"retention_stats:{unix_date}:{period}",
+        f"retention_stats:{unix_date}:{period}".encode("utf-8"),
         data,
         expire=tomorrow_midnight_unix - now,
     )
@@ -238,7 +240,9 @@ async def get_retention_stats_from_source(
 
     async with redis.pipeline() as pipe:
         for retained_s in ("true", "false"):
-            await pipe.get(f"stats:retention:{period}:{retained_s}:earliest")
+            await pipe.get(
+                f"stats:retention:{period}:{retained_s}:earliest".encode("utf-8")
+            )
         data = await pipe.execute()
 
     earliest_retained_raw: Optional[bytes] = data[0]

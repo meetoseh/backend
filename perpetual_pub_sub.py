@@ -332,7 +332,9 @@ class PerpetualPubSub:
                                 if not subscriptions_by_channel:
                                     await asyncio.sleep(1)
                                     continue
-                                message_task = asyncio.create_task(pubsub.get_message())
+                                message_task = asyncio.create_task(
+                                    pubsub.get_message(timeout=1)
+                                )
 
                             await asyncio.wait(
                                 [message_task, exit_event_wait_task],

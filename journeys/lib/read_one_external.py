@@ -93,6 +93,7 @@ async def read_one_external(
                 )
             # fall down to assuming we got the lock
         except asyncio.TimeoutError as e:
+            received_data_task.cancel()
             await handle_error(
                 e,
                 extra_info=(

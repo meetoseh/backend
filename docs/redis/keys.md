@@ -100,6 +100,33 @@ the keys that we use in redis
     huge load spike downstream of the cache, which would then cause downstream
     errors that prevent the cache from being filled in, causing more errors, etc.
 
+-   `journeys:profile_pictures:{uid}:{journey_time}` goes to the trivial json
+    serialization of UserProfilePictures in
+
+    ```py
+    class ProfilePicturesItem:
+        user_sub: str
+        image_file_uid: str
+
+    class UserProfilePictures:
+        journey_uid: str
+        journey_time: int
+        fetched_at: float
+        profile_pictures: List[ProfilePicturesItem]
+    ```
+    
+    this is used [here](../../journeys/routes/profile_pictures.py) and has a
+    short expiration time (on the order of minutes). The journey time is
+    typically in integer multiples of 2 seconds.
+
+    This is the profile pictures to choose from prior to customization, since
+    user customization is not cached (as it's unlikely to be retrieved again).
+
+-   `journeys:profile_pictures:cache_lock:{uid}:{journey_time}` goes to the string
+    '1' if an instance is attempting to fill the cache for the corresponding profile
+    pictures, and goes to nothing if they are not. This acts similarly to load-shedding
+    to prevent a negative feedback loop filling the cache.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -358,7 +385,7 @@ rather than external functionality.
 
 -   `ps:journeys:external:push_cache` used to purge / fill backend instances local cache
     for the local cache key `journeys:external:{uid}`. Messages start with a 4
-    byte unsigned big-endian integer representing the size of the first messge part, followed
+    byte unsigned big-endian integer representing the size of the first message part, followed
     by that many bytes for the json-serialization of the following:
 
     ```py
@@ -372,3 +399,23 @@ rather than external functionality.
     the diskcached key `journeys:external:{uid}`
 
     This is primarily used [here](../../journeys/lib/read_one_external.py)
+
+-   `ps:journeys:profile_pictures:push_cache` used to purge / fill backend instances local
+    cache for the local cache key `journeys:profile_pictures:{uid}:{journey_time}`. Messages
+    start with a 4 byte unsigned big-endian integer representing the size of the first message
+    part, followed by that many bytes for the json-serialization of the following:
+
+    ```py
+    class JourneyProfilePicturesPushCachePubSubMessage:
+        uid: str
+        journey_time: int
+        min_checked_at: float
+        have_updated: bool
+    ```
+
+    if `have_updated` is `True`, the message continues in the exact format of 
+    `journeys:profile_pictures:{uid}:{journey_time}`. This is used
+    [here](../../journeys/routes/profile_pictures.py).
+
+    The redis cache should have already been updated (either deleted or replaced)
+    before a message is pushed to this channel.

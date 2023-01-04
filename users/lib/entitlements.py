@@ -442,7 +442,7 @@ async def publish_purge_message(
     """
     redis = await itgs.redis()
     await redis.publish(
-        "ps:entitlements:purge",
+        b"ps:entitlements:purge",
         EntitlementsPurgePubSubMessage(user_sub=user_sub, min_checked_at=min_checked_at)
         .json()
         .encode("utf-8"),

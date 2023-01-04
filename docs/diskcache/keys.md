@@ -231,3 +231,25 @@ the keys we store locally on backend instances via diskcache
 
     Note that this format allows us to inject the JWTs without a deserialize/serialize round trip,
     which can be a significant performance improvement.
+    
+-   `journeys:profile_pictures:{uid}:{journey_time}` goes to the trivial json
+    serialization of UserProfilePictures in
+
+    ```py
+    class ProfilePicturesItem:
+        user_sub: str
+        image_file_uid: str
+
+    class UserProfilePictures:
+        journey_uid: str
+        journey_time: int
+        fetched_at: float
+        profile_pictures: List[ProfilePicturesItem]
+    ```
+    
+    this is used [here](../../journeys/routes/profile_pictures.py) and has a
+    short expiration time (on the order of minutes). The journey time is
+    typically in integer multiples of 2 seconds.
+
+    This is the profile pictures to choose from prior to customization, since
+    user customization is not cached (as it's unlikely to be retrieved again).

@@ -551,7 +551,43 @@ async def get_standard_profile_pictures_from_database(
 
     uid_offset = f"oseh_if_{secrets.token_urlsafe(16)}"
     sort_dir = random.choice(["ASC", "DESC"])
+    limit = 25
+    query_str, qargs = _make_query(
+        journey_uid, journey_time, uid_offset, sort_dir, limit
+    )
+    fetched_at = time.time()
+    response = await cursor.execute(query_str, qargs)
 
+    if response.results is None or len(response.results) < limit:
+        # retry, removing the offset
+        query_str, qargs = _make_query(journey_uid, journey_time, None, None, limit)
+        fetched_at = time.time()
+        response = await cursor.execute(query_str, qargs)
+
+    profile_picture_refs = [
+        InternalProfilePictureRef(
+            user_sub=user_sub,
+            image_file_uid=image_file_uid,
+        )
+        for (user_sub, image_file_uid) in (response.results or [])
+    ]
+    random.shuffle(profile_picture_refs)
+
+    return StandardUserProfilePictures(
+        journey_uid=journey_uid,
+        journey_time=journey_time,
+        fetched_at=fetched_at,
+        profile_pictures=profile_picture_refs,
+    )
+
+
+def _make_query(
+    journey_uid: str,
+    journey_time: int,
+    uid_offset: Optional[str],
+    sort_dir: Optional[Literal["ASC", "DESC"]],
+    limit: int,
+) -> Tuple[str, list]:
     users = Table("users")
     image_files = Table("image_files")
     journey_sessions = Table("journey_sessions")
@@ -596,13 +632,6 @@ async def get_standard_profile_pictures_from_database(
                 )
             )
         )
-        .where(
-            image_files.uid > Parameter("?")
-            if sort_dir == "ASC"
-            else image_files.uid < Parameter("?")
-        )
-        .orderby(image_files.uid, order=Order.asc if sort_dir == "ASC" else Order.desc)
-        .limit(Parameter("?"))
     )
     qargs = [
         journey_uid,
@@ -610,29 +639,20 @@ async def get_standard_profile_pictures_from_database(
         journey_time,
         "leave",
         journey_time,
-        uid_offset,
-        25,
     ]
 
-    query_str = query.get_sql()
-    fetched_at = time.time()
-    response = await cursor.execute(query_str, qargs)
+    if uid_offset is not None and sort_dir is not None:
+        query = query.where(
+            image_files.uid > Parameter("?")
+            if sort_dir == "ASC"
+            else image_files.uid < Parameter("?")
+        ).orderby(image_files.uid, order=Order.asc if sort_dir == "ASC" else Order.desc)
+        qargs.append(uid_offset)
 
-    profile_picture_refs = [
-        InternalProfilePictureRef(
-            user_sub=user_sub,
-            image_file_uid=image_file_uid,
-        )
-        for (user_sub, image_file_uid) in response.results
-    ]
-    random.shuffle(profile_picture_refs)
+    query = query.limit(Parameter("?"))
+    qargs.append(limit)
 
-    return StandardUserProfilePictures(
-        journey_uid=journey_uid,
-        journey_time=journey_time,
-        fetched_at=fetched_at,
-        profile_pictures=profile_picture_refs,
-    )
+    return query.get_sql(), qargs
 
 
 async def evict_standard_profile_pictures(
@@ -759,7 +779,7 @@ a response in time.
 """
 
 
-async def push_cache_loop() -> NoReturn:
+async def cache_push_loop() -> NoReturn:
     """Loops until the perpetual pub sub shuts down, handling any messages from other
     instances regarding standard profile pictures that have been updated and writing
     them to our internal cache.

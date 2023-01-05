@@ -25,6 +25,10 @@ class ExternalJourney(BaseModel):
 
     jwt: str = Field(description="The JWT which provides access to the journey")
 
+    duration_seconds: float = Field(
+        description="The duration of the journey, in seconds"
+    )
+
     background_image: ImageFileRef = Field(
         description="The background image for the journey."
     )

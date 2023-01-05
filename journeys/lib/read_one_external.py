@@ -249,6 +249,8 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
     f.write(json.dumps(journey.description.text).encode("utf-8"))
     f.write(b'},"prompt":')
     f.write(journey.prompt.json().encode("utf-8"))
+    f.write(b',"duration_seconds":')
+    f.write(str(journey.duration_seconds).encode("ascii"))
     f.write(b"}")
     finish_mark()
 
@@ -306,6 +308,7 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         SELECT
             image_files.uid,
             content_files.uid,
+            content_files.duration_seconds,
             journey_subcategories.external_name,
             journeys.title,
             instructors.name,
@@ -331,13 +334,14 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         uid=journey_uid,
         session_uid="",
         jwt="",
+        duration_seconds=row[2],
         background_image=ImageFileRef(uid=row[0], jwt=""),
         audio_content=ContentFileRef(uid=row[1], jwt=""),
-        category=ExternalDailyEventJourneyCategory(external_name=row[2]),
-        title=row[3],
-        instructor=ExternalDailyEventJourneyInstructor(name=row[4]),
-        description=ExternalDailyEventJourneyDescription(text=row[5]),
-        prompt=json.loads(row[6]),
+        category=ExternalDailyEventJourneyCategory(external_name=row[3]),
+        title=row[4],
+        instructor=ExternalDailyEventJourneyInstructor(name=row[5]),
+        description=ExternalDailyEventJourneyDescription(text=row[6]),
+        prompt=json.loads(row[7]),
     )
 
 

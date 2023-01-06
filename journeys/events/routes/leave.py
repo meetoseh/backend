@@ -3,6 +3,7 @@ from fastapi import APIRouter, Header
 from journeys.events.models import (
     CreateJourneyEventRequest,
     CreateJourneyEventResponse,
+    NameEventData,
     NoJourneyEventData,
     CREATE_JOURNEY_EVENT_STANDARD_ERRORS_BY_CODE,
 )
@@ -11,7 +12,7 @@ from itgs import Itgs
 
 EventTypeT = Literal["leave"]
 EventRequestDataT = NoJourneyEventData
-EventResponseDataT = NoJourneyEventData
+EventResponseDataT = NameEventData
 
 router = APIRouter()
 
@@ -38,13 +39,17 @@ async def leave_journey(
         if not auth_result.success:
             return auth_result.error_response
 
+        display_name = await journeys.events.helper.get_display_name(
+            itgs, auth_result.result
+        )
+
         result = await journeys.events.helper.create_journey_event(
             itgs,
             journey_uid=auth_result.result.journey_uid,
             user_sub=auth_result.result.user_sub,
             session_uid=args.session_uid,
             event_type="leave",
-            event_data=args.data,
+            event_data=NameEventData(name=display_name),
             journey_time=args.journey_time,
             prefix_sum_updates=[
                 journeys.events.helper.PrefixSumUpdate(
@@ -56,6 +61,7 @@ async def leave_journey(
                     event_data_field=None,
                 )
             ],
+            store_event_data=NoJourneyEventData(),
         )
         if not result.success:
             return result.error_response

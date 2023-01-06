@@ -1,13 +1,15 @@
 import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, Function, ExistsCriterion
+from pypika.terms import Term, Function
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 from db.utils import ParenthisizeCriterion
+from image_files.models import ImageFileRef
 from journeys.auth import auth_any
+from image_files.auth import create_jwt as create_image_files_jwt
 from models import AUTHORIZATION_UNKNOWN_TOKEN, STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItem, FilterItemModel
@@ -31,11 +33,11 @@ EventType = Literal[
 
 
 class JoinEventData(BaseModel):
-    ...
+    name: str = Field(description="the name of the user who joined")
 
 
 class LeaveEventData(BaseModel):
-    ...
+    name: str = Field(description="the name of the user who left")
 
 
 class LikeEventData(BaseModel):
@@ -62,15 +64,15 @@ class WordPromptResponseEventData(BaseModel):
     index: int = Field(description="the index of the word the user chose")
 
 
-EventData = Union[
+EventData = Union[  # sensitive to order, since it picks the first match
     JoinEventData,
     LeaveEventData,
-    LikeEventData,
     NumericPromptResponseEventData,
-    PressPromptStartResponseEventData,
-    PressPromptEndResponseEventData,
     ColorPromptResponseEventData,
     WordPromptResponseEventData,
+    LikeEventData,
+    PressPromptStartResponseEventData,
+    PressPromptEndResponseEventData,
 ]
 
 
@@ -83,6 +85,12 @@ class JourneyEvent(BaseModel):
     uid: str = Field(description="a unique, stable identifier for the event")
     evtype: EventType = Field(
         title="Event Type", description="the type of event that occurred"
+    )
+    icon: Optional[ImageFileRef] = Field(
+        description=(
+            "If there is an icon associated with the event, such as the users "
+            "profile picture, then a reference to that icon, otherwise None"
+        )
     )
     data: EventData = Field(description="the data associated with the event")
     journey_time: float = Field(
@@ -440,6 +448,7 @@ async def raw_read_journey_events(
     journey_sessions = Table("journey_sessions")
     journey_event_counts = Table("journey_event_counts")
     users = Table("users")
+    image_files = Table("image_files")
 
     query: QueryBuilder = (
         Query.from_(journey_events)
@@ -452,6 +461,8 @@ async def raw_read_journey_events(
             journey_events.data,
             journey_events.journey_time,
             journey_events.created_at,
+            image_files.uid,
+            users.given_name,
         )
         .join(journey_sessions)
         .on(journey_sessions.id == journey_events.journey_session_id)
@@ -459,6 +470,8 @@ async def raw_read_journey_events(
         .on(journeys.id == journey_sessions.journey_id)
         .join(users)
         .on(users.id == journey_sessions.user_id)
+        .left_outer_join(image_files)
+        .on(image_files.id == users.picture_image_file_id)
     )
     qargs = []
 
@@ -509,16 +522,29 @@ async def raw_read_journey_events(
     response = await cursor.execute(query.get_sql(), qargs)
     items: List[JourneyEvent] = []
     for row in response.results or []:
+        evtype: str = row[4]
+        event_data: dict = json.loads(row[5])
+
+        if evtype in ("join", "leave"):
+            event_data["name"] = row[9]
+
         items.append(
             JourneyEvent(
                 user_sub=row[0],
                 session_uid=row[1],
                 journey_uid=row[2],
                 uid=row[3],
-                evtype=row[4],
-                data=json.loads(row[5]),
+                evtype=evtype,
+                data=event_data,
                 journey_time=row[6],
                 created_at=row[7],
+                icon=(
+                    ImageFileRef(
+                        uid=row[8], jwt=await create_image_files_jwt(itgs, row[8])
+                    )
+                    if row[8] is not None
+                    else None
+                ),
             )
         )
 

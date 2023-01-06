@@ -1,7 +1,8 @@
 from fastapi.responses import Response
 from pydantic.generics import GenericModel
 from pydantic import BaseModel, Field
-from typing import Literal, TypeVar, Generic
+from typing import Literal, Optional, TypeVar, Generic
+from image_files.models import ImageFileRef
 from models import StandardErrorResponse, STANDARD_ERRORS_BY_CODE
 
 EventTypeT = TypeVar("EventTypeT", bound=str)
@@ -10,6 +11,14 @@ EventDataT = TypeVar("EventDataT")
 
 class NoJourneyEventData(BaseModel):
     """No data is required for this journey event type."""
+
+
+class NameEventData(BaseModel):
+    """The users name is required for this journey event type"""
+
+    name: str = Field(
+        description="The name of the user, potentially just the given/preferred name"
+    )
 
 
 class CreateJourneyEventRequest(GenericModel, Generic[EventDataT]):
@@ -53,6 +62,12 @@ class CreateJourneyEventResponse(GenericModel, Generic[EventTypeT, EventDataT]):
             "The journey time that the event was created at. "
             "This is the offset in fractional seconds from the start of the journey"
         ),
+    )
+    icon: Optional[ImageFileRef] = Field(
+        description=(
+            "If an icon is associated with this event, a reference to the corresponding "
+            "image file."
+        )
     )
     data: EventDataT = Field(
         description="Additional data required to describe the event, if any"

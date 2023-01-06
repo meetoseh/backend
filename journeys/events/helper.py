@@ -20,6 +20,8 @@ from dataclasses import dataclass
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel, Field, validator
 from pydantic.generics import GenericModel
+from image_files.models import ImageFileRef
+from image_files.auth import create_jwt as create_image_file_jwt
 from itgs import Itgs
 from journeys.events.models import (
     ERROR_JOURNEY_NOT_FOUND_RESPONSE,
@@ -217,12 +219,15 @@ class JourneyEventPubSubMessage(GenericModel, Generic[EventTypeT, EventDataT]):
     """Describes a message that is published to the pubsub topic for a journey"""
 
     uid: str = Field(description="the uid of the new event")
-    user_sub: str = Field(description="the uid of the user who created the event")
+    user_sub: str = Field(description="the sub of the user who created the event")
     session_uid: str = Field(
         description="the uid of the session the event was created in"
     )
     evtype: EventTypeT = Field(description="the type of the event")
     data: EventDataT = Field(description="the data of the event")
+    icon: Optional[str] = Field(
+        description="if there is an icon associated with this event, the uid of the corresponding image file"
+    )
     journey_time: float = Field(description="the journey time of the event")
     created_at: float = Field(
         description="the unix timestamp of when the event was created"
@@ -534,6 +539,7 @@ async def create_journey_event(
         List[Tuple[Term, List[Any], Callable[[], CreateJourneyEventResult]]]
     ] = None,
     prefix_sum_updates: Optional[List[PrefixSumUpdate]] = None,
+    store_event_data: Optional[BaseModel] = None,
 ) -> CreateJourneyEventResult[EventTypeT, EventDataT]:
     """Creates a new journey event for the given journey by the given user with
     the given type, data and journey time. This will assign a uid and created_at
@@ -651,6 +657,11 @@ async def create_journey_event(
             stored. This is required for keeping the stats endpoint up to date.
             See PrefixSumUpdate for more details.
 
+        store_event_data (BaseModel, None): If specified, instead of storing the event data
+            in the database, we will instead store the json representation of this in the
+            database. Useful if there is redundant data in the event which is helpful for
+            clients but not for us.
+
     Returns:
         CreateJourneyEventResult: The result of the operation
     """
@@ -662,7 +673,9 @@ async def create_journey_event(
         )
 
     event_uid = f"oseh_je_{secrets.token_urlsafe(16)}"
-    serd_event_data = event_data.json()
+    serd_event_data = (
+        event_data.json() if store_event_data is None else store_event_data.json()
+    )
     created_at = time.time()
 
     journey_events = Table("journey_events")
@@ -975,6 +988,23 @@ async def create_journey_event(
             error_response=ERROR_JOURNEY_IMPOSSIBLE_JOURNEY_TIME_RESPONSE,
         )
 
+    icon: Optional[ImageFileRef] = None
+    cursor = conn.cursor("none")
+    response = await cursor.execute(
+        "SELECT uid FROM image_files "
+        "WHERE EXISTS ("
+        "SELECT 1 FROM users "
+        "WHERE users.sub = ?"
+        " AND users.picture_image_file_id = image_files.id"
+        ")",
+        (user_sub,),
+    )
+    if response.results and response.results[0] is not None:
+        icon = ImageFileRef(
+            uid=response.results[0][0],
+            jwt=await create_image_file_jwt(itgs, response.results[0][0]),
+        )
+
     result = CreateJourneyEventResult(
         result=CreateJourneyEventSuccessResult(
             content=CreateJourneyEventResponse(
@@ -983,6 +1013,7 @@ async def create_journey_event(
                 session_uid=session_uid,
                 type=event_type,
                 journey_time=journey_time,
+                icon=icon,
                 data=event_data,
             ),
             created_at=created_at,
@@ -997,6 +1028,7 @@ async def create_journey_event(
         session_uid=session_uid,
         evtype=event_type,
         data=event_data,
+        icon=icon.uid if icon is not None else None,
         journey_time=journey_time,
         created_at=created_at,
     )
@@ -1144,3 +1176,21 @@ async def purge_journey_meta_loop() -> NoReturn:
                     local_cache.delete(f"journeys:{message.journey_uid}:meta")
     finally:
         print("purge journey meta loop exiting")
+
+
+async def get_display_name(itgs: Itgs, result: SuccessfulAuthResult) -> str:
+    """Gets the preferred display name for the user authorized with the given
+    result
+    """
+    user_claims = result.user_claims
+    if user_claims is not None:
+        if "given_name" in user_claims:
+            return user_claims["given_name"]
+        elif "name" in user_claims:
+            name: str = user_claims["name"]
+            return name.split(" ")[0]
+        elif "preferred_username" in user_claims:
+            return user_claims["preferred_username"]
+        elif "nickname" in user_claims:
+            return user_claims["nickname"]
+    return "Anonymous"

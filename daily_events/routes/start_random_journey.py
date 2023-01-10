@@ -2,7 +2,7 @@ import random
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import AsyncGenerator, Literal, Optional
+from typing import Literal, Optional
 from daily_events.models.external_daily_event import ExternalDailyEvent
 from journeys.models.external_journey import ExternalJourney
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
@@ -12,10 +12,10 @@ import daily_events.auth
 import journeys.auth
 import daily_events.lib.read_one_external
 import journeys.lib.read_one_external
+from response_utils import response_to_bytes, cleanup_response
 from itgs import Itgs
 import secrets
 import random
-import io
 
 
 router = APIRouter()
@@ -88,7 +88,8 @@ async def start_random_journey(
     session within the journey, which should be used to post events (at minimum
     the join and leave events). The returned JWT can also be used for connecting
     to the live stream of temporally adjacent events, the standard HTTP endpoint
-    for historical events, and the standard HTTP endpoint for journey statistics
+    for historical events, the profile pictures endpoint to sample users in the
+    journey across time, and the standard HTTP endpoint for journey statistics
     across time.
 
     This endpoint exchanges a daily event JWT for a journey JWT. The daily event
@@ -142,12 +143,6 @@ async def start_random_journey(
         if journey_response is None:
             return NOT_FOUND
 
-        async def cleanup_journey_response():
-            if isinstance(journey_response, StreamingResponse) and hasattr(
-                journey_response.body_iterator, "aclose"
-            ):
-                await journey_response.body_iterator.aclose()  # noqa
-
         # optimistically insert session
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
@@ -174,7 +169,7 @@ async def start_random_journey(
             ),
         )
         if response.rows_affected is None or response.rows_affected < 1:
-            await cleanup_journey_response()
+            await cleanup_response(journey_response)
             return NOT_FOUND
 
         # finally, concurrency-safe check
@@ -191,7 +186,7 @@ async def start_random_journey(
                 "DELETE FROM journey_sessions WHERE uid = ?",
                 (session_uid,),
             )
-            await cleanup_journey_response()
+            await cleanup_response(journey_response)
             return ALREADY_STARTED_ONE
 
         # revoke the daily event JWT to ensure the client is always refetching it,
@@ -216,16 +211,7 @@ async def select_journey(itgs: Itgs, daily_event_uid: str) -> Optional[str]:
     if daily_event_raw is None:
         return None
 
-    daily_event_bytes = None
-    if isinstance(daily_event_raw, StreamingResponse):
-        writer = io.BytesIO()
-        async for chunk in daily_event_raw.body_iterator:
-            if isinstance(chunk, str):
-                chunk = chunk.encode("utf-8")
-            writer.write(chunk)
-        daily_event_bytes = writer.getvalue()
-    else:
-        daily_event_bytes = daily_event_raw.body
+    daily_event_bytes = await response_to_bytes(daily_event_raw)
 
     daily_event = ExternalDailyEvent.parse_raw(daily_event_bytes)
     journey = random.choice(daily_event.journeys)

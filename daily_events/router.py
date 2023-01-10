@@ -7,6 +7,7 @@ import daily_events.routes.premiere
 import daily_events.routes.read
 import daily_events.routes.remove_journey
 import daily_events.routes.start_random_journey
+import daily_events.routes.start_specific_journey
 import daily_events.routes.unpremiere
 
 router = APIRouter()
@@ -22,3 +23,4 @@ router.include_router(daily_events.routes.unpremiere.router)
 
 router.include_router(daily_events.routes.now.router)
 router.include_router(daily_events.routes.start_random_journey.router)
+router.include_router(daily_events.routes.start_specific_journey.router)

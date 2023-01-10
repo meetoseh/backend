@@ -189,4 +189,4 @@ async def purge_loop() -> NoReturn:
         async for _ in sub:
             async with Itgs() as itgs:
                 local_cache = await itgs.local_cache()
-                local_cache.delete("daily_events:current")
+                local_cache.delete(b"daily_events:current")

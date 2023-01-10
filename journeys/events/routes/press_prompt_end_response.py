@@ -63,6 +63,7 @@ async def respond_to_journey_press_prompt_end(
                 (
                     ExistsCriterion(
                         Query.from_(journeys)
+                        .select(1)
                         .where(journeys.id == journey_sessions.journey_id)
                         .where(
                             Function("json_extract", journeys.prompt, "$.style")
@@ -74,11 +75,13 @@ async def respond_to_journey_press_prompt_end(
                 (
                     ExistsCriterion(
                         Query.from_(journey_events)
+                        .select(1)
                         .where(journey_events.journey_session_id == journey_sessions.id)
                         .where(journey_events.evtype == "press_prompt_start_response")
                         .where(
                             ~ExistsCriterion(
                                 Query.from_(journey_events_2)
+                                .select(1)
                                 .where(
                                     journey_events_2.journey_session_id
                                     == journey_sessions.id
@@ -101,6 +104,7 @@ async def respond_to_journey_press_prompt_end(
                 (
                     ExistsCriterion(
                         Query.from_(journeys)
+                        .select(1)
                         .where(journeys.uid == Parameter("?"))
                         .where(
                             Function("json_extract", journeys.prompt, "$.style")
@@ -126,9 +130,11 @@ async def respond_to_journey_press_prompt_end(
                 (
                     ExistsCriterion(
                         Query.from_(journey_events)
+                        .select(1)
                         .where(
                             ExistsCriterion(
                                 Query.from_(journey_sessions)
+                                .select(1)
                                 .where(journey_sessions.uid == Parameter("?"))
                                 .where(
                                     journey_sessions.id
@@ -140,6 +146,7 @@ async def respond_to_journey_press_prompt_end(
                         .where(
                             ~ExistsCriterion(
                                 Query.from_(journey_events_2)
+                                .select(1)
                                 .where(
                                     journey_events_2.journey_session_id
                                     == journey_sessions.id

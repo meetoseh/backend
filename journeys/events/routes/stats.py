@@ -346,7 +346,7 @@ async def get_for_prompt(
         }
 
     if style == "press":
-        press, press_active = asyncio.gather(
+        press, press_active = await asyncio.gather(
             get_single_from_tree(itgs, uid, bin, "press"),
             get_single_from_tree(itgs, uid, bin, "press_active"),
         )

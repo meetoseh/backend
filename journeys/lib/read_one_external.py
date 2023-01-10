@@ -285,7 +285,7 @@ async def delete_from_local_cache(itgs: Itgs, journey_uid: str) -> None:
         journey_uid (str): The UID of the journey to delete
     """
     local_cache = await itgs.local_cache()
-    local_cache.delete(f"journeys:external:{journey_uid}")
+    local_cache.delete(f"journeys:external:{journey_uid}".encode("utf-8"))
 
 
 async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney]:

@@ -127,6 +127,14 @@ the keys that we use in redis
   pictures, and goes to nothing if they are not. This acts similarly to load-shedding
   to prevent a negative feedback loop filling the cache.
 
+- `updates:{repo}:lock`: goes to a string key if the corresponding repo has an instance
+  undergoing an update right now. Used as a simple way to achieve one-at-a-time updates.
+  Used by frontend-web, jobs, and backend repos.
+
+  When set the value is a random token used to identify which instance holds the lock.
+  The value is generated just before the instance shuts down and stored via the diskcache
+  key `updater-lock-key`
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

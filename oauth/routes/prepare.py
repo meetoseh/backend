@@ -66,6 +66,7 @@ async def prepare(args: OauthPrepareRequest):
                     if args.provider != "SignInWithApple"
                     else os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback/apple"
                 ),
+                "response_type": "code",
                 "state": state,
                 "nonce": nonce,
                 **(

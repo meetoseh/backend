@@ -326,7 +326,8 @@ async def initialize_user_from_info(
         now = time.time()
         response = await cursor.executemany3(
             (
-                """
+                (
+                    """
                 INSERT INTO users (
                     sub, email, email_verified, phone_number, phone_number_verified,
                     given_name, family_name, admin, revenue_cat_id, created_at
@@ -339,23 +340,23 @@ async def initialize_user_from_info(
                         SELECT 1 FROM user_identities WHERE user_identities.sub = ? AND user_identities.provider = ?
                     )
                 """,
-                (
-                    new_user_sub,
-                    interpreted_claims.email,
-                    interpreted_claims.email_verified,
-                    interpreted_claims.phone_number,
-                    interpreted_claims.phone_number_verified,
-                    interpreted_claims.given_name,
-                    interpreted_claims.family_name,
-                    0,
-                    new_revenue_cat_id,
-                    now,
-                    interpreted_claims.sub,
-                    provider,
+                    (
+                        new_user_sub,
+                        interpreted_claims.email,
+                        interpreted_claims.email_verified,
+                        interpreted_claims.phone_number,
+                        interpreted_claims.phone_number_verified,
+                        interpreted_claims.given_name,
+                        interpreted_claims.family_name,
+                        0,
+                        new_revenue_cat_id,
+                        now,
+                        interpreted_claims.sub,
+                        provider,
+                    ),
                 ),
-            ),
-            (
-                """
+                (
+                    """
                 INSERT INTO user_identities (
                     uid, user_id, provider, sub, example_claims, created_at, last_seen_at
                 )
@@ -364,16 +365,17 @@ async def initialize_user_from_info(
                 FROM users
                 WHERE users.sub = ?
                 """,
-                (
-                    new_identity_uid,
-                    provider,
-                    interpreted_claims.sub,
-                    json.dumps(example_claims, sort_keys=True),
-                    now,
-                    interpreted_claims.iat,
-                    new_user_sub,
+                    (
+                        new_identity_uid,
+                        provider,
+                        interpreted_claims.sub,
+                        json.dumps(example_claims, sort_keys=True),
+                        now,
+                        interpreted_claims.iat,
+                        new_user_sub,
+                    ),
                 ),
-            ),
+            )
         )
         if response[0].rows_affected is not None and response[0].rows_affected > 0:
             return UserWithIdentity(

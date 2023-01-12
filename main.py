@@ -208,22 +208,26 @@ async def test_division(dividend: int, divisor: int):
     return JSONResponse(content={"quotient": dividend / divisor}, status_code=200)
 
 
+if os.environ.get("ENVIRONMENT") == "dev":
+    import oauth.lib.exchange
+
+
 @app.post("/api/1/test/dev_login")
 async def dev_login(sub: str):
     """returns an id token under the id key for the given subject; only works in
     development mode"""
     if os.environ.get("ENVIRONMENT") != "dev":
         return Response(status_code=403)
-    now = int(time.time())
-    encoded_jwt = jwt.encode(
-        {
+
+    async with Itgs() as itgs:
+        now = int(time.time())
+        fake_claims = {
             "sub": sub,
-            "iss": os.environ["EXPECTED_ISSUER"],
+            "iat": now - 1,
             "exp": now + 3600,
-            "aud": os.environ["AUTH_CLIENT_ID"],
-            "given_name": "Timothy",
-            "family_name": "Moore",
-            "email": "tj@meetoseh.com",
+            "given_name": sub.capitalize(),
+            "family_name": "Moore" if sub == "timothy" else "Smith",
+            "email": f"{sub}@meetoseh.com",
             "email_verified": True,
             "picture": (
                 # i prefer this avatar :o
@@ -231,10 +235,26 @@ async def dev_login(sub: str):
                 if sub == "timothy"
                 else f"https://avatars.dicebear.com/api/bottts/{urllib.parse.quote(sub)}.svg"
             ),
-            "iat": now - 1,
-            "token_use": "id",
-        },
-        os.environ["DEV_SECRET_KEY"],
-        algorithm="HS256",
-    )
-    return JSONResponse(content={"id": encoded_jwt}, status_code=200)
+        }
+        interpreted = await oauth.lib.exchange.interpret_provider_claims(
+            itgs,
+            oauth.lib.exchange.ProviderSettings(
+                name="Dev",
+                authorization_endpoint="https://example.com",
+                token_endpoint="https://example.com",
+                client_id="example-client-id",
+                client_secret="example-client-secret",
+            ),
+            fake_claims,
+        )
+        user = await oauth.lib.exchange.initialize_user_from_info(
+            itgs, "Dev", interpreted, fake_claims
+        )
+        response = await oauth.lib.exchange.create_tokens_for_user(
+            itgs,
+            user=user,
+            interpreted_claims=interpreted,
+            redirect_uri=os.environ["ROOT_FRONTEND_URL"] + "/",
+            refresh_token_desired=False,
+        )
+        return JSONResponse(content={"id": response.id_token}, status_code=200)

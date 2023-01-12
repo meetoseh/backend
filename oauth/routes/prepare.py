@@ -73,9 +73,9 @@ async def prepare(args: OauthPrepareRequest):
                     {
                         # why must apple be special
                         "response_mode": "form_post"
-                        if args.provider == "SignInWithApple"
-                        else {}
                     }
+                    if args.provider == "SignInWithApple"
+                    else {}
                 ),
             }
         )

@@ -66,7 +66,11 @@ async def prepare(args: OauthPrepareRequest):
                     if args.provider != "SignInWithApple"
                     else os.environ["OSEH_APPLE_CLIENT_ID"]
                 ),
-                "scope": "openid email profile phone",
+                "scope": (
+                    "openid email profile phone"
+                    if args.provier != "SignInWithApple"
+                    else "name email"
+                ),
                 "redirect_uri": redirect_uri,
                 "response_type": "code",
                 "state": state,

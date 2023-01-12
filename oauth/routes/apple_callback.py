@@ -109,7 +109,7 @@ async def callback(
                     "verify_iss": False,
                     "verify_signature": True,
                 },
-                audience=os.environ["APPLE_CLIENT_ID"],
+                audience=os.environ["OSEH_APPLE_CLIENT_ID"],
             )
         except Exception as e:
             await handle_error(e, extra_info="apple callback")

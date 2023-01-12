@@ -5,7 +5,6 @@ the keys that we use in redis
 ## standard keys
 
 - `jobs:hot` used for the hot queue for jobs in jobs.py
-- `cognito:jwks` used for caching our cognito keys in auth.py
 - `apple:jwks` used for caching apples keys in the [apple callback](../../oauth/routes/apple_callback.py)
 - `rjobs:hash` is a hash of all the recurring jobs in `jobs`
 - `rjobs` is a sset where the scores are the unix time the job should be run next,

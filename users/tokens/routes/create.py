@@ -4,7 +4,7 @@ from typing import Literal, Optional
 from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from auth import auth_cognito
+from auth import auth_id
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 
@@ -60,11 +60,11 @@ async def create_user_token(
     """Creates a new user token which acts as an alternative form of
     authentication, primarily used for server<->server communication
 
-    This requires cognito authentication. You can read more about the
+    This requires id token authentication. You can read more about the
     forms of authentication at [/rest_auth.html](/rest_auth.html)
     """
     async with Itgs() as itgs:
-        auth_result = await auth_cognito(itgs, authorization)
+        auth_result = await auth_id(itgs, authorization)
         if not auth_result.success:
             return auth_result.error_response
         new_token = "oseh_ut_" + secrets.token_urlsafe(48)

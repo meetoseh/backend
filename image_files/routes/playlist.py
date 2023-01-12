@@ -112,7 +112,7 @@ async def get_image_playlist(
     conditions.
 
     This endpoint only allows image-file-specific JWTs, which are received from
-    other endpoints (typically in exchange for a standard cognito JWT). Authorization
+    other endpoints (typically in exchange for a standard id token). Authorization
     can EITHER be specified via the `jwt` query parameter, or the `authorization`
     header parameter. If both are specified, the `jwt` query parameter is ignored.
 

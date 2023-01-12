@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from error_middleware import handle_error
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
-from auth import auth_cognito
+from auth import auth_id
 from starlette.concurrency import run_in_threadpool
 import stripe
 import os
@@ -68,10 +68,10 @@ async def finish_checkout_stripe(
     is not required for the information to eventually be reconciled with the server,
     but it can be used to provide a better user experience by reducing the delay.
 
-    This is only used for stripe, and requires cognito authentication.
+    This is only used for stripe, and requires id token authentication.
     """
     async with Itgs() as itgs:
-        auth_result = await auth_cognito(itgs, authorization)
+        auth_result = await auth_id(itgs, authorization)
         if not auth_result.success:
             return auth_result.error_response
 

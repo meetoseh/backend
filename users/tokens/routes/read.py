@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from auth import auth_cognito
+from auth import auth_id
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItem, FilterItemModel
@@ -96,13 +96,13 @@ async def read_user_tokens(
     """lists out user tokens; the user_sub filter will be forced to match the
     authorized user
 
-    This requires cognito authentication. You can read more about the
+    This requires id token authentication. You can read more about the
     forms of authentication at [/rest_auth.html](/rest_auth.html)
     """
     sort = [srt.to_result() for srt in (args.sort or [])]
     sort = cleanup_sort(USER_TOKEN_SORT_OPTIONS, sort, ["uid"])
     async with Itgs() as itgs:
-        auth_result = await auth_cognito(itgs, authorization)
+        auth_result = await auth_id(itgs, authorization)
         if not auth_result.success:
             return auth_result.error_response
         args.filters.user_sub = FilterTextItemModel(

@@ -123,7 +123,7 @@ async def auth_shared_secret(itgs: Itgs, authorization: Optional[str]) -> AuthRe
 
 async def auth_any(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
     """Verifies the given authorization token matches a valid user token or
-    amazon cognito JWT
+    id token
 
     Args:
         itgs (Itgs): the integrations to use

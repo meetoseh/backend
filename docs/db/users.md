@@ -9,7 +9,7 @@ authorization header via the sub claim.
 ## Fields
 
 - `id (integer primary key)`: the internal row identifier
-- `sub (text unique not null)`: the amazon cognito identifier. Uses the uid prefix
+- `sub (text unique not null)`: the sub used for id tokens. Uses the uid prefix
   `u`, see [uid_prefixes](../uid_prefixes.md)
 - `email (text not null)`: the email address of the user. NOT A VALID IDENTIFIER.
   Primarily for customer support or contacting them. Is often unique, but there are
@@ -19,8 +19,7 @@ authorization header via the sub claim.
   that the user owns the email address
 - `phone_number (text null)`: the phone number of the user. NOT A VALID IDENTIFIER.
 - `phone_number_verified (boolean null)`: if we or an identity provider has confirmed
-  that the user owns the phone number. Note that `phone_number_verified` is 21 chars,
-  which longer than the cognito jwt limit of 20 chars per field, so in the jwt this is
+  that the user owns the phone number.
   `custom:pn_verified`
 - `given_name (text null)`: the given name of the user. we don't get this from apple,
   so it's null for apple users unless they specify it

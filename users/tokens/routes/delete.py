@@ -1,7 +1,7 @@
 from typing import Literal, Optional
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, JSONResponse
-from auth import auth_cognito
+from auth import auth_id
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 
@@ -26,11 +26,11 @@ async def delete_user_token(uid: str, authorization: Optional[str] = Header(None
     """deletes the user token with the corresponding uid, only works if the user
     token is owned by you.
 
-    This requires cognito authentication. You can read more about the
+    This requires id token authentication. You can read more about the
     forms of authentication at [/rest_auth.html](/rest_auth.html)
     """
     async with Itgs() as itgs:
-        auth_result = await auth_cognito(itgs, authorization)
+        auth_result = await auth_id(itgs, authorization)
         if not auth_result.success:
             return auth_result.error_response
         conn = await itgs.conn()

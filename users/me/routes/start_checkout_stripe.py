@@ -4,7 +4,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-from auth import auth_cognito
+from auth import auth_id
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from starlette.concurrency import run_in_threadpool
@@ -65,7 +65,7 @@ async def start_checkout_stripe(
     args: StartCheckoutStripeRequest, authorization: Optional[str] = Header(None)
 ):
     """Begins the checkout process for the pro entitlement via stripe. This
-    requires cognito authentication and is ratelimited.
+    requires id token authentication and is ratelimited.
 
     The checkout session should not be registered with revenue cat until the
     session is acutally completed, so the client does not need to do anything
@@ -76,7 +76,7 @@ async def start_checkout_stripe(
     The success url will have the query parameter `checkout_success=1` added
     """
     async with Itgs() as itgs:
-        auth_result = await auth_cognito(itgs, authorization)
+        auth_result = await auth_id(itgs, authorization)
         if not auth_result.success:
             return auth_result.error_response
 

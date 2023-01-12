@@ -46,6 +46,12 @@ async def prepare(args: OauthPrepareRequest):
     # no recommended length -> match csrf
     nonce = secrets.token_urlsafe(22)
 
+    redirect_uri = (
+        os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback"
+        if args.provider != "SignInWithApple"
+        else os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback/apple"
+    )
+
     url = (
         (
             PROVIDER_TO_SETTINGS[args.provider].authorization_endpoint
@@ -61,11 +67,7 @@ async def prepare(args: OauthPrepareRequest):
                     else os.environ["OSEH_APPLE_CLIENT_ID"]
                 ),
                 "scope": "openid email profile phone",
-                "redirect_uri": (
-                    os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback"
-                    if args.provider != "SignInWithApple"
-                    else os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback/apple"
-                ),
+                "redirect_uri": redirect_uri,
                 "response_type": "code",
                 "state": state,
                 "nonce": nonce,
@@ -89,7 +91,7 @@ async def prepare(args: OauthPrepareRequest):
                 OauthState(
                     provider=args.provider,
                     refresh_token_desired=args.refresh_token_desired,
-                    redirect_uri=os.environ["ROOT_FRONTEND_URL"] + "/",
+                    redirect_uri=redirect_uri,
                     nonce=nonce,
                 )
                 .json()

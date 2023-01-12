@@ -9,10 +9,12 @@ authorization header via the sub claim.
 ## Fields
 
 - `id (integer primary key)`: the internal row identifier
-- `sub (text unique not null)`: the amazon cognito identifier
+- `sub (text unique not null)`: the amazon cognito identifier. Uses the uid prefix
+  `u`, see [uid_prefixes](../uid_prefixes.md)
 - `email (text not null)`: the email address of the user. NOT A VALID IDENTIFIER.
   Primarily for customer support or contacting them. Is often unique, but there are
-  many valid reasons why it may not be.
+  many valid reasons why it may not be. This is set to `anonymous@example.com` when
+  they are signing in via Apple but we lost their email address.
 - `email_verified (boolean not null)`: if we or an identity provider has confirmed
   that the user owns the email address
 - `phone_number (text null)`: the phone number of the user. NOT A VALID IDENTIFIER.

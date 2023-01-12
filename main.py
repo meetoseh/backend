@@ -19,6 +19,7 @@ import file_uploads.router
 import content_files.router
 import instructors.router
 import daily_events.router
+import oauth.router
 import admin.router
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.events.helper
@@ -90,6 +91,7 @@ app.include_router(
 app.include_router(
     daily_events.router.router, prefix="/api/1/daily_events", tags=["daily_events"]
 )
+app.include_router(oauth.router.router, prefix="/api/1/oauth", tags=["oauth"])
 app.include_router(admin.router.router, prefix="/api/1/admin", tags=["admin"])
 app.router.redirect_slashes = False
 

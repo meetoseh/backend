@@ -6,6 +6,7 @@ the keys that we use in redis
 
 - `jobs:hot` used for the hot queue for jobs in jobs.py
 - `cognito:jwks` used for caching our cognito keys in auth.py
+- `apple:jwks` used for caching apples keys in the [apple callback](../../oauth/routes/apple_callback.py)
 - `rjobs:hash` is a hash of all the recurring jobs in `jobs`
 - `rjobs` is a sset where the scores are the unix time the job should be run next,
   and the values are the hashes of the jobs. see the jobs repo for more details
@@ -134,6 +135,23 @@ the keys that we use in redis
   When set the value is a random token used to identify which instance holds the lock.
   The value is generated just before the instance shuts down and stored via the diskcache
   key `updater-lock-key`
+
+- `oauth:states:{state}`: goes to a string representing a json object if we have
+  recently generated a state for oauth with the associated csrf token. The json
+  object is as if by the trivial serialization of:
+
+  ```py
+  class OauthStateInfo:
+      provider: Literal["Google", "SignInWithApple"]
+      refresh_token_desired: bool
+      redirect_uri: str
+  ```
+
+- `oauth:valid_refresh_tokens:{user_identity_uid}` goes to a sorted set where the
+  values correspond to JTI's of refresh tokens and the scores correspond to
+  when those tokens _expire_. This is used for quickly revoking all refresh tokens
+  as well as ensuring there aren't too many refresh tokens for a particular user
+  identity. We clip all users to at most 10 refresh tokens per identity.
 
 ### Stats namespace
 

@@ -143,7 +143,9 @@ async def use_standard_exchange(
 
     claims = jwt.decode(id_token, options={"verify_signature": False})
     interpreted_claims = await interpret_provider_claims(itgs, provider, claims)
-    user = await initialize_user_from_info(itgs, provider, interpreted_claims, claims)
+    user = await initialize_user_from_info(
+        itgs, provider.name, interpreted_claims, claims
+    )
     return await create_tokens_for_user(
         itgs,
         user=user,

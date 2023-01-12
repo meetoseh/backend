@@ -68,7 +68,7 @@ async def prepare(args: OauthPrepareRequest):
                 ),
                 "scope": (
                     "openid email profile phone"
-                    if args.provier != "SignInWithApple"
+                    if args.provider != "SignInWithApple"
                     else "name email"
                 ),
                 "redirect_uri": redirect_uri,

@@ -132,7 +132,10 @@ async def use_standard_exchange(
             },
         ) as response:
             if not response.ok:
-                raise OauthCodeInvalid("The code is invalid or has expired")
+                text = await response.text()
+                raise OauthCodeInvalid(
+                    f"The code is invalid or has expired: {response.status} - {text}"
+                )
 
             data: dict = await response.json()
 
@@ -328,18 +331,18 @@ async def initialize_user_from_info(
             (
                 (
                     """
-                INSERT INTO users (
-                    sub, email, email_verified, phone_number, phone_number_verified,
-                    given_name, family_name, admin, revenue_cat_id, created_at
-                )
-                SELECT
-                    ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?
-                WHERE
-                    NOT EXISTS (
-                        SELECT 1 FROM user_identities WHERE user_identities.sub = ? AND user_identities.provider = ?
+                    INSERT INTO users (
+                        sub, email, email_verified, phone_number, phone_number_verified,
+                        given_name, family_name, admin, revenue_cat_id, created_at
                     )
-                """,
+                    SELECT
+                        ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?
+                    WHERE
+                        NOT EXISTS (
+                            SELECT 1 FROM user_identities WHERE user_identities.sub = ? AND user_identities.provider = ?
+                        )
+                    """,
                     (
                         new_user_sub,
                         interpreted_claims.email,
@@ -357,14 +360,14 @@ async def initialize_user_from_info(
                 ),
                 (
                     """
-                INSERT INTO user_identities (
-                    uid, user_id, provider, sub, example_claims, created_at, last_seen_at
-                )
-                SELECT
-                    ?, users.id, ?, ?, ?, ?, ?
-                FROM users
-                WHERE users.sub = ?
-                """,
+                    INSERT INTO user_identities (
+                        uid, user_id, provider, sub, example_claims, created_at, last_seen_at
+                    )
+                    SELECT
+                        ?, users.id, ?, ?, ?, ?, ?
+                    FROM users
+                    WHERE users.sub = ?
+                    """,
                     (
                         new_identity_uid,
                         provider,

@@ -21,7 +21,7 @@ class ProviderSettings:
     """The client secret of the application"""
 
 
-PROVIDER_TO_SETTINGS: Dict[Literal["Google", "SignInWithApple"], ProviderSettings] = {
+PROVIDER_TO_SETTINGS: Dict[Literal["Google"], ProviderSettings] = {
     "Google": ProviderSettings(
         name="Google",
         authorization_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
@@ -29,9 +29,4 @@ PROVIDER_TO_SETTINGS: Dict[Literal["Google", "SignInWithApple"], ProviderSetting
         client_id=os.environ["OSEH_GOOGLE_CLIENT_ID"],
         client_secret=os.environ["OSEH_GOOGLE_CLIENT_SECRET"],
     ),
-    # "SignInWithApple": ProviderSettings(
-    #     name="SignInWithApple",
-    #     authorization_endpoint="https://appleid.apple.com/auth/authorize",
-    #     token_endpoint="https://appleid.apple.com/auth/token",
-    # ),
 }

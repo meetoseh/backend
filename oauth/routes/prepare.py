@@ -62,9 +62,9 @@ async def prepare(args: OauthPrepareRequest):
                 ),
                 "scope": "openid email profile phone",
                 "redirect_uri": (
-                    os.environ["ROOT_BACKEND_URL"] + "api/1/oauth/callback"
+                    os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback"
                     if args.provider != "SignInWithApple"
-                    else os.environ["ROOT_BACKEND_URL"] + "api/1/oauth/callback/apple"
+                    else os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback/apple"
                 ),
                 "state": state,
                 "nonce": nonce,

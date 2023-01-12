@@ -202,7 +202,8 @@ async def callback(
                         else {}
                     ),
                 }
-            )
+            ),
+            status_code=302,
         )
 
 

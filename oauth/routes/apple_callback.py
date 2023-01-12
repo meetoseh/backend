@@ -105,7 +105,7 @@ async def callback(
                 key=key,
                 algorithms=[signing_key["alg"]],
                 options={
-                    "require": ["sub", "iss", "exp", "aud", "token_use"],
+                    "require": ["sub", "iss", "exp", "aud"],
                     "verify_iss": False,
                     "verify_signature": True,
                 },

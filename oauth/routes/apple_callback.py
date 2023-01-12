@@ -1,3 +1,4 @@
+import base64
 import json
 import time
 from fastapi import APIRouter, Form
@@ -9,6 +10,7 @@ from error_middleware import handle_error
 from itgs import Itgs
 from urllib.parse import urlencode
 import oauth.lib.exchange
+from oauth.models.oauth_state import OauthState
 import aiohttp
 import jwt
 import jwt.algorithms
@@ -36,7 +38,7 @@ INVALID_TOKEN = RedirectResponse(
 @router.post("/callback/apple", response_class=RedirectResponse, status_code=302)
 async def callback(
     code: str = Form(),
-    id_token: str = Form(),
+    id_token: Optional[str] = Form(None),
     state: str = Form(),
     user: Optional[str] = Form(None),
 ):
@@ -76,8 +78,9 @@ async def callback(
                 status_code=302,
             )
 
-        # since they posted to us, we have to do something to verify this is a request
-        # from Apple; so sadly we must actually check this jwt
+        if id_token is None:
+            id_token = await id_token_from_code(itgs, code, state_info)
+
         unverified_headers = jwt.get_unverified_header(id_token)
         if "kid" not in unverified_headers:
             return INVALID_TOKEN
@@ -248,3 +251,50 @@ async def get_trusted_apple_keys(itgs: Itgs) -> List[JWK]:
     await redis.set(b"apple:jwks", json.dumps(keys).encode("utf-8"), ex=3600)
     _trusted_apple_keys = (keys, time.time())
     return keys
+
+
+async def id_token_from_code(itgs: Itgs, code: str, state_info: OauthState):
+    """https://developer.apple.com/documentation/sign_in_with_apple/generate_and_validate_tokens"""
+    key_id = os.environ["OSEH_APPLE_KEY_ID"]
+    key_base64 = os.environ["OSEH_APPLE_KEY_BASE64"]
+    team_id = os.environ["OSEH_APPLE_APP_ID_TEAM_ID"]
+    client_id = os.environ["OSEH_APPLE_CLIENT_ID"]
+
+    key_pem = base64.b64decode(key_base64).decode("utf-8")
+
+    now = int(time.time())
+
+    apple_jwt = jwt.encode(
+        {
+            "iss": team_id,
+            "iat": now - 1,
+            "exp": now + 60,
+            "aud": "https://appleid.apple.com",
+            "sub": client_id,
+        },
+        key=key_pem,
+        algorithm="ES256",
+        headers={"kid": key_id},
+    )
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://appleid.apple.com/auth/token",
+            data=aiohttp.FormData(
+                {
+                    "client_id": client_id,
+                    "client_secret": apple_jwt,
+                    "code": code,
+                    "grant_type": "authorization_code",
+                    "redirect_uri": state_info.redirect_uri,
+                }
+            ),
+        ) as response:
+            if not response.ok:
+                text = await response.text()
+                raise oauth.lib.exchange.OauthCodeInvalid(
+                    f"The code is invalid or has expired: {response.status} - {text}"
+                )
+
+            body = await response.json()
+            return body["id_token"]

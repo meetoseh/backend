@@ -7,8 +7,7 @@ import secrets
 import os
 from urllib.parse import urlencode
 from oauth.settings import PROVIDER_TO_SETTINGS
-
-from oauth.models.OauthState import OauthState
+from oauth.models.oauth_state import OauthState
 
 
 router = APIRouter()

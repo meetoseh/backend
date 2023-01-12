@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from itgs import Itgs
 import aiohttp
-from oauth.models.OauthState import OauthState
+from oauth.models.oauth_state import OauthState
 from oauth.settings import ProviderSettings
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError

@@ -22,4 +22,7 @@ jobs:
       - name: run tests
         env:
           ROOT_BACKEND_URL: http://127.0.0.1
+          OSEH_GOOGLE_CLIENT_ID: asdf
+          OSEH_GOOGLE_CLIENT_SECRET: asdf
+          ENVIRONMENT: test
         run: python -m unittest discover -s tests

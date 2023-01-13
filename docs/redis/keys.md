@@ -146,11 +146,11 @@ the keys that we use in redis
       redirect_uri: str
   ```
 
-- `oauth:valid_refresh_tokens:{user_identity_uid}` goes to a sorted set where the
+- `oauth:valid_refresh_tokens:{user_sub}` goes to a sorted set where the
   values correspond to JTI's of refresh tokens and the scores correspond to
   when those tokens _expire_. This is used for quickly revoking all refresh tokens
-  as well as ensuring there aren't too many refresh tokens for a particular user
-  identity. We clip all users to at most 10 refresh tokens per identity.
+  as well as ensuring there aren't too many refresh tokens for a particular user.
+  We clip all users to at most 10 refresh tokens.
 
 ### Stats namespace
 

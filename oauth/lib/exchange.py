@@ -8,6 +8,7 @@ from oauth.models.oauth_state import OauthState
 from oauth.settings import ProviderSettings
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
+import users.lib.stats
 import jwt
 import time
 import json
@@ -193,7 +194,7 @@ async def create_tokens_for_user(
         redis = await itgs.redis()
         await sorted_set_insert_with_max_length_and_min_score(
             redis,
-            key=f"oauth:valid_refresh_tokens:{user.identity_uid}",
+            key=f"oauth:valid_refresh_tokens:{user.user_sub}",
             val=refresh_jti,
             score=refresh_token_expires_at,
             max_length=10,
@@ -208,7 +209,10 @@ async def create_tokens_for_user(
                 "exp": refresh_token_expires_at,
                 "iat": now - 1,
                 "jti": refresh_jti,
-            }
+                "oseh:og_exp": refresh_token_expires_at,
+            },
+            key=os.environ["OSEH_REFRESH_TOKEN_SECRET"],
+            algorithm="HS256",
         )
 
     return OauthExchangeResponse(
@@ -323,6 +327,16 @@ async def initialize_user_from_info(
                     interpreted_claims.iat,
                 ),
             )
+
+            if interpreted_claims.picture is not None:
+                jobs = await itgs.jobs()
+                await jobs.enqueue(
+                    "runners.check_profile_picture",
+                    user_sub=user_sub,
+                    picture_url=interpreted_claims.picture,
+                    jwt_iat=interpreted_claims.iat,
+                )
+
             return UserWithIdentity(user_sub=user_sub, identity_uid=identity_uid)
 
         new_user_sub = f"oseh_u_{secrets.token_urlsafe(16)}"
@@ -383,6 +397,18 @@ async def initialize_user_from_info(
             )
         )
         if response[0].rows_affected is not None and response[0].rows_affected > 0:
+            jobs = await itgs.jobs()
+            jobs.enqueue("runners.revenue_cat.ensure_user", user_sub=new_user_sub)
+            await users.lib.stats.on_user_created(itgs, new_user_sub, now)
+
+            if interpreted_claims.picture is not None:
+                await jobs.enqueue(
+                    "runners.check_profile_picture",
+                    user_sub=new_user_sub,
+                    picture_url=interpreted_claims.picture,
+                    jwt_iat=interpreted_claims.iat,
+                )
+
             return UserWithIdentity(
                 user_sub=new_user_sub, identity_uid=new_identity_uid
             )

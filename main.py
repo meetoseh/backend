@@ -1,8 +1,6 @@
 import os
-import jwt
-import time
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error, handle_error
 from itgs import Itgs, our_diskcache
@@ -21,6 +19,7 @@ import instructors.router
 import daily_events.router
 import oauth.router
 import admin.router
+import dev.router
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.events.helper
 import daily_events.lib.has_started_one
@@ -28,7 +27,6 @@ import daily_events.lib.read_one_external
 import daily_events.routes.now
 import journeys.lib.read_one_external
 import journeys.routes.profile_pictures
-import urllib.parse
 import asyncio
 
 
@@ -93,6 +91,7 @@ app.include_router(
 )
 app.include_router(oauth.router.router, prefix="/api/1/oauth", tags=["oauth"])
 app.include_router(admin.router.router, prefix="/api/1/admin", tags=["admin"])
+app.include_router(dev.router.router, prefix="/api/1/dev", tags=["dev"])
 app.router.redirect_slashes = False
 
 
@@ -206,55 +205,3 @@ async def test_division(dividend: int, divisor: int):
     if divisor = 0; useful for testing error reporting
     """
     return JSONResponse(content={"quotient": dividend / divisor}, status_code=200)
-
-
-if os.environ.get("ENVIRONMENT") == "dev":
-    import oauth.lib.exchange
-
-
-@app.post("/api/1/test/dev_login")
-async def dev_login(sub: str):
-    """returns an id token under the id key for the given subject; only works in
-    development mode"""
-    if os.environ.get("ENVIRONMENT") != "dev":
-        return Response(status_code=403)
-
-    async with Itgs() as itgs:
-        now = int(time.time())
-        fake_claims = {
-            "sub": sub,
-            "iat": now - 1,
-            "exp": now + 3600,
-            "given_name": sub.capitalize(),
-            "family_name": "Moore" if sub == "timothy" else "Smith",
-            "email": f"{sub}@meetoseh.com",
-            "email_verified": True,
-            "picture": (
-                # i prefer this avatar :o
-                "https://avatars.dicebear.com/api/adventurer/tj-%40-meetoseh.svg"
-                if sub == "timothy"
-                else f"https://avatars.dicebear.com/api/bottts/{urllib.parse.quote(sub)}.svg"
-            ),
-        }
-        interpreted = await oauth.lib.exchange.interpret_provider_claims(
-            itgs,
-            oauth.lib.exchange.ProviderSettings(
-                name="Dev",
-                authorization_endpoint="https://example.com",
-                token_endpoint="https://example.com",
-                client_id="example-client-id",
-                client_secret="example-client-secret",
-            ),
-            fake_claims,
-        )
-        user = await oauth.lib.exchange.initialize_user_from_info(
-            itgs, "Dev", interpreted, fake_claims
-        )
-        response = await oauth.lib.exchange.create_tokens_for_user(
-            itgs,
-            user=user,
-            interpreted_claims=interpreted,
-            redirect_uri=os.environ["ROOT_FRONTEND_URL"] + "/",
-            refresh_token_desired=False,
-        )
-        return JSONResponse(content={"id": response.id_token}, status_code=200)

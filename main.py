@@ -97,16 +97,13 @@ app.router.redirect_slashes = False
 
 background_tasks = set()
 
-print("initializing pps")
 if perpetual_pub_sub.instance is None:
     perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
-    print("initializing pps done")
 
 
 @app.on_event("startup")
 def register_background_tasks():
 
-    print("registering background tasks")
     background_tasks.add(asyncio.create_task(updater.listen_forever()))
     background_tasks.add(asyncio.create_task(migrations.main.main()))
     background_tasks.add(

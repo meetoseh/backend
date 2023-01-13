@@ -40,6 +40,18 @@ async def update(args: UpdateArgs, authorization: Optional[str] = Header(None)):
 
     async with Itgs() as itgs:
         redis = await itgs.redis()
-        await redis.publish(f"updates:{args.repo}", "1")
+        num_subscribers = await redis.publish(f"updates:{args.repo}", "1")
+    
+        slack = await itgs.slack()
+        if num_subscribers != 2:
+            await slack.send_web_error_message(
+                f"When updating {args.repo=}, there were {num_subscribers=} subscribers! Expected 2.",
+                f"{args.repo} update failed"
+            )
+        else:
+            await slack.send_ops_message(
+                f"Updated {args.repo}: {num_subscribers} instances received update request.",
+                f"{args.repo} updated"
+            )
 
     return Response(status_code=202)

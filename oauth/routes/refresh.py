@@ -75,7 +75,7 @@ async def refresh(args: RefreshRequest):
             payload = jwt.decode(
                 args.refresh_token,
                 key=os.environ["OSEH_REFRESH_TOKEN_SECRET"],
-                algorithms=["RS256"],
+                algorithms=["HS256"],
                 options={
                     "require": [
                         "sub",

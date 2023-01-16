@@ -20,6 +20,9 @@ class ProviderSettings:
     client_secret: str
     """The client secret of the application"""
 
+    scope: str
+    """The scopes to request with this provider"""
+
 
 PROVIDER_TO_SETTINGS: Dict[Literal["Google"], ProviderSettings] = {
     "Google": ProviderSettings(
@@ -28,5 +31,6 @@ PROVIDER_TO_SETTINGS: Dict[Literal["Google"], ProviderSettings] = {
         token_endpoint="https://oauth2.googleapis.com/token",
         client_id=os.environ["OSEH_GOOGLE_CLIENT_ID"],
         client_secret=os.environ["OSEH_GOOGLE_CLIENT_SECRET"],
+        scope="https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
     ),
 }

@@ -32,22 +32,41 @@ async def dev_login(args: DevLoginRequest):
     if os.environ.get("ENVIRONMENT") != "dev":
         return Response(status_code=403)
 
+    given_name = args.sub.capitalize()
+    family_name = "Smith"
+    email = f"{urllib.parse.quote(args.sub)}@oseh.com"
+    picture = (
+        f"https://avatars.dicebear.com/api/bottts/{urllib.parse.quote(args.sub)}.svg"
+    )
+
+    if args.sub == "timothy":
+        given_name = "Timothy"
+        family_name = "Moore"
+        email = "tj@oseh.com"
+        picture = "https://avatars.dicebear.com/api/adventurer/tj-%40-meetoseh.svg"
+    elif args.sub == "paul":
+        given_name = "Paul"
+        family_name = "Javid"
+    elif args.sub == "ashley":
+        given_name = "Ashley"
+        family_name = "Karatsonyi"
+    elif args.sub.startswith("apple"):
+        given_name = "Anonymous"
+        family_name = ""
+        picture = None
+        email = "anonymous@example.com"
+
     async with Itgs() as itgs:
         now = int(time.time())
         fake_claims = {
             "sub": args.sub,
             "iat": now - 1,
             "exp": now + 3600,
-            "given_name": args.sub.capitalize(),
-            "family_name": "Moore" if args.sub == "timothy" else "Smith",
-            "email": f"{urllib.parse.quote(args.sub)}@meetoseh.com",
+            "given_name": given_name,
+            "family_name": family_name,
+            "email": email,
             "email_verified": True,
-            "picture": (
-                # i prefer this avatar :o
-                "https://avatars.dicebear.com/api/adventurer/tj-%40-meetoseh.svg"
-                if args.sub == "timothy"
-                else f"https://avatars.dicebear.com/api/bottts/{urllib.parse.quote(args.sub)}.svg"
-            ),
+            "picture": picture,
         }
         interpreted = await oauth.lib.exchange.interpret_provider_claims(
             itgs,

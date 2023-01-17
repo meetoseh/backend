@@ -21,11 +21,11 @@ router = APIRouter()
 
 
 class StartCheckoutStripeRequest(BaseModel):
-    cancel_path: Literal["/admin"] = Field(
+    cancel_path: Literal["/"] = Field(
         description=("The path to redirect to if the user cancels the checkout flow.")
     )
 
-    success_path: Literal["/admin"] = Field(
+    success_path: Literal["/"] = Field(
         description=(
             "The path to redirect to if the user successfully completes the checkout flow. "
             "Will have query parameters added:\n"
@@ -68,7 +68,7 @@ async def start_checkout_stripe(
     requires id token authentication and is ratelimited.
 
     The checkout session should not be registered with revenue cat until the
-    session is acutally completed, so the client does not need to do anything
+    session is actually completed, so the client does not need to do anything
     with the session id. The checkout session will always eventually be
     registered with revenue cat, but the client can speed the process up with
     the finish_checkout_stripe endpoint.

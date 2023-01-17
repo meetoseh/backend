@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 import stripe
 import os
 import time
+import users.lib.entitlements as entitlements
 
 from users.me.routes.read_revenue_cat_id import get_revenue_cat_id
 
@@ -193,6 +194,12 @@ async def finish_checkout_stripe(
         await cursor.execute(
             "DELETE FROM open_stripe_checkout_sessions WHERE uid=?",
             (args.checkout_uid,),
+        )
+        await entitlements.get_entitlement(
+            itgs,
+            user_sub=auth_result.result.sub,
+            identifier="pro",
+            force=True,
         )
         return Response(
             content=FinishCheckoutStripeResponse().json(),

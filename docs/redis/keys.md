@@ -152,6 +152,9 @@ the keys that we use in redis
   as well as ensuring there aren't too many refresh tokens for a particular user.
   We clip all users to at most 10 refresh tokens.
 
+- `frontend-web:server_images:lock`: goes to the string '1' while a frontend-web server
+  has the server images lock.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

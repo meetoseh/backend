@@ -114,6 +114,35 @@ async def auth_any(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
     return await auth_presigned(itgs, authorization)
 
 
+async def auth_public(itgs: Itgs, uid: str) -> AuthResult:
+    """Verifies that the image file with the given uid is public. If it is,
+    returns a AuthResult that indicates success, otherwise that the token is
+    invalid.
+
+    Args:
+        itgs (Itgs): The integrations to use to connect to networked services
+        uid (str): The uid of the image file to check
+
+    Returns:
+        AuthResult: The result of the authentication, which will include the
+            suggested error response on failure and the authorized image files
+            uid on success
+    """
+    is_public = await get_is_public(itgs, uid)
+    if not is_public:
+        return AuthResult(
+            result=None,
+            error_type="invalid",
+            error_response=AUTHORIZATION_UNKNOWN_TOKEN,
+        )
+
+    return AuthResult(
+        result=SuccessfulAuthResult(image_file_uid=uid, claims=None),
+        error_type=None,
+        error_response=None,
+    )
+
+
 async def create_jwt(itgs: Itgs, image_file_uid: str, duration: int = 1800) -> str:
     """Produces a JWT for the given image file uid. The returned JWT will
     be acceptable for `auth_presigned`.
@@ -139,3 +168,39 @@ async def create_jwt(itgs: Itgs, image_file_uid: str, duration: int = 1800) -> s
         os.environ["OSEH_IMAGE_FILE_JWT_SECRET"],
         algorithm="HS256",
     )
+
+
+async def get_is_public(itgs: Itgs, uid: str) -> bool:
+    """Gets if the image file with the given uid is public. This
+    caches the value locally and non-collaboratively for a short
+    time to reduce load on the database, using the diskcache key
+    `image_files:public:{uid}`
+    """
+    local_cache = await itgs.local_cache()
+    cache_key = f"image_files:public:{uid}".encode("utf-8")
+
+    cached_val = local_cache.get(cache_key)
+    if cached_val is not None:
+        return cached_val == b"1"
+
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+
+    response = await cursor.execute(
+        """
+        SELECT 1 FROM static_public_images
+        WHERE
+            EXISTS (
+                SELECT 1 FROM image_files
+                WHERE image_files.id = static_public_images.image_file_id
+                  AND image_files.uid = ?
+            )
+        """,
+        (uid,),
+    )
+    if response.results:
+        local_cache.set(cache_key, b"1", expire=600)
+        return True
+
+    local_cache.set(cache_key, b"0", expire=600)
+    return False

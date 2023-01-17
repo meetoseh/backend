@@ -257,3 +257,7 @@ the keys we store locally on backend instances via diskcache
 - `updater-lock-key` goes to a random token for the token we used to acquire
   the updater lock before shutting down to update. See the redis key
   `updates:{repo}:lock` for more information.
+
+- `image_files:public:{uid}` goes to `b'1'` if the image file with the given
+  uid is public and `b'0'` if it is not public, and is unset if we don't know.
+  Used [here](../../image_files/auth.py)

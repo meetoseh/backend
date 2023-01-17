@@ -66,6 +66,7 @@ if os.environ.get("ENVIRONMENT") == "dev":
         allow_credentials=True,
         allow_methods=["GET", "POST", "HEAD", "PUT", "DELETE", "PATCH"],
         allow_headers=["Authorization", "Pragma"],
+        expose_headers=["x-image-file-jwt"],
     )
 app.include_router(
     continuous_deployment.router.router,

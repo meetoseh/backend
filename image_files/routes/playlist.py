@@ -2,7 +2,7 @@ from typing import Dict, Generator, List, Literal, Optional, Union
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
-from image_files.auth import auth_any
+from image_files.auth import auth_any, auth_public, create_jwt
 from models import (
     AUTHORIZATION_UNKNOWN_TOKEN,
     STANDARD_ERRORS_BY_CODE,
@@ -101,6 +101,7 @@ async def get_image_playlist(
     uid: str,
     jwt: Optional[str] = None,
     presign: Optional[bool] = None,
+    public: bool = False,
     authorization: Optional[str] = Header(None),
 ):
     """Returns the image playlist file corresponding to the given image file uid.
@@ -116,6 +117,12 @@ async def get_image_playlist(
     can EITHER be specified via the `jwt` query parameter, or the `authorization`
     header parameter. If both are specified, the `jwt` query parameter is ignored.
 
+    The JWT may be omitted if `public` is set to true. In this case, the image
+    must be explicitly marked as public in our database. In such a case, the
+    endpoint will act as if a valid jwt was provided via the authorization
+    header parameter. In this case, when not presigning, the jwt to use will be
+    provided in the response header 'x-image-file-jwt'.
+
     The `presign` query parameter refers to if the returned playlist urls should
     be presigned by including the provided jwt in the `jwt` query parameter -
     i.e., if this is set to true, all of the urls that are returned could be
@@ -126,18 +133,28 @@ async def get_image_playlist(
     it's set to true if the `jwt` was used to authorize this request, and false
     otherwise. The client MAY rely on this default behavior.
     """
-    using_query_jwt = authorization is None
+    using_query_jwt = not public and authorization is None
     if presign is None:
         presign = using_query_jwt
-    checked_jwt = f"bearer {jwt}" if using_query_jwt else authorization
+    checked_jwt = (
+        None if public else f"bearer {jwt}" if using_query_jwt else authorization
+    )
 
     async with Itgs() as itgs:
-        auth_result = await auth_any(itgs, checked_jwt)
-        if not auth_result.success:
-            return auth_result.error_response
+        if not public:
+            auth_result = await auth_any(itgs, checked_jwt)
+            if not auth_result.success:
+                return auth_result.error_response
+        else:
+            auth_result = await auth_public(itgs, uid)
 
         if auth_result.result.image_file_uid != uid:
             return AUTHORIZATION_UNKNOWN_TOKEN
+
+        headers = {"Content-Type": "application/json; charset=utf-8"}
+        if public:
+            new_jwt = await create_jwt(itgs, image_file_uid=uid)
+            headers["x-image-file-jwt"] = new_jwt
 
         if not presign:
             local_cache = await itgs.local_cache()
@@ -149,14 +166,14 @@ async def get_image_playlist(
                     return Response(
                         content=result,
                         status_code=200,
-                        headers={"Content-Type": "application/json; charset=utf-8"},
+                        headers=headers,
                         media_type="application/json",
                     )
 
                 return StreamingResponse(
                     content=read_in_parts(result),
                     status_code=200,
-                    headers={"Content-Type": "application/json; charset=utf-8"},
+                    headers=headers,
                     media_type="application/json",
                 )
 
@@ -199,8 +216,11 @@ async def get_image_playlist(
         cur_list: Optional[List[PlaylistItemResponse]] = None
 
         root_backend_url = os.environ["ROOT_BACKEND_URL"]
-        token = checked_jwt.split(" ", 1)[1].strip()
-        presign_suffix = "?" + urlencode({"jwt": token}) if presign else ""
+        presign_suffix = (
+            "?" + urlencode({"jwt": checked_jwt.split(" ", 1)[1].strip()})
+            if presign
+            else ""
+        )
         for row in response.results:
             item = PlaylistItemResponse(
                 url=f"{root_backend_url}/api/1/image_files/image/{row[0]}.{row[3]}{presign_suffix}",
@@ -238,6 +258,6 @@ async def get_image_playlist(
         return Response(
             content=content_bytes,
             status_code=200,
-            headers={"Content-Type": "application/json; charset=utf-8"},
+            headers=headers,
             media_type="application/json",
         )

@@ -63,6 +63,8 @@ async def update_name(
                 status_code=503,
             )
 
+        jobs = await itgs.jobs()
+        jobs.enqueue("runners.revenue_cat.ensure_user", user_sub=auth_result.result.sub)
         return UpdateNameResponse(
             given_name=args.given_name, family_name=args.family_name
         )

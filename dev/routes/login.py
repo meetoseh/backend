@@ -57,6 +57,7 @@ async def dev_login(args: DevLoginRequest):
                 token_endpoint="https://example.com",
                 client_id="example-client-id",
                 client_secret="example-client-secret",
+                scope="email phone openid profile",
             ),
             fake_claims,
         )

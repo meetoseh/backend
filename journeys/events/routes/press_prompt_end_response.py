@@ -149,7 +149,7 @@ async def respond_to_journey_press_prompt_end(
                                 .select(1)
                                 .where(
                                     journey_events_2.journey_session_id
-                                    == journey_sessions.id
+                                    == journey_events.journey_session_id
                                 )
                                 .where(
                                     journey_events_2.journey_time

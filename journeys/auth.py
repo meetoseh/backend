@@ -83,7 +83,8 @@ async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult
             issuer="oseh",
         )
     except Exception as e:
-        await handle_error(e)
+        if not isinstance(e, jwt.exceptions.ExpiredSignatureError):
+            await handle_error(e, extra_info="failed to decode journey jwt")
         return AuthResult(
             result=None,
             error_type="invalid",

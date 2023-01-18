@@ -91,7 +91,8 @@ async def refresh(args: RefreshRequest):
                 issuer="oseh",
             )
         except Exception as e:
-            await handle_error(e, extra_info="Failed to decode refresh token")
+            if not isinstance(e, jwt.exceptions.ExpiredSignatureError):
+                await handle_error(e, extra_info="failed to decode refresh token")
             return UNKNOWN_TOKEN
 
         # generate the new refresh token PRIOR to verifying the previous

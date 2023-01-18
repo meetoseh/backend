@@ -68,7 +68,8 @@ async def auth_id(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
             issuer="oseh",
         )
     except Exception as e:
-        await handle_error(e, extra_info="Failed to decode id token")
+        if not isinstance(e, jwt.exceptions.ExpiredSignatureError):
+            await handle_error(e, extra_info="Failed to decode id token")
         return AuthResult(
             None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
         )

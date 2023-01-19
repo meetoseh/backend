@@ -155,6 +155,9 @@ the keys that we use in redis
 - `frontend-web:server_images:lock`: goes to the string '1' while a frontend-web server
   has the server images lock.
 
+- `users:{sub}:delete:lock`: goes to a string '1' while a backend server is trying to
+  delete the user with the given sub
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

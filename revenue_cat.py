@@ -155,6 +155,24 @@ class RevenueCat:
         ) as resp:
             resp.raise_for_status()
 
+    async def refund_and_revoke_google_play_subscription(
+        self, *, revenue_cat_id: str, product_id: str
+    ) -> None:
+        """Immediately revokes access to a Google Subscription and issues a refund for the last purchase.
+
+        Args:
+            revenue_cat_id (str): The RevenueCat ID of the user
+            product_id (str): The product id within revenue cat of the subscription to cancel
+        """
+        async with self.session.post(
+            f"https://api.revenuecat.com/v1/subscribers/{revenue_cat_id}/subscriptions/{product_id}/revoke",
+            headers={
+                "Authorization": f"Bearer {self.sk}",
+                "Accept": "application/json",
+            },
+        ) as resp:
+            resp.raise_for_status()
+
     async def create_stripe_purchase(
         self, *, revenue_cat_id: str, stripe_checkout_session_id: str
     ) -> None:

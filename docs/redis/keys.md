@@ -156,7 +156,8 @@ the keys that we use in redis
   has the server images lock.
 
 - `users:{sub}:delete:lock`: goes to a string '1' while a backend server is trying to
-  delete the user with the given sub
+  delete the user with the given sub. Also used when trying to cancel the users
+  subscription.
 
 ### Stats namespace
 

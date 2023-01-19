@@ -6,29 +6,26 @@ from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from contextlib import asynccontextmanager
 from starlette.concurrency import run_in_threadpool
+from users.me.routes.delete_account import delete_lock
 import users.lib.entitlements
 import stripe
 import time
 import os
 
+
 router = APIRouter()
 
 
 ERROR_409_TYPES = Literal[
-    "has_active_stripe_subscription",
+    "no_active_subscription",
     "has_active_ios_subscription",
-    "has_active_google_subscription",
     "has_active_promotional_subscription",
 ]
 
-HAS_ACTIVE_STRIPE_SUBSCRIPTION_RESPONSE = Response(
+
+NO_ACTIVE_SUBSCRIPTION_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
-        type="has_active_stripe_subscription",
-        message=(
-            "You have an active stripe subscription. If you delete your account, "
-            "it will be canceled but you will not be refunded for any remaining time. "
-            "To cancel your subscription, go to your account page."
-        ),
+        type="no_active_subscription", message="No active subscription found to cancel."
     ).json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
@@ -41,9 +38,8 @@ HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
         type="has_active_ios_subscription",
         message=(
-            "You have an active ios subscription. If you delete your account, "
-            "it will not be canceled unless you cancel it yourself. To "
-            "cancel your subscription, follow the instructions at "
+            "You have an active ios subscription. It must be canceled manually. "
+            "To cancel your subscription, follow the instructions at "
             "https://support.apple.com/en-us/HT202039"
         ),
     ).json(),
@@ -54,28 +50,13 @@ HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE = Response(
     status_code=409,
 )
 
-HAS_ACTIVE_GOOGLE_SUBSCRIPTION_RESPONSE = Response(
-    content=StandardErrorResponse[ERROR_409_TYPES](
-        type="has_active_google_subscription",
-        message=(
-            "You have an active google subscription. If you delete your account, "
-            "it will be canceled but you might not be refunded for any remaining time. "
-            "To cancel your subscription, go to your Settings page."
-        ),
-    ).json(),
-    headers={
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store",
-    },
-    status_code=409,
-)
 
 HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
         type="has_active_promotional_subscription",
         message=(
-            "You have an active promotional subscription. If you delete your account, "
-            "you may not be able to recover it."
+            "You have an active promotional subscription. It does not "
+            "need to be canceled as it does not incur a charge."
         ),
     ).json(),
     headers={
@@ -100,14 +81,16 @@ TOO_MANY_REQUESTS_RESPONSE = Response(
     status_code=429,
 )
 
+
 ERROR_503_TYPES = Literal["multiple_updates"]
 
 MULTIPLE_UPDATES_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_503_TYPES](
         type="multiple_updates",
         message=(
-            "There are multiple updates in progress or the account has "
-            "already been deleted. Log back in and try again."
+            "There are multiple updates in progress, the account has "
+            "already been deleted, or the subscription was just canceled. "
+            "Log back in and try again."
         ),
     ).json(),
     headers={
@@ -120,7 +103,7 @@ MULTIPLE_UPDATES_RESPONSE = Response(
 
 
 @router.delete(
-    "/account",
+    "/subscription",
     status_code=204,
     responses={
         "409": {
@@ -134,13 +117,16 @@ MULTIPLE_UPDATES_RESPONSE = Response(
         **STANDARD_ERRORS_BY_CODE,
     },
 )
-async def delete_account(force: bool, authorization: Optional[str] = Header(None)):
-    """Permanently deletes the authorized users account. If the user has an active
-    entitlement, the request will fail unless the 'force' query parameter is set
-    to true, which should only be done after confirming with the impact of deleting
-    their account while they have an active entitlement.
+async def cancel_subscription(authorization: Optional[str] = Header(None)):
+    """Attempts to cancel the users subscription. Not all subscription providers
+    support server-side subscription cancellation, so the client must detect and
+    handle conflict errors by providing the appropriate steps to cancel the
+    subscription manually.
 
-    This requires id token authorization via the standard Authorization header.
+    After this completes, the user may still have access to Oseh+ for up to a
+    few hours after the subscription actually expires.
+
+    This requires id token authorization via the standard authorization header.
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
@@ -177,6 +163,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                 revenue_cat_id=revenue_cat_id
             )
             now = time.time()
+            canceled_something = False
             for (
                 product_id,
                 subscription,
@@ -185,25 +172,6 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                     subscription.expires_date is None
                     or subscription.expires_date.timestamp() > now
                 )
-                if is_active and not force:
-                    if subscription.store == "app_store":
-                        return HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE
-                    elif subscription.store == "play_store":
-                        return HAS_ACTIVE_GOOGLE_SUBSCRIPTION_RESPONSE
-                    elif subscription.store == "stripe":
-                        return HAS_ACTIVE_STRIPE_SUBSCRIPTION_RESPONSE
-                    else:
-                        if subscription.store != "promotional":
-                            slack = await itgs.slack()
-                            await slack.send_web_error_message(
-                                f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
-                                f"an active subscription with an unknown store: {subscription.store=}: "
-                                "treating as promotional for the warning message",
-                                "Unknown subscription store",
-                            )
-
-                        return HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE
-
                 if (
                     is_active
                     and subscription.unsubscribe_detected_at is None
@@ -215,14 +183,14 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                         await revenue_cat.refund_and_revoke_google_play_subscription(
                             itgs, revenue_cat_id, product_id
                         )
+                        canceled_something = True
                     elif subscription.store == "stripe":
                         if stripe_customer_id is None:
                             slack = await itgs.slack()
                             await slack.send_web_error_message(
-                                f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
+                                f"While canceling {auth_result.result.sub=}, {revenue_cat_id=}, found "
                                 f"an active subscription with store {subscription.store=}, but no "
-                                f"stripe_customer_id: {stripe_customer_id=}. Preventing them from "
-                                "deleting their account.",
+                                f"stripe_customer_id: {stripe_customer_id=}",
                                 "Delete stripe subscription with no stripe customer",
                             )
                             return MULTIPLE_UPDATES_RESPONSE
@@ -238,9 +206,9 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                         if len(stripe_subscriptions) >= 3:
                             slack = await itgs.slack()
                             await slack.send_web_error_message(
-                                f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
+                                f"While canceling {auth_result.result.sub=}, {revenue_cat_id=}, found "
                                 f"an active subscription with store {subscription.store=}, but too many "
-                                f"stripe subscriptions. Preventing them from deleting their account.",
+                                f"stripe subscriptions.",
                                 "Delete stripe subscription with multiple stripe subscriptions",
                             )
                             return MULTIPLE_UPDATES_RESPONSE
@@ -254,45 +222,28 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                                 prorate=True,
                                 api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
                             )
+                            canceled_something = True
+                    elif subscription.store == "app_store":
+                        return HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE
+                    elif subscription.store == "promotional":
+                        return HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE
+                    else:
+                        slack = await itgs.slack()
+                        await slack.send_web_error_message(
+                            f"While canceling {auth_result.result.sub=}, {revenue_cat_id=}, found "
+                            f"an active subscription with store {subscription.store=}, but no "
+                            f"support for that store.",
+                            "Delete subscription with unknown store",
+                        )
+                        return MULTIPLE_UPDATES_RESPONSE
 
-            await cursor.execute(
-                "DELETE FROM users WHERE sub=?", (auth_result.result.sub,)
-            )
+            if not canceled_something:
+                return NO_ACTIVE_SUBSCRIPTION_RESPONSE
 
             redis = await itgs.redis()
-            await redis.delete(
-                f"oauth:valid_refresh_tokens:{auth_result.result.sub}".encode("utf-8"),
-                f"entitlements:{auth_result.result.sub}".encode("utf-8"),
-            )
+            await redis.delete(f"entitlements:{auth_result.result.sub}".encode("utf-8"))
             await users.lib.entitlements.publish_purge_message(
                 itgs, user_sub=auth_result.result.sub, min_checked_at=time.time()
             )
 
-            slack = await itgs.slack()
-            await slack.send_ops_message(
-                f"Deleted {auth_result.result.sub=}, {revenue_cat_id=}, {stripe_customer_id=} by "
-                f"request from the user ({force=}). {os.environ.get('ENVIRONMENT')=}",
-                "Deleted user",
-            )
-
             return Response(status_code=204)
-
-
-@asynccontextmanager
-async def delete_lock(itgs: Itgs, sub: str) -> bool:
-    """An asynchronous context manager that ensures only one delete operation can
-    be performed at a time for a given user. Provides true if the lock was acquired,
-    false if it was not.
-    """
-    key = f"users:{sub}:delete:lock".encode("utf-8")
-    redis = await itgs.redis()
-
-    got_lock = await redis.set(key, b"1", ex=60, nx=True)
-    if not got_lock:
-        yield False
-        return
-
-    try:
-        yield True
-    finally:
-        await redis.delete(key)

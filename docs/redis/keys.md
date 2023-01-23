@@ -159,6 +159,16 @@ the keys that we use in redis
   delete the user with the given sub. Also used when trying to cancel the users
   subscription.
 
+- `users:{sub}:user_daily_event_invites:ratelimit`: goes to a string '1' while the user
+  with the given sub is prevented from redeeming user daily event invites, to prevent
+  brute-forcing codes. used [here](../../referral/routes/redeem_user_daily_event_invite.py)
+
+- `users:{sub}:user_daily_event_invites:success:{code}` goes to a string containing the
+  already encoded response data forr the given user successfully redeeming the given code.
+  Stored for a short while so that if the user presses the link multiple times we don't
+  generate an excessive number of referral records.
+  used [here](../../referral/routes/redeem_user_daily_event_invite.py)
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

@@ -1,6 +1,7 @@
 """Utils for generating parameterized queries which are slightly complicated
 but not enough to warrant pypika.
 """
+from dataclasses import dataclass
 from pypika.terms import Criterion, Term, ComplexCriterion
 from pypika.enums import Comparator
 from typing import Any, Dict, List, Optional, Union
@@ -204,3 +205,14 @@ class EscapeCriterion(Criterion):
 
     def get_sql(self, *args, **kwargs) -> str:
         return f"{self.criterion.get_sql(*args, **kwargs)} ESCAPE '{self.character}'"
+
+
+@dataclass
+class TermWithParameters:
+    """Describes a term with any number of ordered parameters."""
+
+    term: Term
+    """The term to use."""
+
+    parameters: List[Any]
+    """The parameters that are used with the term"""

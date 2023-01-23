@@ -143,10 +143,11 @@ async def get_image_playlist(
     async with Itgs() as itgs:
         if not public:
             auth_result = await auth_any(itgs, checked_jwt)
-            if not auth_result.success:
-                return auth_result.error_response
         else:
             auth_result = await auth_public(itgs, uid)
+
+        if not auth_result.success:
+            return auth_result.error_response
 
         if auth_result.result.image_file_uid != uid:
             return AUTHORIZATION_UNKNOWN_TOKEN

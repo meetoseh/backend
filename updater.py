@@ -16,8 +16,9 @@ async def _listen_forever():
     async with Itgs() as itgs:
         await release_update_lock_if_held(itgs)
 
-        slack = await itgs.slack()
-        await slack.send_ops_message(f"backend {socket.gethostname()} ready")
+        if os.environ.get("ENVIRONMENT") != "dev":
+            slack = await itgs.slack()
+            await slack.send_ops_message(f"backend {socket.gethostname()} ready")
 
     async with pps.PPSSubscription(pps.instance, "updates:backend", "updater") as sub:
         await sub.read()

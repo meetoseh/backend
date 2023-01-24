@@ -232,6 +232,13 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
     f.write(b"\x00\x00\x00\x00\x04")
     f.write(journey.background_image.uid.encode("ascii"))
     finish_mark()
+    f.write(b'\x00\x00\x00\x00\x01"},"blurred_background_image":{"uid":"')
+    f.write(journey.blurred_background_image.uid.encode("ascii"))
+    f.write(b'","jwt":"')
+    finish_mark()
+    f.write(b"\x00\x00\x00\x00\x04")
+    f.write(journey.blurred_background_image.uid.encode("ascii"))
+    finish_mark()
     f.write(b'\x00\x00\x00\x00\x01"},"audio_content":{"uid":"')
     f.write(journey.audio_content.uid.encode("ascii"))
     f.write(b'","jwt":"')
@@ -313,9 +320,11 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
             journeys.title,
             instructors.name,
             journeys.description,
-            journeys.prompt
+            journeys.prompt,
+            blurred_image_files.uid
         FROM journeys
         JOIN image_files ON image_files.id = journeys.background_image_file_id
+        JOIN image_files AS blurred_image_files ON blurred_image_files.id = journeys.blurred_background_image_file_id
         JOIN content_files ON content_files.id = journeys.audio_content_file_id
         JOIN journey_subcategories ON journey_subcategories.id = journeys.journey_subcategory_id
         JOIN instructors ON instructors.id = journeys.instructor_id
@@ -342,6 +351,7 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         instructor=ExternalDailyEventJourneyInstructor(name=row[5]),
         description=ExternalDailyEventJourneyDescription(text=row[6]),
         prompt=json.loads(row[7]),
+        blurred_background_image=ImageFileRef(uid=row[8], jwt=""),
     )
 
 

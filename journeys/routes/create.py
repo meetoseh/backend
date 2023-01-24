@@ -54,6 +54,9 @@ class CreateJourneyResponse(BaseModel):
     background_image: ImageFileRef = Field(
         description="The image file for the background of the journey"
     )
+    blurred_background_image: ImageFileRef = Field(
+        description="The image file for the blurred background of the journey"
+    )
     subcategory: JourneySubcategory = Field(
         description="The subcategory this journey belongs to"
     )
@@ -116,7 +119,8 @@ async def create_journey(
                 journey_subcategories.external_name,
                 instructors.name,
                 ins_picture_image_files.uid,
-                instructors.created_at
+                instructors.created_at,
+                blurred_image_files.uid
             FROM dummy
             LEFT OUTER JOIN content_files ON (
                 EXISTS (
@@ -130,6 +134,13 @@ async def create_journey(
                     SELECT 1 FROM journey_background_images
                     WHERE journey_background_images.uid = ?
                       AND journey_background_images.image_file_id = image_files.id
+                )
+            )
+            LEFT OUTER JOIN image_files AS blurred_image_files ON (
+                EXISTS (
+                    SELECT 1 FROM journey_background_images
+                    WHERE journey_background_images.uid = ?
+                      AND journey_background_images.blurred_image_file_id = blurred_image_files.id
                 )
             )
             LEFT OUTER JOIN journey_subcategories ON (
@@ -160,6 +171,7 @@ async def create_journey(
         instructor_name: Optional[str] = response.results[0][4]
         instructor_picture_image_file_uid: Optional[str] = response.results[0][5]
         instructor_created_at: Optional[float] = response.results[0][6]
+        blurred_image_file_uid: Optional[str] = response.results[0][7]
 
         if content_file_uid is None:
             return Response(
@@ -171,7 +183,7 @@ async def create_journey(
                 status_code=404,
             )
 
-        if image_file_uid is None:
+        if image_file_uid is None or blurred_image_file_uid is None:
             return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_background_image_not_found",
@@ -213,6 +225,7 @@ async def create_journey(
                 uid,
                 audio_content_file_id,
                 background_image_file_id,
+                blurred_background_image_file_id,
                 instructor_id,
                 title,
                 description,
@@ -224,6 +237,7 @@ async def create_journey(
                 ?,
                 journey_audio_contents.content_file_id,
                 journey_background_images.image_file_id,
+                journey_background_images.blurred_image_file_id,
                 instructors.id,
                 ?, ?,
                 journey_subcategories.id,
@@ -278,6 +292,10 @@ async def create_journey(
                 background_image=ImageFileRef(
                     uid=image_file_uid,
                     jwt=await image_files.auth.create_jwt(itgs, image_file_uid),
+                ),
+                blurred_background_image=ImageFileRef(
+                    uid=blurred_image_file_uid,
+                    jwt=await image_files.auth.create_jwt(itgs, blurred_image_file_uid),
                 ),
                 subcategory=JourneySubcategory(
                     uid=args.journey_subcategory_uid,

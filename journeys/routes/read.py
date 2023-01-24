@@ -33,6 +33,9 @@ class Journey(BaseModel):
     background_image: ImageFileRef = Field(
         description="The image file for the background of the journey"
     )
+    blurred_background_image: ImageFileRef = Field(
+        description="The blurred version of the background image"
+    )
     subcategory: JourneySubcategory = Field(
         description="The subcategory this journey belongs to"
     )
@@ -78,6 +81,9 @@ class JourneyFilter(BaseModel):
     )
     background_image_file_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the background image file"
+    )
+    blurred_background_image_file_uid: Optional[FilterTextItemModel] = Field(
+        None, description="the uid of the blurred background image file"
     )
     subcategory_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the subcategory"
@@ -196,6 +202,7 @@ async def raw_read_journeys(
     journeys = Table("journeys")
     content_files = Table("content_files")
     image_files = Table("image_files")
+    blurred_image_files = image_files.as_("blurred_image_files")
     journey_subcategories = Table("journey_subcategories")
     instructors = Table("instructors")
     instructor_pictures = image_files.as_("instructor_pictures")
@@ -222,11 +229,14 @@ async def raw_read_journeys(
             journeys.created_at,
             journeys.deleted_at,
             daily_events.uid,
+            blurred_image_files.uid,
         )
         .join(content_files)
         .on(content_files.id == journeys.audio_content_file_id)
         .join(image_files)
         .on(image_files.id == journeys.background_image_file_id)
+        .join(blurred_image_files)
+        .on(blurred_image_files.id == journeys.blurred_background_image_file_id)
         .join(journey_subcategories)
         .on(journey_subcategories.id == journeys.journey_subcategory_id)
         .join(instructors)
@@ -264,6 +274,8 @@ async def raw_read_journeys(
             return Function("json_extract", journeys.prompt, "style")
         elif key == "daily_event_uid":
             return daily_events.uid
+        elif key == "blurred_background_image_file_uid":
+            return blurred_image_files.uid
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:
@@ -314,6 +326,9 @@ async def raw_read_journeys(
                 created_at=row[14],
                 deleted_at=row[15],
                 daily_event_uid=row[16],
+                blurred_background_image=ImageFileRef(
+                    uid=row[17], jwt=await image_files_auth.create_jwt(itgs, row[17])
+                ),
             )
         )
     return items
@@ -329,6 +344,7 @@ def item_pseudocolumns(item: Journey) -> dict:
         "deleted_at": item.deleted_at,
         "audio_content_file_uid": item.audio_content.uid,
         "background_image_file_uid": item.background_image.uid,
+        "blurred_background_image_file_uid": item.blurred_background_image.uid,
         "subcategory_uid": item.subcategory.uid,
         "subcategory_internal_name": item.subcategory.internal_name,
         "subcategory_external_name": item.subcategory.external_name,

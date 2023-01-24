@@ -54,23 +54,26 @@ class WordPrompt:
 
 ## Fields
 
--   `id (integer primary key)`: the internal identifier for the row
--   `uid (text unique not null)`: the primary external identifier for the row. The
-    uid prefix is `j`: see [uid_prefixes](../uid_prefixes.md).
--   `audio_content_file_id (integer not null references content_files(id) on delete cascade)`: the
-    id of the audio content file
--   `background_image_file_id (integer not null references image_files(id) on delete cascade)`: the
-    id of the background image file
--   `instructor_id (integer not null references instructors(id) on delete cascade)`: the id of the
-    instructor for this journey
--   `title (text not null)`: the title of the journey, typically short
--   `description (text not null)`: the description of the journey, typically longer but still short
--   `journey_subcategory_id (integer not null references journey_subcategories(id) on delete restrict)`: the id of the journey subcategory
--   `prompt (text not null)`: the prompt and corresponding settings as a json dictionary. the
-    prompt format is described in the Prompts section
--   `created_at (real not null)`: when this record was created in seconds since the unix epoch
--   `deleted_at (real null)`: when this record was deleted in seconds since the unix epoch,
-    if it has been soft-deleted
+- `id (integer primary key)`: the internal identifier for the row
+- `uid (text unique not null)`: the primary external identifier for the row. The
+  uid prefix is `j`: see [uid_prefixes](../uid_prefixes.md).
+- `audio_content_file_id (integer not null references content_files(id) on delete cascade)`: the
+  id of the audio content file
+- `background_image_file_id (integer not null references image_files(id) on delete cascade)`: the
+  id of the background image file
+- `blurred_background_image_file_id (integer not null references image_files(id) on delete cascade`:
+  the id of the blurred background image file. This is typically the background image with a guassian
+  blur with radius `max(0.09*min(width, height), 12)` followed by darkening 30%.
+- `instructor_id (integer not null references instructors(id) on delete cascade)`: the id of the
+  instructor for this journey
+- `title (text not null)`: the title of the journey, typically short
+- `description (text not null)`: the description of the journey, typically longer but still short
+- `journey_subcategory_id (integer not null references journey_subcategories(id) on delete restrict)`: the id of the journey subcategory
+- `prompt (text not null)`: the prompt and corresponding settings as a json dictionary. the
+  prompt format is described in the Prompts section
+- `created_at (real not null)`: when this record was created in seconds since the unix epoch
+- `deleted_at (real null)`: when this record was deleted in seconds since the unix epoch,
+  if it has been soft-deleted
 
 ## Schema
 
@@ -80,6 +83,7 @@ CREATE TABLE journeys(
     uid TEXT UNIQUE NOT NULL,
     audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
     background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
+    blurred_background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
     instructor_id INTEGER NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -94,6 +98,9 @@ CREATE INDEX journeys_audio_content_file_id_idx ON journeys(audio_content_file_i
 
 /* foreign key */
 CREATE INDEX journeys_background_image_file_id_idx ON journeys(background_image_file_id);
+
+/* foreign key */
+CREATE INDEX journeys_blurred_background_image_file_id_idx ON journeys(blurred_background_image_file_id);
 
 /* foreign key, sort */
 CREATE INDEX journeys_instructor_id_created_at_idx ON journeys(instructor_id, created_at);

@@ -169,6 +169,9 @@ the keys that we use in redis
   generate an excessive number of referral records.
   used [here](../../referral/routes/redeem_user_daily_event_invite.py)
 
+- `frontend-web:server_images:config` used by frontend-web/server_images for maintaining
+  configuration from the last time an instance processed the static public server images
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

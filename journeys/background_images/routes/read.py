@@ -21,6 +21,9 @@ from image_files.models import ImageFileRef
 class JourneyBackgroundImage(BaseModel):
     uid: str = Field(description="The primary stable external identifier for this row")
     image_file: ImageFileRef = Field(description="The underlying image file")
+    blurred_image_file: ImageFileRef = Field(
+        description="The blurred version of the image"
+    )
     image_file_created_at: float = Field(
         description=(
             "When the image file was originally uploaded, in seconds since the unix epoch"
@@ -59,6 +62,9 @@ class JourneyBackgroundImageFilter(BaseModel):
     )
     image_file_created_at: Optional[FilterItemModel[float]] = Field(
         None, description="the timestamp of when the image file was created"
+    )
+    blurred_image_file_uid: Optional[FilterTextItemModel] = Field(
+        None, description="the uid of the blurred image file"
     )
     original_file_sha512: Optional[FilterTextItemModel] = Field(
         None, description="the sha512 of the original file"
@@ -161,6 +167,7 @@ async def raw_read_journey_background_images(
     """performs exactly the specified sort without pagination logic"""
     journey_background_images = Table("journey_background_images")
     image_files = Table("image_files")
+    blurred_image_files = image_files.as_("blurred_image_files")
     users = Table("users")
 
     query: QueryBuilder = (
@@ -171,9 +178,12 @@ async def raw_read_journey_background_images(
             image_files.created_at,
             users.sub,
             journey_background_images.last_uploaded_at,
+            blurred_image_files.uid,
         )
         .join(image_files)
         .on(image_files.id == journey_background_images.image_file_id)
+        .join(blurred_image_files)
+        .on(blurred_image_files.id == journey_background_images.blurred_image_file_id)
         .left_outer_join(users)
         .on(users.id == journey_background_images.uploaded_by_user_id)
     )
@@ -190,6 +200,8 @@ async def raw_read_journey_background_images(
             return users.sub
         elif key in ("uid", "last_uploaded_at"):
             return journey_background_images.field(key)
+        elif key == "blurred_image_file_uid":
+            return blurred_image_files.uid
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:
@@ -217,6 +229,9 @@ async def raw_read_journey_background_images(
                 image_file_created_at=row[2],
                 uploaded_by_user_sub=row[3],
                 last_uploaded_at=row[4],
+                blurred_image_file=ImageFileRef(
+                    uid=row[5], jwt=await image_files_auth.create_jwt(itgs, row[5])
+                ),
             )
         )
     return items
@@ -231,4 +246,5 @@ def item_pseudocolumns(item: JourneyBackgroundImage) -> dict:
         "image_file_created_at": item.image_file_created_at,
         "uploaded_by_user_sub": item.uploaded_by_user_sub,
         "last_uploaded_at": item.last_uploaded_at,
+        "blurred_image_file_uid": item.blurred_image_file.uid,
     }

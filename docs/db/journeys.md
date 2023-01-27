@@ -66,6 +66,13 @@ class WordPrompt:
   blur with radius `max(0.09*min(width, height), 12)` followed by darkening 30%.
 - `instructor_id (integer not null references instructors(id) on delete cascade)`: the id of the
   instructor for this journey
+- `sample_content_file_id (integer null references content_files(id) on delete set null)`: the id of
+  the video sample for this journey, which is a vertical video appropriate for instagram. null if
+  this video is still processing.
+- `video_content_file_id (integer null references content_files(id) on delete set null)`: the id of the
+  video containing the entire audio content, an audio visualization, with the background image, title,
+  and instructor. This is an extended version of the sample, and is a vertical video. Typically used
+  by instructors to share on their socials. null if the video is still processing.
 - `title (text not null)`: the title of the journey, typically short
 - `description (text not null)`: the description of the journey, typically longer but still short
 - `journey_subcategory_id (integer not null references journey_subcategories(id) on delete restrict)`: the id of the journey subcategory
@@ -90,7 +97,9 @@ CREATE TABLE journeys(
     journey_subcategory_id INTEGER NOT NULL REFERENCES journey_subcategories(id) ON DELETE RESTRICT,
     prompt TEXT NOT NULL,
     created_at REAL NOT NULL,
-    deleted_at REAL NULL
+    deleted_at REAL NULL,
+    sample_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL,
+    video_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL
 );
 
 /* foreign key */
@@ -104,6 +113,12 @@ CREATE INDEX journeys_blurred_background_image_file_id_idx ON journeys(blurred_b
 
 /* foreign key, sort */
 CREATE INDEX journeys_instructor_id_created_at_idx ON journeys(instructor_id, created_at);
+
+/* foreign key */
+CREATE INDEX journeys_sample_content_file_id_idx ON journeys(sample_content_file_id);
+
+/* foreign key */
+CREATE INDEX journeys_video_content_file_id_idx ON journeys(video_content_file_id);
 
 /* foreign key, sort */
 CREATE INDEX journeys_journey_subcategory_id_created_at_idx ON journeys(journey_subcategory_id, created_at);

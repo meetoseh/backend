@@ -20,6 +20,14 @@ class UpdateArgs(BaseModel):
     )
 
 
+EXPECTED_NUM_SUBSCRIBERS = {
+    "backend": 2,
+    "websocket": 2,
+    "frontend-web": 2,
+    "jobs": 4,
+}
+
+
 @router.post(
     "/update",
     status_code=202,
@@ -41,17 +49,18 @@ async def update(args: UpdateArgs, authorization: Optional[str] = Header(None)):
     async with Itgs() as itgs:
         redis = await itgs.redis()
         num_subscribers = await redis.publish(f"updates:{args.repo}", "1")
-    
+
         slack = await itgs.slack()
-        if num_subscribers != 2:
+        expected_num_subscribers = EXPECTED_NUM_SUBSCRIBERS.get(args.repo, 2)
+        if num_subscribers != expected_num_subscribers:
             await slack.send_web_error_message(
-                f"When updating {args.repo=}, there were {num_subscribers=} subscribers! Expected 2.",
-                f"{args.repo} update failed"
+                f"When updating {args.repo=}, there were {num_subscribers=} subscribers! Expected {expected_num_subscribers}.",
+                f"{args.repo} update failed",
             )
         else:
             await slack.send_ops_message(
                 f"Updated {args.repo}: {num_subscribers} instances received update request.",
-                f"{args.repo} updated"
+                f"{args.repo} updated",
             )
 
     return Response(status_code=202)

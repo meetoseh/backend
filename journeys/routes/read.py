@@ -56,6 +56,12 @@ class Journey(BaseModel):
     daily_event_uid: Optional[str] = Field(
         description="If the journey is assigned to a daily event, the uid of that event"
     )
+    sample: Optional[ContentFileRef] = Field(
+        description="If the sample video for this journey is available, the corresponding content file"
+    )
+    video: Optional[ContentFileRef] = Field(
+        description="If the full video for this journey is available, the corresponding content file"
+    )
 
 
 JOURNEY_SORT_OPTIONS = [
@@ -114,6 +120,12 @@ class JourneyFilter(BaseModel):
     )
     daily_event_uid: Optional[FilterItemModel[Optional[str]]] = Field(
         None, description="the uid of the daily event the journey belongs to"
+    )
+    sample_content_file_uid: Optional[FilterTextItemModel] = Field(
+        None, description="the uid of the sample content file"
+    )
+    video_content_file_uid: Optional[FilterTextItemModel] = Field(
+        None, description="the uid of the video content file"
     )
 
 
@@ -208,6 +220,8 @@ async def raw_read_journeys(
     instructor_pictures = image_files.as_("instructor_pictures")
     daily_event_journeys = Table("daily_event_journeys")
     daily_events = Table("daily_events")
+    samples = content_files.as_("samples")
+    videos = content_files.as_("videos")
 
     query: QueryBuilder = (
         Query.from_(journeys)
@@ -230,6 +244,8 @@ async def raw_read_journeys(
             journeys.deleted_at,
             daily_events.uid,
             blurred_image_files.uid,
+            samples.uid,
+            videos.uid,
         )
         .join(content_files)
         .on(content_files.id == journeys.audio_content_file_id)
@@ -252,6 +268,10 @@ async def raw_read_journeys(
                 .where(daily_event_journeys.daily_event_id == daily_events.id)
             )
         )
+        .left_outer_join(samples)
+        .on(samples.id == journeys.sample_content_file_id)
+        .left_outer_join(videos)
+        .on(videos.id == journeys.video_content_file_id)
     )
     qargs = []
 
@@ -276,6 +296,10 @@ async def raw_read_journeys(
             return daily_events.uid
         elif key == "blurred_background_image_file_uid":
             return blurred_image_files.uid
+        elif key == "sample_content_file_uid":
+            return samples.uid
+        elif key == "video_content_file_uid":
+            return videos.uid
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:
@@ -328,6 +352,22 @@ async def raw_read_journeys(
                 daily_event_uid=row[16],
                 blurred_background_image=ImageFileRef(
                     uid=row[17], jwt=await image_files_auth.create_jwt(itgs, row[17])
+                ),
+                sample=(
+                    ContentFileRef(
+                        uid=row[18],
+                        jwt=await content_files_auth.create_jwt(itgs, row[18]),
+                    )
+                    if row[18] is not None
+                    else None
+                ),
+                video=(
+                    ContentFileRef(
+                        uid=row[19],
+                        jwt=await content_files_auth.create_jwt(itgs, row[19]),
+                    )
+                    if row[19] is not None
+                    else None
                 ),
             )
         )

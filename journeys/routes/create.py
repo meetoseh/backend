@@ -71,6 +71,18 @@ class CreateJourneyResponse(BaseModel):
     created_at: float = Field(
         description="The timestamp of when this journey was created"
     )
+    sample: Optional[ContentFileRef] = Field(
+        description=(
+            "If the sample for the journey has been generated, the content "
+            "file containing the sample video, otherwise null"
+        )
+    )
+    video: Optional[ContentFileRef] = Field(
+        description=(
+            "If the full length video for the journey has been generated, "
+            "the content file containing the full length video, otherwise null"
+        )
+    )
 
 
 ERROR_404_TYPES = Literal[
@@ -156,6 +168,7 @@ async def create_journey(
             """,
             (
                 args.journey_audio_content_uid,
+                args.journey_background_image_uid,
                 args.journey_background_image_uid,
                 args.journey_subcategory_uid,
                 args.instructor_uid,
@@ -282,6 +295,9 @@ async def create_journey(
             )
 
         await journeys.lib.stats.on_journey_created(itgs, created_at=now)
+        jobs = await itgs.jobs()
+        await jobs.enqueue("runners.process_journey_video_sample", journey_uid=uid)
+        await jobs.enqueue("runners.process_journey_video", journey_uid=uid)
         return Response(
             content=CreateJourneyResponse(
                 uid=uid,
@@ -318,6 +334,8 @@ async def create_journey(
                 description=args.description,
                 prompt=args.prompt,
                 created_at=now,
+                sample=None,
+                video=None,
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,

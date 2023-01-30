@@ -495,6 +495,9 @@ async def patch_journey(
 
         await purge_journey_meta(itgs, uid)
         await evict_external_journey(itgs, uid=uid)
+        jobs = await itgs.jobs()
+        await jobs.enqueue("runners.process_journey_video_sample", journey_uid=uid)
+        await jobs.enqueue("runners.process_journey_video", journey_uid=uid)
         return Response(
             content=PatchJourneyResponse(
                 uid=uid,

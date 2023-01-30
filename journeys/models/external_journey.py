@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, Field
 from daily_events.models.external_daily_event import (
     ExternalDailyEventJourneyCategory,
@@ -56,3 +57,7 @@ class ExternalJourney(BaseModel):
     )
 
     prompt: Prompt = Field(description="The prompt for the journey")
+
+    sample: Optional[ContentFileRef] = Field(
+        description="A sample for the journey as a 15 second clip, if one is available."
+    )

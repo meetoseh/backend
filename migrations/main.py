@@ -14,12 +14,14 @@ import importlib
 import os
 import asyncio
 import time
+import socket
 
 
 async def main():
     """Acquires a lock and runs any outstanding migrations which have not
     been run before.
     """
+    hostname = socket.gethostname()
     try:
         async with Itgs() as itgs:
             redis = await itgs.redis()
@@ -61,7 +63,9 @@ async def main():
                         "INSERT INTO migrations (name, run_at) VALUES (?, ?)",
                         (migration, time.time()),
                     )
-                    await slack.send_ops_message(f"ran migration `{migration}`")
+                    await slack.send_ops_message(
+                        f"ran migration `{migration}` on {hostname}"
+                    )
                 print("all done")
             except Exception as e:
                 await handle_error(e)

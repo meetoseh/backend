@@ -7,6 +7,7 @@ import journeys.routes.create
 import journeys.routes.delete
 import journeys.routes.dev_show
 import journeys.routes.dev_start_session
+import journeys.routes.give_feedback
 import journeys.routes.patch
 import journeys.routes.profile_pictures
 import journeys.routes.read
@@ -26,6 +27,7 @@ router.include_router(journeys.routes.delete.router)
 router.include_router(journeys.routes.patch.router)
 router.include_router(journeys.routes.read.router)
 router.include_router(journeys.routes.undelete.router)
+router.include_router(journeys.routes.give_feedback.router)
 
 
 router.include_router(journeys.routes.dev_show.router)

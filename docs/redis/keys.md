@@ -175,6 +175,10 @@ the keys that we use in redis
 - `frontend-web:server_images:config` used by frontend-web/server_images for maintaining
   configuration from the last time an instance processed the static public server images
 
+- `users:{sub}:streak` goes to a string containing the response content for read_sterak.
+  This is a very short-lived cache to avoid having to ratelimit this endpoint while also not
+  allowing for a trivial DOS attack as the endpoint is somewhat costly.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

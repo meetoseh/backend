@@ -158,9 +158,11 @@ async def get_cached_raw_web_playlist_as_response(
     This can be significantly faster if presigning is not required.
     """
     local_cache = await itgs.local_cache()
-    raw_result: Union[bytes, io.BytesIO] = local_cache.get(
+    raw_result: Optional[Union[bytes, io.BytesIO]] = local_cache.get(
         f"content_files:playlists:web:{uid}".encode("utf-8"), read=True
     )
+    if raw_result is None:
+        return None
 
     if isinstance(raw_result, (bytes, bytearray)):
         return Response(
@@ -310,6 +312,10 @@ async def get_web_playlist(
         if raw_resp is not None:
             return raw_resp
 
+        raw = await get_raw_web_playlist_from_db(itgs, uid)
+        if raw is None:
+            return None
+        await set_cached_raw_web_playlist(itgs, uid, raw)
     else:
         raw = await get_raw_web_playlist(itgs, uid)
         if raw is None:
@@ -318,8 +324,8 @@ async def get_web_playlist(
         for item in raw.exports:
             item.url += "?" + urlencode({"jwt": presign_jwt})
 
-        return Response(
-            content=raw.json(),
-            headers={"content-type": "application/json; charset=utf-8"},
-            status_code=200,
-        )
+    return Response(
+        content=raw.json(),
+        headers={"content-type": "application/json; charset=utf-8"},
+        status_code=200,
+    )

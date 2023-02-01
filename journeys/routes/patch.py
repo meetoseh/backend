@@ -233,6 +233,7 @@ async def patch_journey(
                 )
             )
             qargs.append(args.journey_background_image_uid)
+            qargs.append(args.journey_background_image_uid)
 
         if args.journey_subcategory_uid is None:
             query = query.join(journey_subcategories).on(

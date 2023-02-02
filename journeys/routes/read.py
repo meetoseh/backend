@@ -211,6 +211,7 @@ async def raw_read_journeys(
     limit: int,
 ):
     """performs exactly the specified sort without pagination logic"""
+    # remember to change introductory_journeys if we change this
     journeys = Table("journeys")
     content_files = Table("content_files")
     image_files = Table("image_files")

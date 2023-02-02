@@ -68,7 +68,7 @@ class InstructorFilter(BaseModel):
             "in seconds since the unix epoch"
         ),
     )
-    deleted_at: Optional[FilterItemModel[Optional[float]]] = Field(
+    deleted_at: Optional[FilterItemModel[float]] = Field(
         None,
         description=(
             "the timestamp of when the instructor was soft-deleted, specified in "

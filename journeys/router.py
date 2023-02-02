@@ -3,6 +3,7 @@ import journeys.background_images.router
 import journeys.audio_contents.router
 import journeys.events.router
 import journeys.subcategories.router
+import journeys.introductory.router
 import journeys.routes.create
 import journeys.routes.delete
 import journeys.routes.dev_show
@@ -21,6 +22,7 @@ router.include_router(
 router.include_router(journeys.audio_contents.router.router, prefix="/audio_contents")
 router.include_router(journeys.events.router.router, prefix="/events")
 router.include_router(journeys.subcategories.router.router, prefix="/subcategories")
+router.include_router(journeys.introductory.router.router, prefix="/introductory")
 router.include_router(journeys.routes.profile_pictures.router)
 router.include_router(journeys.routes.create.router)
 router.include_router(journeys.routes.delete.router)

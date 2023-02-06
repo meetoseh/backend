@@ -5,3 +5,4 @@ dev.bat
 dev-*.bat
 /s3_buckets
 /tmp
+/*.log

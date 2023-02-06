@@ -29,6 +29,7 @@ import daily_events.routes.now
 import journeys.lib.read_one_external
 import journeys.routes.profile_pictures
 import asyncio
+from loguru import logger
 
 
 if (
@@ -106,6 +107,7 @@ if perpetual_pub_sub.instance is None:
 
 @app.on_event("startup")
 def register_background_tasks():
+    logger.add("backend.log", enqueue=True, rotation="100 MB")
 
     background_tasks.add(asyncio.create_task(updater.listen_forever()))
     background_tasks.add(asyncio.create_task(migrations.main.main()))

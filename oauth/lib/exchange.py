@@ -77,6 +77,9 @@ class OauthExchangeResponse(BaseModel):
             "- jti: _required_ a unique identifier for the token, for revocation\n"
         )
     )
+    onboard: bool = Field(
+        description="True if the user should go through the onboarding flow, false otherwise"
+    )
     redirect_uri: str = Field(
         description="The URI to which the user should be redirected after the exchange"
     )
@@ -164,7 +167,9 @@ async def create_tokens_for_user(
     refresh_token_desired: bool,
 ) -> OauthExchangeResponse:
     """Creates the id token and optionally refresh token for the user with
-    the given sub. The returned id token and refresh token are both JWTs
+    the given sub. The returned id token and refresh token are both JWTs.
+
+    This also checks if the user should go through the onboarding flow.
     """
     now = int(time.time())
 
@@ -215,10 +220,28 @@ async def create_tokens_for_user(
             algorithm="HS256",
         )
 
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+
+    response = await cursor.execute(
+        """
+        SELECT 1 FROM journey_sessions
+        WHERE
+            EXISTS (
+                SELECT 1 FROM users
+                WHERE users.sub = ?
+                  AND journey_sessions.user_id = users.id
+            )
+        """,
+        (user.user_sub,),
+    )
+    onboard: bool = not response.results
+
     return OauthExchangeResponse(
         id_token=id_token,
         refresh_token=refresh_token,
         redirect_uri=redirect_uri,
+        onboard=onboard,
     )
 
 

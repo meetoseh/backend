@@ -22,6 +22,9 @@ class DevLoginRequest(BaseModel):
 class DevLoginResponse(BaseModel):
     id_token: str = Field(description="the id token")
     refresh_token: Optional[str] = Field(description="the refresh token, if requested")
+    onboard: bool = Field(
+        description="if the user should go through the onboarding flow"
+    )
 
 
 @router.post("/login", response_model=DevLoginResponse)
@@ -92,7 +95,9 @@ async def dev_login(args: DevLoginRequest):
         )
         return Response(
             content=DevLoginResponse(
-                id_token=response.id_token, refresh_token=response.refresh_token
+                id_token=response.id_token,
+                refresh_token=response.refresh_token,
+                onboard=response.onboard,
             ).json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",

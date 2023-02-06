@@ -201,6 +201,7 @@ async def callback(
                         if response.refresh_token is not None
                         else {}
                     ),
+                    **({"onboard": "1"} if response.onboard else {}),
                 }
             ),
             status_code=302,

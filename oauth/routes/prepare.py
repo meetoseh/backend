@@ -82,6 +82,11 @@ async def prepare(args: OauthPrepareRequest):
                     if args.provider == "SignInWithApple"
                     else {}
                 ),
+                **(
+                    PROVIDER_TO_SETTINGS[args.provider].bonus_params
+                    if args.provider != "SignInWithApple"
+                    else {}
+                ),
             }
         )
     )

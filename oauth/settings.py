@@ -23,6 +23,9 @@ class ProviderSettings:
     scope: str
     """The scopes to request with this provider"""
 
+    bonus_params: Dict[str, str]
+    """Any additional parameters when forming the authorization URL"""
+
 
 PROVIDER_TO_SETTINGS: Dict[Literal["Google"], ProviderSettings] = {
     "Google": ProviderSettings(
@@ -32,5 +35,8 @@ PROVIDER_TO_SETTINGS: Dict[Literal["Google"], ProviderSettings] = {
         client_id=os.environ["OSEH_GOOGLE_CLIENT_ID"],
         client_secret=os.environ["OSEH_GOOGLE_CLIENT_SECRET"],
         scope="https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
+        bonus_params={
+            "prompt": "select_account",
+        },
     ),
 }

@@ -14,4 +14,7 @@ class OauthState(BaseModel):
     redirect_uri: str = Field(
         description="The URI to which the user should be redirected after the exchange"
     )
+    initial_redirect_uri: str = Field(
+        description="The URI to which the user was redirected back to from the provider"
+    )
     nonce: str = Field(description="The nonce used to prevent replay attacks")

@@ -127,7 +127,7 @@ async def use_standard_exchange(
                     "code": code,
                     "client_id": provider.client_id,
                     "client_secret": provider.client_secret,
-                    "redirect_uri": state.redirect_uri,
+                    "redirect_uri": state.initial_redirect_uri,
                     "grant_type": "authorization_code",
                 }
             ),

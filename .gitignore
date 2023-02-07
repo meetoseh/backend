@@ -6,3 +6,4 @@ dev-*.bat
 /s3_buckets
 /tmp
 /*.log
+/*.pem

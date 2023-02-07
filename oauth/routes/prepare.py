@@ -1,13 +1,14 @@
 from fastapi import APIRouter
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
-from typing import Literal
+from pydantic import BaseModel, Field, constr
+from typing import Literal, Optional
 from itgs import Itgs
 import secrets
 import os
 from urllib.parse import urlencode
 from oauth.settings import PROVIDER_TO_SETTINGS
 from oauth.models.oauth_state import OauthState
+from models import StandardErrorResponse
 
 
 router = APIRouter()
@@ -23,20 +24,59 @@ class OauthPrepareRequest(BaseModel):
             "Does not guarrantee a refresh token is returned."
         )
     )
+    redirect_uri: Optional[
+        constr(strip_whitespace=True, min_length=5, max_length=65535)
+    ] = Field(
+        None,
+        description=(
+            "If specified, the url to redirect to after the exchange. This must be "
+            "an allowed URL or URL format. We allow the following urls:\n\n"
+            "- ROOT_FRONTEND_URL (typically https://oseh.io)\n"
+            "- oseh://login_callback\n\n"
+        ),
+    )
 
 
 class OauthPrepareResponse(BaseModel):
     url: str = Field(description="The URL to redirect the user to for authentication")
 
 
-@router.post("/prepare", response_model=OauthPrepareResponse)
+ERROR_409_TYPES = Literal["invalid_redirect_uri"]
+
+
+@router.post(
+    "/prepare",
+    response_model=OauthPrepareResponse,
+    responses={
+        "409": {
+            "description": "The redirect_uri is invalid",
+            "model": StandardErrorResponse[ERROR_409_TYPES],
+        }
+    },
+)
 async def prepare(args: OauthPrepareRequest):
     """Begins the first step of the openid-connect server-side flow with the given
     provider, where a random token is generated and used to produce a URL that
     the user will be redirected to for authentication.
 
-    The user will be redirected back to the homepage.
+    The user will be redirected back to the specified uri.
     """
+
+    if args.redirect_uri is None:
+        args.redirect_uri = os.environ["ROOT_FRONTEND_URL"]
+    else:
+        if (
+            args.redirect_uri != os.environ["ROOT_FRONTEND_URL"]
+            and args.redirect_uri != "oseh://login_callback"
+        ):
+            return Response(
+                content=StandardErrorResponse[ERROR_409_TYPES](
+                    type="invalid_redirect_uri",
+                    message="The specified redirect uri is not allowed.",
+                ).json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=409,
+            )
 
     # 30 characters as recommended
     # https://developers.google.com/identity/openid-connect/openid-connect#createxsrftoken
@@ -99,7 +139,8 @@ async def prepare(args: OauthPrepareRequest):
                 OauthState(
                     provider=args.provider,
                     refresh_token_desired=args.refresh_token_desired,
-                    redirect_uri=redirect_uri,
+                    redirect_uri=args.redirect_uri,
+                    initial_redirect_uri=redirect_uri,
                     nonce=nonce,
                 )
                 .json()

@@ -14,9 +14,10 @@ router = APIRouter()
 async def callback(
     state: Optional[str] = None, code: Optional[str] = None, scope: Optional[str] = None
 ):
-    """The standard callback endpoint for the oauth flow. Redirects back to the homepage
-    with the tokens in the url fragment, on success, and on failure redirects with
-    auth_error and auth_error_message in the query string.
+    """The standard callback endpoint for the oauth flow. Redirects back to the uri
+    specified during the prepare request with the tokens in the url fragment, on
+    success, and on failure redirects with auth_error and auth_error_message in
+    the query string.
     """
     std_redirect_url = os.environ["ROOT_FRONTEND_URL"]
 
@@ -45,7 +46,7 @@ async def callback(
 
         if state_info.provider != "Google":
             return RedirectResponse(
-                url=f"{std_redirect_url}/?"
+                url=f"{state_info.redirect_uri}/?"
                 + urlencode(
                     {
                         "auth_error": "1",
@@ -60,7 +61,7 @@ async def callback(
         )
 
         return RedirectResponse(
-            url=f"{std_redirect_url}/#"
+            url=f"{state_info.redirect_uri}/#"
             + urlencode(
                 {
                     "id_token": response.id_token,

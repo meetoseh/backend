@@ -24,6 +24,9 @@ class JourneyBackgroundImage(BaseModel):
     blurred_image_file: ImageFileRef = Field(
         description="The blurred version of the image"
     )
+    darkened_image_file: ImageFileRef = Field(
+        description="The darkened version of the image"
+    )
     image_file_created_at: float = Field(
         description=(
             "When the image file was originally uploaded, in seconds since the unix epoch"
@@ -65,6 +68,9 @@ class JourneyBackgroundImageFilter(BaseModel):
     )
     blurred_image_file_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the blurred image file"
+    )
+    darkened_image_file_uid: Optional[FilterTextItemModel] = Field(
+        None, description="the uid of the darkened image file"
     )
     original_file_sha512: Optional[FilterTextItemModel] = Field(
         None, description="the sha512 of the original file"
@@ -168,6 +174,7 @@ async def raw_read_journey_background_images(
     journey_background_images = Table("journey_background_images")
     image_files = Table("image_files")
     blurred_image_files = image_files.as_("blurred_image_files")
+    darkened_image_files = image_files.as_("darkened_image_files")
     users = Table("users")
 
     query: QueryBuilder = (
@@ -179,11 +186,14 @@ async def raw_read_journey_background_images(
             users.sub,
             journey_background_images.last_uploaded_at,
             blurred_image_files.uid,
+            darkened_image_files.uid,
         )
         .join(image_files)
         .on(image_files.id == journey_background_images.image_file_id)
         .join(blurred_image_files)
         .on(blurred_image_files.id == journey_background_images.blurred_image_file_id)
+        .join(darkened_image_files)
+        .on(darkened_image_files.id == journey_background_images.darkened_image_file_id)
         .left_outer_join(users)
         .on(users.id == journey_background_images.uploaded_by_user_id)
     )
@@ -202,6 +212,8 @@ async def raw_read_journey_background_images(
             return journey_background_images.field(key)
         elif key == "blurred_image_file_uid":
             return blurred_image_files.uid
+        elif key == "darkened_image_file_uid":
+            return darkened_image_files.uid
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:
@@ -232,6 +244,9 @@ async def raw_read_journey_background_images(
                 blurred_image_file=ImageFileRef(
                     uid=row[5], jwt=await image_files_auth.create_jwt(itgs, row[5])
                 ),
+                darkened_image_file=ImageFileRef(
+                    uid=row[6], jwt=await image_files_auth.create_jwt(itgs, row[6])
+                ),
             )
         )
     return items
@@ -247,4 +262,5 @@ def item_pseudocolumns(item: JourneyBackgroundImage) -> dict:
         "uploaded_by_user_sub": item.uploaded_by_user_sub,
         "last_uploaded_at": item.last_uploaded_at,
         "blurred_image_file_uid": item.blurred_image_file.uid,
+        "darkened_image_file_uid": item.darkened_image_file.uid,
     }

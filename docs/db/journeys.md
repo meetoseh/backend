@@ -64,6 +64,9 @@ class WordPrompt:
 - `blurred_background_image_file_id (integer not null references image_files(id) on delete cascade`:
   the id of the blurred background image file. This is typically the background image with a guassian
   blur with radius `max(0.09*min(width, height), 12)` followed by darkening 30%.
+- `darkened_background_image_file_id (integer not null references image_files(id) on delete cascade`:
+  the id of the darkened background image file. This is typically the background image darkened
+  by 20%
 - `instructor_id (integer not null references instructors(id) on delete cascade)`: the id of the
   instructor for this journey
 - `sample_content_file_id (integer null references content_files(id) on delete set null)`: the id of
@@ -91,6 +94,7 @@ CREATE TABLE journeys(
     audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
     background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
     blurred_background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
+    darkened_background_image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
     instructor_id INTEGER NOT NULL REFERENCES instructors(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT NOT NULL,
@@ -110,6 +114,9 @@ CREATE INDEX journeys_background_image_file_id_idx ON journeys(background_image_
 
 /* foreign key */
 CREATE INDEX journeys_blurred_background_image_file_id_idx ON journeys(blurred_background_image_file_id);
+
+/* foreign key */
+CREATE INDEX journeys_darkened_background_image_file_id_idx ON journeys(darkened_background_image_file_id);
 
 /* foreign key, sort */
 CREATE INDEX journeys_instructor_id_created_at_idx ON journeys(instructor_id, created_at);

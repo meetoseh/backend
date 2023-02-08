@@ -14,6 +14,9 @@ images.
 - `blurred_image_file_id (integer unique not null references image_files(id) on delete cascade)`:
   The blurred version of the image file. Applies a blur according to the description
   in [journeys](./journeys.md)
+- `darkened_image_file_id (integer unique not null references image_files(id) on delete cascade)`:
+  The darkened version of the image file. Darkens the image according to the description
+  in [journeys](./journeys.md)
 - `uploaded_by_user_id (integer null references users(id) on delete set null)`:
   The user that uploaded this image
 - `last_uploaded_at (real not null)`: The last time the image was uploaded, important
@@ -28,6 +31,7 @@ CREATE TABLE journey_background_images (
     uid TEXT UNIQUE NOT NULL,
     image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
     blurred_image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
+    darkened_image_file_id INTEGER UNIQUE NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
     uploaded_by_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
     last_uploaded_at REAL NOT NULL
 );

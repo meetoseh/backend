@@ -38,6 +38,10 @@ class ExternalJourney(BaseModel):
         description="The blurred background image for the journey."
     )
 
+    darkened_background_image: ImageFileRef = Field(
+        description="The darkened background image for the journey."
+    )
+
     audio_content: ContentFileRef = Field(
         description="The audio content for the journey"
     )

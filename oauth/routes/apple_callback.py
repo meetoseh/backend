@@ -192,7 +192,7 @@ async def callback(
             refresh_token_desired=state_info.refresh_token_desired,
         )
         return RedirectResponse(
-            url=f"{std_redirect_url}/#"
+            url=f"{state_info.redirect_uri}/#"
             + urlencode(
                 {
                     "id_token": response.id_token,
@@ -288,7 +288,7 @@ async def id_token_from_code(itgs: Itgs, code: str, state_info: OauthState):
                     "client_secret": apple_jwt,
                     "code": code,
                     "grant_type": "authorization_code",
-                    "redirect_uri": state_info.redirect_uri,
+                    "redirect_uri": state_info.initial_redirect_uri,
                 }
             ),
         ) as response:

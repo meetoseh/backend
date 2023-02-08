@@ -485,7 +485,7 @@ async def read_one_external_from_db(
             journeys.uid
         FROM journeys
         JOIN journey_subcategories ON journey_subcategories.id = journeys.journey_subcategory_id
-        JOIN image_files ON image_files.id = journeys.background_image_file_id
+        JOIN image_files ON image_files.id = journeys.darkened_background_image_file_id
         JOIN instructors ON instructors.id = journeys.instructor_id
         WHERE
             EXISTS (

@@ -175,6 +175,7 @@ async def raw_read_introductory_journeys(
     content_files = Table("content_files")
     image_files = Table("image_files")
     blurred_image_files = image_files.as_("blurred_image_files")
+    darkened_image_files = image_files.as_("darkened_image_files")
     journey_subcategories = Table("journey_subcategories")
     instructors = Table("instructors")
     instructor_pictures = image_files.as_("instructor_pictures")
@@ -206,6 +207,7 @@ async def raw_read_introductory_journeys(
             blurred_image_files.uid,
             samples.uid,
             videos.uid,
+            darkened_image_files.uid,
             introductory_journeys.uid,
             introductory_journey_users.sub,
             introductory_journeys.created_at,
@@ -218,6 +220,8 @@ async def raw_read_introductory_journeys(
         .on(image_files.id == journeys.background_image_file_id)
         .join(blurred_image_files)
         .on(blurred_image_files.id == journeys.blurred_background_image_file_id)
+        .join(darkened_image_files)
+        .on(darkened_image_files.id == journeys.darkened_background_image_file_id)
         .join(journey_subcategories)
         .on(journey_subcategories.id == journeys.journey_subcategory_id)
         .join(instructors)
@@ -272,6 +276,8 @@ async def raw_read_introductory_journeys(
             return daily_events.uid
         elif key == "blurred_background_image_file_uid":
             return blurred_image_files.uid
+        elif key == "darkened_background_image_file_uid":
+            return darkened_image_files.uid
         elif key == "sample_content_file_uid":
             return samples.uid
         elif key == "video_content_file_uid":
@@ -348,10 +354,14 @@ async def raw_read_introductory_journeys(
                         if row[19] is not None
                         else None
                     ),
+                    darkened_background_image=ImageFileRef(
+                        uid=row[20],
+                        jwt=await image_files_auth.create_jwt(itgs, row[20]),
+                    ),
                 ),
-                uid=row[20],
-                user_sub=row[21],
-                created_at=row[22],
+                uid=row[21],
+                user_sub=row[22],
+                created_at=row[23],
             )
         )
     return items

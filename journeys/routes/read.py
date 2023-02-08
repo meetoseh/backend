@@ -372,7 +372,7 @@ async def raw_read_journeys(
                 sample=(
                     ContentFileRef(
                         uid=row[19],
-                        jwt=await content_files_auth.create_jwt(itgs, row[18]),
+                        jwt=await content_files_auth.create_jwt(itgs, row[19]),
                     )
                     if row[19] is not None
                     else None
@@ -380,7 +380,7 @@ async def raw_read_journeys(
                 video=(
                     ContentFileRef(
                         uid=row[20],
-                        jwt=await content_files_auth.create_jwt(itgs, row[19]),
+                        jwt=await content_files_auth.create_jwt(itgs, row[20]),
                     )
                     if row[20] is not None
                     else None

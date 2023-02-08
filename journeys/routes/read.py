@@ -36,6 +36,9 @@ class Journey(BaseModel):
     blurred_background_image: ImageFileRef = Field(
         description="The blurred version of the background image"
     )
+    darkened_background_image: ImageFileRef = Field(
+        description="The darkened version of the background image"
+    )
     subcategory: JourneySubcategory = Field(
         description="The subcategory this journey belongs to"
     )
@@ -90,6 +93,9 @@ class JourneyFilter(BaseModel):
     )
     blurred_background_image_file_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the blurred background image file"
+    )
+    darkened_background_image_file_uid: Optional[FilterTextItemModel] = Field(
+        None, description="the uid of the darkened background image file"
     )
     subcategory_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the subcategory"
@@ -216,6 +222,7 @@ async def raw_read_journeys(
     content_files = Table("content_files")
     image_files = Table("image_files")
     blurred_image_files = image_files.as_("blurred_image_files")
+    darkened_image_files = image_files.as_("darkened_image_files")
     journey_subcategories = Table("journey_subcategories")
     instructors = Table("instructors")
     instructor_pictures = image_files.as_("instructor_pictures")
@@ -245,6 +252,7 @@ async def raw_read_journeys(
             journeys.deleted_at,
             daily_events.uid,
             blurred_image_files.uid,
+            darkened_image_files.uid,
             samples.uid,
             videos.uid,
         )
@@ -254,6 +262,8 @@ async def raw_read_journeys(
         .on(image_files.id == journeys.background_image_file_id)
         .join(blurred_image_files)
         .on(blurred_image_files.id == journeys.blurred_background_image_file_id)
+        .join(darkened_image_files)
+        .on(darkened_image_files.id == journeys.darkened_background_image_file_id)
         .join(journey_subcategories)
         .on(journey_subcategories.id == journeys.journey_subcategory_id)
         .join(instructors)
@@ -297,6 +307,8 @@ async def raw_read_journeys(
             return daily_events.uid
         elif key == "blurred_background_image_file_uid":
             return blurred_image_files.uid
+        elif key == "darkened_background_image_file_uid":
+            return darkened_image_files.uid
         elif key == "sample_content_file_uid":
             return samples.uid
         elif key == "video_content_file_uid":
@@ -354,20 +366,23 @@ async def raw_read_journeys(
                 blurred_background_image=ImageFileRef(
                     uid=row[17], jwt=await image_files_auth.create_jwt(itgs, row[17])
                 ),
+                darkened_background_image=ImageFileRef(
+                    uid=row[18], jwt=await image_files_auth.create_jwt(itgs, row[18])
+                ),
                 sample=(
                     ContentFileRef(
-                        uid=row[18],
+                        uid=row[19],
                         jwt=await content_files_auth.create_jwt(itgs, row[18]),
                     )
-                    if row[18] is not None
+                    if row[19] is not None
                     else None
                 ),
                 video=(
                     ContentFileRef(
-                        uid=row[19],
+                        uid=row[20],
                         jwt=await content_files_auth.create_jwt(itgs, row[19]),
                     )
-                    if row[19] is not None
+                    if row[20] is not None
                     else None
                 ),
             )
@@ -386,6 +401,7 @@ def item_pseudocolumns(item: Journey) -> dict:
         "audio_content_file_uid": item.audio_content.uid,
         "background_image_file_uid": item.background_image.uid,
         "blurred_background_image_file_uid": item.blurred_background_image.uid,
+        "darkened_background_image_file_uid": item.darkened_background_image.uid,
         "subcategory_uid": item.subcategory.uid,
         "subcategory_internal_name": item.subcategory.internal_name,
         "subcategory_external_name": item.subcategory.external_name,

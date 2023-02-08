@@ -154,6 +154,7 @@ async def patch_journey(
         content_files = Table("content_files")
         image_files = Table("image_files")
         blurred_image_files = image_files.as_("blurred_image_files")
+        darkened_image_files = image_files.as_("darkened_image_files")
         instructors = Table("instructors")
         instructor_pictures = image_files.as_("instructor_pictures")
         dummy = Table("dummy")
@@ -178,6 +179,7 @@ async def patch_journey(
                 journeys.description,
                 journeys.prompt,
                 blurred_image_files.uid,
+                darkened_image_files.uid,
             )
             .left_join(journeys)
             .on((journeys.uid == Parameter("?")) & journeys.deleted_at.isnull())
@@ -205,6 +207,11 @@ async def patch_journey(
                 .on(image_files.id == journeys.background_image_file_id)
                 .join(blurred_image_files)
                 .on(blurred_image_files.id == journeys.blurred_background_image_file_id)
+                .join(darkened_image_files)
+                .on(
+                    darkened_image_files.id
+                    == journeys.darkened_background_image_file_id
+                )
             )
         else:
             query = (
@@ -231,7 +238,20 @@ async def patch_journey(
                         .where(journey_background_images.uid == Parameter("?"))
                     )
                 )
+                .left_outer_join(darkened_image_files)
+                .on(
+                    ExistsCriterion(
+                        Query.from_(journey_background_images)
+                        .select(1)
+                        .where(
+                            journey_background_images.darkened_image_file_id
+                            == darkened_image_files.id
+                        )
+                        .where(journey_background_images.uid == Parameter("?"))
+                    )
+                )
             )
+            qargs.append(args.journey_background_image_uid)
             qargs.append(args.journey_background_image_uid)
             qargs.append(args.journey_background_image_uid)
 
@@ -283,6 +303,7 @@ async def patch_journey(
         journey_description: Optional[str] = response.results[0][13]
         journey_prompt: Optional[str] = response.results[0][14]
         blurred_image_file_uid: Optional[str] = response.results[0][15]
+        darkened_image_file_uid: Optional[str] = response.results[0][16]
 
         if not journey_exists:
             return Response(
@@ -304,7 +325,11 @@ async def patch_journey(
                 status_code=404,
             )
 
-        if image_file_uid is None or blurred_image_file_uid is None:
+        if (
+            image_file_uid is None
+            or blurred_image_file_uid is None
+            or darkened_image_file_uid is None
+        ):
             return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_background_image_not_found",
@@ -379,9 +404,15 @@ async def patch_journey(
             )
 
         if args.journey_background_image_uid is not None:
-            update_and_set_query = update_and_set_query.set(
-                journeys.background_image_file_id, image_files.id
-            ).set(journeys.blurred_background_image_file_id, blurred_image_files.id)
+            update_and_set_query = (
+                update_and_set_query.set(
+                    journeys.background_image_file_id, image_files.id
+                )
+                .set(journeys.blurred_background_image_file_id, blurred_image_files.id)
+                .set(
+                    journeys.darkened_background_image_file_id, darkened_image_files.id
+                )
+            )
             from_query = join_on(
                 image_files,
                 ExistsCriterion(
@@ -400,6 +431,19 @@ async def patch_journey(
                     .where(
                         journey_background_images.blurred_image_file_id
                         == blurred_image_files.id
+                    )
+                    .where(journey_background_images.uid == Parameter("?"))
+                ),
+                [args.journey_background_image_uid],
+            )
+            from_query = join_on(
+                darkened_image_files,
+                ExistsCriterion(
+                    Query.from_(journey_background_images)
+                    .select(1)
+                    .where(
+                        journey_background_images.darkened_image_file_id
+                        == darkened_image_files.id
                     )
                     .where(journey_background_images.uid == Parameter("?"))
                 ),
@@ -513,6 +557,12 @@ async def patch_journey(
                 blurred_background_image=ImageFileRef(
                     uid=blurred_image_file_uid,
                     jwt=await image_files_auth.create_jwt(itgs, blurred_image_file_uid),
+                ),
+                darkened_background_image=ImageFileRef(
+                    uid=darkened_image_file_uid,
+                    jwt=await image_files_auth.create_jwt(
+                        itgs, darkened_image_file_uid
+                    ),
                 ),
                 subcategory=JourneySubcategory(
                     uid=journey_subcategory_uid,

@@ -56,6 +56,9 @@ class Journey(BaseModel):
     deleted_at: Optional[float] = Field(
         description="The timestamp of when this journey was soft-deleted"
     )
+    introductory_journey_uid: Optional[str] = Field(
+        description="If the journey is assigned to an introductory event, the uid of that event"
+    )
     daily_event_uid: Optional[str] = Field(
         description="If the journey is assigned to a daily event, the uid of that event"
     )
@@ -126,6 +129,9 @@ class JourneyFilter(BaseModel):
     )
     daily_event_uid: Optional[FilterItemModel[Optional[str]]] = Field(
         None, description="the uid of the daily event the journey belongs to"
+    )
+    introductory_journey_uid: Optional[FilterItemModel[str]] = Field(
+        None, description="the uid of the introductory event the journey belongs to"
     )
     sample_content_file_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the sample content file"
@@ -230,6 +236,7 @@ async def raw_read_journeys(
     daily_events = Table("daily_events")
     samples = content_files.as_("samples")
     videos = content_files.as_("videos")
+    introductory_journeys = Table("introductory_journeys")
 
     query: QueryBuilder = (
         Query.from_(journeys)
@@ -255,6 +262,7 @@ async def raw_read_journeys(
             darkened_image_files.uid,
             samples.uid,
             videos.uid,
+            introductory_journeys.uid,
         )
         .join(content_files)
         .on(content_files.id == journeys.audio_content_file_id)
@@ -283,6 +291,8 @@ async def raw_read_journeys(
         .on(samples.id == journeys.sample_content_file_id)
         .left_outer_join(videos)
         .on(videos.id == journeys.video_content_file_id)
+        .left_outer_join(introductory_journeys)
+        .on(introductory_journeys.journey_id == journeys.id)
     )
     qargs = []
 
@@ -313,6 +323,8 @@ async def raw_read_journeys(
             return samples.uid
         elif key == "video_content_file_uid":
             return videos.uid
+        elif key == "introductory_journey_uid":
+            return introductory_journeys.uid
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:
@@ -385,6 +397,7 @@ async def raw_read_journeys(
                     if row[20] is not None
                     else None
                 ),
+                introductory_journey_uid=row[21],
             )
         )
     return items

@@ -80,6 +80,7 @@ async def dev_login(args: DevLoginRequest):
                 client_id="example-client-id",
                 client_secret="example-client-secret",
                 scope="email phone openid profile",
+                bonus_params={},
             ),
             fake_claims,
         )

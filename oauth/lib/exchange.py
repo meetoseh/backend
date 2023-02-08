@@ -225,17 +225,19 @@ async def create_tokens_for_user(
 
     response = await cursor.execute(
         """
-        SELECT 1 FROM journey_sessions
-        WHERE
+        SELECT
             EXISTS (
-                SELECT 1 FROM users
-                WHERE users.sub = ?
-                  AND journey_sessions.user_id = users.id
-            )
+                SELECT 1 FROM journey_sessions
+                WHERE EXISTS (
+                    SELECT 1 FROM users
+                    WHERE users.sub = ?
+                    AND journey_sessions.user_id = users.id
+                )
+            ) AS b1
         """,
         (user.user_sub,),
     )
-    onboard: bool = not response.results
+    onboard: bool = not response.results[0][0]
 
     return OauthExchangeResponse(
         id_token=id_token,

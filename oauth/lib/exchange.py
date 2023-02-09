@@ -228,11 +228,16 @@ async def create_tokens_for_user(
         SELECT
             EXISTS (
                 SELECT 1 FROM journey_sessions
-                WHERE EXISTS (
-                    SELECT 1 FROM users
-                    WHERE users.sub = ?
-                    AND journey_sessions.user_id = users.id
-                )
+                WHERE 
+                    EXISTS (
+                        SELECT 1 FROM users
+                        WHERE users.sub = ?
+                        AND journey_sessions.user_id = users.id
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM journey_events
+                        WHERE journey_events.journey_session_id = journey_sessions.id
+                    )
             ) AS b1
         """,
         (user.user_sub,),

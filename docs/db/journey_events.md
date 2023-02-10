@@ -1,12 +1,13 @@
 # journey_events
 
-Describes the events that occurred in a journey. Events have two relevant
-timestamps - how far the user was into the journey when the event occurred,
-which will be referred to as the journey time, and real wall clock time when the
-event occurred, which will be referred to as the created at time.
+Describes the events that occurred in the lobby portion of a journey. Events
+have two relevant timestamps - how far the user was into the lobby when the
+event occurred, which will be referred to as the journey time, and real wall
+clock time when the event occurred, which will be referred to as the created at
+time.
 
 When users participate in journeys, they can interact with the content in the
-journey and get a stream of events from other participants. The events that are
+lobby and get a stream of events from other participants. The events that are
 streamed to the user are based on the journey time they occurred - meaning they
 are seeing events from all users which have already taken that journey, unless
 the events created at time is nearly live, in which case we show it to the user
@@ -16,20 +17,20 @@ ahead of everyone else and no longer see any other interactions.
 
 See also:
 
--   [journeys](journeys.md) - combines the content and the prompt
--   [journey_sessions](journey_sessions.md) - the journey + user that the session
-    is for
--   [daily_events](daily_events.md) - the journeys for a particular day
--   [daily_event_journeys](daily_event_journeys.md) - the relationship
-    between journeys and daily events
--   [journey_event_fenwick_trees](journey_event_fenwick_trees.md) - allows for
-    looking up totals for a particular journey time, i.e., how many likes are
-    there in total 30 seconds into the journey? this is primarily for
-    reconnection handling
--   [journey_event_counts](journey_event_counts.md) - allows for lookup up
-    how many events occurred in a particular time range, i.e., how many likes
-    occurred between seconds 2-3 seconds of the journey? this is primarily
-    for guiding the sampling rate when streaming events to users
+- [journeys](journeys.md) - combines the content and the prompt
+- [journey_sessions](journey_sessions.md) - the journey + user that the session
+  is for
+- [daily_events](daily_events.md) - the journeys for a particular day
+- [daily_event_journeys](daily_event_journeys.md) - the relationship
+  between journeys and daily events
+- [journey_event_fenwick_trees](journey_event_fenwick_trees.md) - allows for
+  looking up totals for a particular journey time, i.e., how many likes are
+  there in total 30 seconds into the journey? this is primarily for
+  reconnection handling
+- [journey_event_counts](journey_event_counts.md) - allows for lookup up
+  how many events occurred in a particular time range, i.e., how many likes
+  occurred between seconds 2-3 seconds of the journey? this is primarily
+  for guiding the sampling rate when streaming events to users
 
 ## Subscriptions
 
@@ -70,20 +71,20 @@ class WordPromptResponseEvent:
 
 ## Fields
 
--   `id (integer primary key)`: the internal identifier for the row
--   `uid (text unique not null)`: the primary external identifier for the row. The
-    uid prefix is `je`: see [uid_prefixes](../uid_prefixes.md).
--   `journey_session_id (integer not null references journey_sessions(id) on delete cascade)`:
-    the journey session id, which combines which journey, which user, and what session (if
-    they left and rejoined or repeated the journey they would have multiple sessions)
--   `evtype (text not null)`: the type of event, which is the snakecase name of the
-    class used in the Data section above but without the '\_event' suffix
--   `data (text not null)`: the data for the event, which is a json object. See
-    Data
--   `journey_time (real not null)`: the time in seconds into the journey when the
-    event occurred
--   `created_at (real not null)`: when this record was created in seconds since
-    the unix epoch
+- `id (integer primary key)`: the internal identifier for the row
+- `uid (text unique not null)`: the primary external identifier for the row. The
+  uid prefix is `je`: see [uid_prefixes](../uid_prefixes.md).
+- `journey_session_id (integer not null references journey_sessions(id) on delete cascade)`:
+  the journey session id, which combines which journey, which user, and what session (if
+  they left and rejoined or repeated the journey they would have multiple sessions)
+- `evtype (text not null)`: the type of event, which is the snakecase name of the
+  class used in the Data section above but without the '\_event' suffix
+- `data (text not null)`: the data for the event, which is a json object. See
+  Data
+- `journey_time (real not null)`: the time in seconds into the lobby when the
+  event occurred
+- `created_at (real not null)`: when this record was created in seconds since
+  the unix epoch
 
 ## Performance
 

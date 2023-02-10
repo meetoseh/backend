@@ -18,8 +18,8 @@ router = APIRouter()
 class DevShowJourneyResponse(BaseModel):
     uid: str = Field(description="The UID of the journey")
     jwt: str = Field(description="The JWT to use to access the journey")
-    duration_seconds: float = Field(
-        description="The duration of the journey, in seconds"
+    lobby_duration_seconds: float = Field(
+        description="The duration of the lobby, in seconds"
     )
     fenwick_bin_width: float = Field(
         description="The width of the Fenwick bins, for stats, in seconds"
@@ -64,8 +64,8 @@ async def dev_show_journey(uid: str):
             content=DevShowJourneyResponse(
                 uid=uid,
                 jwt=jwt,
-                duration_seconds=meta.duration_seconds,
-                fenwick_bin_width=meta.duration_seconds / meta.bins,
+                fenwick_bin_width=meta.lobby_duration_seconds / meta.bins,
+                lobby_duration_seconds=meta.lobby_duration_seconds,
                 histogram_bin_width=1.0,
                 prompt=meta.prompt,
             ).dict(),

@@ -180,6 +180,7 @@ async def patch_journey(
                 journeys.prompt,
                 blurred_image_files.uid,
                 darkened_image_files.uid,
+                journeys.lobby_duration_seconds,
             )
             .left_join(journeys)
             .on((journeys.uid == Parameter("?")) & journeys.deleted_at.isnull())
@@ -304,6 +305,7 @@ async def patch_journey(
         journey_prompt: Optional[str] = response.results[0][14]
         blurred_image_file_uid: Optional[str] = response.results[0][15]
         darkened_image_file_uid: Optional[str] = response.results[0][16]
+        journey_lobby_duration_seconds: float = response.results[0][17]
 
         if not journey_exists:
             return Response(
@@ -593,6 +595,7 @@ async def patch_journey(
                 if args.prompt is not None
                 else json.loads(journey_prompt),
                 created_at=journey_created_at,
+                lobby_duration_seconds=journey_lobby_duration_seconds,
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,

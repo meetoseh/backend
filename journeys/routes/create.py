@@ -42,6 +42,9 @@ class CreateJourneyRequest(BaseModel):
     prompt: Prompt = Field(
         description="The prompt style, text, and options to display to the user"
     )
+    lobby_duration_seconds: int = Field(
+        20, description="The duration of the lobby in seconds.", ge=5, le=300
+    )
 
 
 class CreateJourneyResponse(BaseModel):
@@ -70,6 +73,9 @@ class CreateJourneyResponse(BaseModel):
     description: str = Field(description="The display description")
     prompt: Prompt = Field(
         description="The prompt style, text, and options to display to the user"
+    )
+    lobby_duration_seconds: int = Field(
+        description="The duration of the lobby in seconds.",
     )
     created_at: float = Field(
         description="The timestamp of when this journey was created"
@@ -262,6 +268,7 @@ async def create_journey(
                 description,
                 journey_subcategory_id,
                 prompt,
+                lobby_duration_seconds,
                 created_at
             )
             SELECT
@@ -273,7 +280,7 @@ async def create_journey(
                 instructors.id,
                 ?, ?,
                 journey_subcategories.id,
-                ?, ?
+                ?, ?, ?
             FROM journey_audio_contents, journey_background_images, instructors, journey_subcategories
             WHERE
                 journey_audio_contents.uid = ?
@@ -287,6 +294,7 @@ async def create_journey(
                 args.title,
                 args.description,
                 args.prompt.json(),
+                args.lobby_duration_seconds,
                 now,
                 args.journey_audio_content_uid,
                 args.journey_background_image_uid,
@@ -358,6 +366,7 @@ async def create_journey(
                 title=args.title,
                 description=args.description,
                 prompt=args.prompt,
+                lobby_duration_seconds=args.lobby_duration_seconds,
                 created_at=now,
                 sample=None,
                 video=None,

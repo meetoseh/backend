@@ -65,3 +65,7 @@ class ExternalJourney(BaseModel):
     sample: Optional[ContentFileRef] = Field(
         description="A sample for the journey as a 15 second clip, if one is available."
     )
+
+    lobby_duration_seconds: float = Field(
+        description="The duration of the lobby, in seconds"
+    )

@@ -1,19 +1,18 @@
 # journeys
 
-A journey combines an audio and social experience. It consists of short-form
-audio content (~1 minute) plus a question that is posed to the audience while
-the content is playing. The audience can respond to the question and see the
-responses of others in real-time.
+A journey combines an audio and social experience. It consists of a lobby
+period, where a question is posed to the audience, followed by a short-form
+audio content (~1 minute). During the lobby period, the audience can respond to
+the question and see the responses of others in real-time.
 
 A journey is part of 0-1 [daily events](daily_events.md) in one category. Note
 that the schema can only guarrantee that a journey is part of at most one
 daily event in each category, however, we MUST NOT do this.
 
-We support a background image file, which SHOULD have an export of at least 1920x1080
-(for desktop), and SHOULD have an export for the common mobile sizes
-https://gs.statcounter.com/screen-resolution-stats/mobile/worldwide
-
-For formats we SHOULD have exports for jpeg (android) and webp (ios, desktop).
+This has a background image file. It is displayed in many different contexts
+with different effects applied; for consistency across clients and to improve
+performance, these effects are applied in advance and downloaded as images
+by clients.
 
 ## Prompts
 
@@ -81,6 +80,9 @@ class WordPrompt:
 - `journey_subcategory_id (integer not null references journey_subcategories(id) on delete restrict)`: the id of the journey subcategory
 - `prompt (text not null)`: the prompt and corresponding settings as a json dictionary. the
   prompt format is described in the Prompts section
+- `lobby_duration_seconds (real not null)`: How long the lobby lasts for this journey, in
+  fractional seconds. The lobby duration impacts the bin width on statistics and hence cannot
+  be changed retroactively without an accuracy loss.
 - `created_at (real not null)`: when this record was created in seconds since the unix epoch
 - `deleted_at (real null)`: when this record was deleted in seconds since the unix epoch,
   if it has been soft-deleted
@@ -102,6 +104,7 @@ CREATE TABLE journeys(
     prompt TEXT NOT NULL,
     created_at REAL NOT NULL,
     deleted_at REAL NULL,
+    lobby_duration_seconds REAL NOT NULL,
     sample_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL,
     video_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL
 );

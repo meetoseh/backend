@@ -290,7 +290,7 @@ async def get_standard_profile_pictures(
     if journey_meta is None:
         return None
 
-    if journey_time > journey_meta.duration_seconds:
+    if journey_time > journey_meta.lobby_duration_seconds:
         return None
 
     redis = await itgs.redis()
@@ -676,7 +676,7 @@ async def evict_standard_profile_pictures(
         meta = await get_journey_meta(itgs, journey_uid)
         if meta is not None:
             return await evict_standard_profile_pictures(
-                itgs, journey_uid, list(range(0, int(meta.duration_seconds + 1)))
+                itgs, journey_uid, list(range(0, int(meta.lobby_duration_seconds + 1)))
             )
 
         matching_keys = await redis.keys(

@@ -265,6 +265,8 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
     f.write(journey.prompt.json().encode("utf-8"))
     f.write(b',"duration_seconds":')
     f.write(str(journey.duration_seconds).encode("ascii"))
+    f.write(b',"lobby_duration_seconds":')
+    f.write(str(journey.lobby_duration_seconds).encode("ascii"))
     if journey.sample is None:
         f.write(b',"sample":null')
     else:
@@ -341,7 +343,8 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
             journeys.prompt,
             blurred_image_files.uid,
             darkened_image_files.uid,
-            samples.uid
+            samples.uid,
+            journeys.lobby_duration_seconds
         FROM journeys
         JOIN image_files ON image_files.id = journeys.background_image_file_id
         JOIN image_files AS blurred_image_files ON blurred_image_files.id = journeys.blurred_background_image_file_id
@@ -376,6 +379,7 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         blurred_background_image=ImageFileRef(uid=row[8], jwt=""),
         darkened_background_image=ImageFileRef(uid=row[9], jwt=""),
         sample=ContentFileRef(uid=row[10], jwt="") if row[10] is not None else None,
+        lobby_duration_seconds=row[11],
     )
 
 

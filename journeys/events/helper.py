@@ -238,8 +238,8 @@ class CachedJourneyMeta(BaseModel):
     """Describes cached meta information for a journey"""
 
     uid: str = Field(description="the uid of the journey")
-    duration_seconds: float = Field(
-        description="the duration of the journey in seconds"
+    lobby_duration_seconds: float = Field(
+        description="the duration of the lobby, where the prompt is shown, in seconds"
     )
     bins: int = Field(description="the number of bins in the fenwick trees", ge=1)
     prompt: Dict[str, Any] = Field(description="the prompt information for the journey")
@@ -423,7 +423,7 @@ class PrefixSumUpdate:
         Returns:
             The queries to execute, in the form of (query, params) tuples.
         """
-        bin_width = journey_meta.duration_seconds / journey_meta.bins
+        bin_width = journey_meta.lobby_duration_seconds / journey_meta.bins
         bin_idx = min(max(0, int(journey_time / bin_width)), journey_meta.bins - 1)
 
         indices = []
@@ -738,17 +738,10 @@ async def create_journey_event(
     qargs.extend(session_is_for_journey_qargs)
 
     journey_time_is_at_or_before_end: Term = ExistsCriterion(
-        Query.from_(content_files)
+        Query.from_(journeys)
         .select(1)
-        .where(
-            ExistsCriterion(
-                Query.from_(journeys)
-                .select(1)
-                .where(journeys.id == journey_sessions.journey_id)
-                .where(journeys.audio_content_file_id == content_files.id)
-            )
-        )
-        .where(content_files.duration_seconds >= Parameter("?"))
+        .where(journeys.id == journey_sessions.journey_id)
+        .where(journeys.lobby_duration_seconds >= Parameter("?"))
     )
     journey_time_is_at_or_before_end_qargs = [journey_time]
 
@@ -826,7 +819,7 @@ async def create_journey_event(
     )
 
     journey_meta = await get_journey_meta(itgs, journey_uid)
-    if journey_time > journey_meta.duration_seconds:
+    if journey_time > journey_meta.lobby_duration_seconds:
         return CreateJourneyEventResult(
             result=None,
             error_type="impossible_journey_time",
@@ -1080,13 +1073,9 @@ async def get_journey_meta_from_database(
 
     response = await cursor.execute(
         """
-        SELECT
-            journeys.prompt,
-            content_files.duration_seconds
+        SELECT prompt, lobby_duration_seconds
         FROM journeys
-        JOIN content_files ON journeys.audio_content_file_id = content_files.id
-        WHERE
-            journeys.uid = ?
+        WHERE journeys.uid = ?
         """,
         (journey_uid,),
     )
@@ -1094,15 +1083,18 @@ async def get_journey_meta_from_database(
         return None
 
     prompt: Dict[str, Any] = json.loads(response.results[0][0])
-    duration_seconds: float = response.results[0][1]
+    lobby_duration_seconds: float = response.results[0][1]
     bins: int
-    if duration_seconds <= 1:
+    if lobby_duration_seconds <= 1:
         bins = 1
     else:
-        bins = 2 ** math.ceil(math.log2(duration_seconds)) - 1
+        bins = 2 ** math.ceil(math.log2(lobby_duration_seconds)) - 1
 
     return CachedJourneyMeta(
-        uid=journey_uid, duration_seconds=duration_seconds, bins=bins, prompt=prompt
+        uid=journey_uid,
+        lobby_duration_seconds=lobby_duration_seconds,
+        bins=bins,
+        prompt=prompt,
     )
 
 

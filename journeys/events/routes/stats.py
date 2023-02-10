@@ -1,5 +1,5 @@
 import time
-from typing import Any, Callable, Dict, List, Literal, Optional, Set, Tuple, TypeVar
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, TypeVar
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel, Field
@@ -171,7 +171,7 @@ async def get_journey_stats(
         for part in parts:
             result.update(part)
 
-        bin_width = journey_meta.duration_seconds / journey_meta.bins
+        bin_width = journey_meta.lobby_duration_seconds / journey_meta.bins
 
         return Response(
             JourneyStatsResponse(

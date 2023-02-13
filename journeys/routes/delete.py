@@ -61,7 +61,7 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
                     WHERE daily_event_journeys.daily_event_id = daily_events.id
                       AND EXISTS (
                         SELECT 1 FROM journeys
-                        WHERE journeys.id = daily_event_journeys.id
+                        WHERE journeys.id = daily_event_journeys.journey_id
                           AND journeys.uid = ?
                       )
                 )

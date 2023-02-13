@@ -59,7 +59,7 @@ class ColorPrompt(BaseModel):
         description="The text to display to the user before they answer"
     )
     colors: List[str] = Field(
-        description="The colors to choose from", min_length=2, max_length=8
+        description="The colors to choose from", min_items=2, max_items=8
     )
 
     @validator("colors")
@@ -82,7 +82,7 @@ class WordPrompt(BaseModel):
         description="The text to display to the user before they answer"
     )
     options: List[constr(min_length=1, max_length=45, strip_whitespace=True)] = Field(
-        description="The options to choose from", min_length=2, max_length=8
+        description="The options to choose from", min_items=2, max_items=8
     )
 
 

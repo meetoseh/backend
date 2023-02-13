@@ -71,6 +71,8 @@ async def main():
                 await handle_error(e)
             finally:
                 await redis.delete("backend:migrations-lock")
+    except Exception as e:
+        await handle_error(e)
     finally:
         print("migrations shutdown")
 

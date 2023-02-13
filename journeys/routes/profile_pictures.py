@@ -784,35 +784,44 @@ async def cache_push_loop() -> NoReturn:
     instances regarding standard profile pictures that have been updated and writing
     them to our internal cache.
     """
-    async with pps.PPSSubscription(
-        pps.instance, "ps:journeys:profile_pictures:push_cache", "jpp_pcl"
-    ) as sub:
-        async for raw_message_bytes in sub:
-            raw_message = io.BytesIO(raw_message_bytes)
-            first_part_len = int.from_bytes(raw_message.read(4), "big", signed=False)
-            first_part = JourneyProfilePicturesPushCachePubSubMessage.parse_raw(
-                raw_message.read(first_part_len), content_type="application/json"
-            )
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:journeys:profile_pictures:push_cache", "jpp_pcl"
+        ) as sub:
+            async for raw_message_bytes in sub:
+                raw_message = io.BytesIO(raw_message_bytes)
+                first_part_len = int.from_bytes(
+                    raw_message.read(4), "big", signed=False
+                )
+                first_part = JourneyProfilePicturesPushCachePubSubMessage.parse_raw(
+                    raw_message.read(first_part_len), content_type="application/json"
+                )
 
-            if first_part.have_updated:
-                updated_part = raw_message.read()
+                if first_part.have_updated:
+                    updated_part = raw_message.read()
 
-            async with Itgs() as itgs:
-                if not first_part.have_updated:
-                    await delete_standard_profile_pictures_from_local_cache(
-                        itgs, first_part.uid, first_part.journey_time
+                async with Itgs() as itgs:
+                    if not first_part.have_updated:
+                        await delete_standard_profile_pictures_from_local_cache(
+                            itgs, first_part.uid, first_part.journey_time
+                        )
+                        continue
+
+                    await set_standard_profile_pictures_to_local_cache(
+                        itgs,
+                        first_part.uid,
+                        first_part.journey_time,
+                        encoded_pictures=updated_part,
                     )
-                    continue
 
-                await set_standard_profile_pictures_to_local_cache(
-                    itgs,
-                    first_part.uid,
-                    first_part.journey_time,
-                    encoded_pictures=updated_part,
-                )
-
-                events = waiting_for_cache.pop(
-                    (first_part.uid, first_part.journey_time), []
-                )
-                for event in events:
-                    event.set()
+                    events = waiting_for_cache.pop(
+                        (first_part.uid, first_part.journey_time), []
+                    )
+                    for event in events:
+                        event.set()
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e)
+    finally:
+        print("profile_pictures cache push loop exiting")

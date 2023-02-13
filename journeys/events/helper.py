@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel, Field, validator
 from pydantic.generics import GenericModel
+from error_middleware import handle_error
 from image_files.models import ImageFileRef
 from image_files.auth import create_jwt as create_image_file_jwt
 from itgs import Itgs
@@ -1166,6 +1167,10 @@ async def purge_journey_meta_loop() -> NoReturn:
                 async with Itgs() as itgs:
                     local_cache = await itgs.local_cache()
                     local_cache.delete(f"journeys:{message.journey_uid}:meta")
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e)
     finally:
         print("purge journey meta loop exiting")
 

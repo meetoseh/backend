@@ -5,6 +5,7 @@ from typing import NoReturn, Optional, List, Literal
 from auth import auth_any
 from daily_events.lib.has_started_one import has_started_one
 from daily_events.lib.read_one_external import read_one_external
+from error_middleware import handle_error
 from itgs import Itgs
 from models import StandardErrorResponse, STANDARD_ERRORS_BY_CODE
 from daily_events.models.external_daily_event import ExternalDailyEvent
@@ -183,10 +184,17 @@ async def purge_loop() -> NoReturn:
     """Infinitely loops, listening for messages to purge the local cache of
     current daily event uids. This should only be called once by the main thread.
     """
-    async with pps.PPSSubscription(
-        pps.instance, "ps:daily_events:now:purge_cache", "de_now"
-    ) as sub:
-        async for _ in sub:
-            async with Itgs() as itgs:
-                local_cache = await itgs.local_cache()
-                local_cache.delete(b"daily_events:current")
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:daily_events:now:purge_cache", "de_now"
+        ) as sub:
+            async for _ in sub:
+                async with Itgs() as itgs:
+                    local_cache = await itgs.local_cache()
+                    local_cache.delete(b"daily_events:current")
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e)
+    finally:
+        print("now purge loop exiting")

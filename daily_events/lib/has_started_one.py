@@ -8,6 +8,7 @@ network traffic is required.
 """
 from pydantic import BaseModel, Field
 from typing import NoReturn
+from error_middleware import handle_error
 import perpetual_pub_sub as pps
 from itgs import Itgs
 from redis.exceptions import NoScriptError
@@ -161,24 +162,31 @@ async def purge_loop() -> NoReturn:
     to update our local cache of whether a user has started a journey within a
     daily event.
     """
-    async with pps.PPSSubscription(
-        pps.instance, "ps:daily_events:has_started_one", "de_hso"
-    ) as sub:
-        async for raw_message in sub:
-            message = DailyEventsHasStartedOnePubSubMessage.parse_raw(
-                raw_message, content_type="application/json"
-            )
-
-            async with Itgs() as itgs:
-                local_cache = await itgs.local_cache()
-                local_cache.set(
-                    f"daily_events:has_started_one:{message.daily_event_uid}:{message.user_sub}".encode(
-                        "utf-8"
-                    ),
-                    bytes(str(int(message.started_one)), "ascii"),
-                    expire=60 * 60 * 24 * 2,
-                    tag="collab",
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:daily_events:has_started_one", "de_hso"
+        ) as sub:
+            async for raw_message in sub:
+                message = DailyEventsHasStartedOnePubSubMessage.parse_raw(
+                    raw_message, content_type="application/json"
                 )
+
+                async with Itgs() as itgs:
+                    local_cache = await itgs.local_cache()
+                    local_cache.set(
+                        f"daily_events:has_started_one:{message.daily_event_uid}:{message.user_sub}".encode(
+                            "utf-8"
+                        ),
+                        bytes(str(int(message.started_one)), "ascii"),
+                        expire=60 * 60 * 24 * 2,
+                        tag="collab",
+                    )
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e)
+    finally:
+        print("has_started_one purge_loop() exitting")
 
 
 class DailyEventsHasStartedOnePubSubMessage(BaseModel):

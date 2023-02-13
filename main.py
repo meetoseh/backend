@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error, handle_error
 from itgs import Itgs, our_diskcache
+from mp_helper import adapt_threading_event_to_asyncio
 import perpetual_pub_sub
 import secrets
 import updater
@@ -109,6 +110,9 @@ if perpetual_pub_sub.instance is None:
 def register_background_tasks():
     logger.add("backend.log", enqueue=True, rotation="100 MB")
 
+    background_tasks.add(
+        asyncio.create_task(perpetual_pub_sub.instance.run_in_background_async())
+    )
     background_tasks.add(asyncio.create_task(updater.listen_forever()))
     background_tasks.add(asyncio.create_task(migrations.main.main()))
     background_tasks.add(
@@ -138,9 +142,12 @@ def register_background_tasks():
 
 
 @app.on_event("shutdown")
-def cleanly_shutdown_perpetual_pub_sub():
+async def cleanly_shutdown_perpetual_pub_sub():
     perpetual_pub_sub.instance.exit_event.set()
-    perpetual_pub_sub.instance.exitted_event.wait()
+
+    await adapt_threading_event_to_asyncio(
+        perpetual_pub_sub.instance.exitted_event
+    ).wait()
 
 
 @app.get("/api/1")

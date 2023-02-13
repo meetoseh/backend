@@ -3,6 +3,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Dict, List, NoReturn, Optional, Union
 from auth import auth_admin
+from error_middleware import handle_error
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
 from content_files.helper import read_in_parts
@@ -173,6 +174,10 @@ async def listen_available_responses_forever() -> NoReturn:
                     await set_journey_subcategory_view_stats_in_local_cache(
                         itgs, unix_date, encoded
                     )
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e)
     finally:
         print("journey subcategory view stats loop exiting")
 

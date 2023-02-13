@@ -480,5 +480,9 @@ async def purge_cache_loop_async() -> Never:
                         await set_entitlements_to_local(
                             itgs, user_sub=data.user_sub, entitlements=local
                         )
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e)
     finally:
         print("entitlements purge loop exiting")

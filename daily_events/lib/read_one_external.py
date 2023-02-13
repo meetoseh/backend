@@ -1,4 +1,5 @@
 import json
+from error_middleware import handle_error
 from image_files.models import ImageFileRef
 from itgs import Itgs
 from fastapi.responses import Response, StreamingResponse
@@ -411,36 +412,46 @@ async def cache_push_loop() -> NoReturn:
     `ps:daily_events:external:push_cache` to notify instances to purge their local
     cache.
     """
-    async with pps.PPSSubscription(
-        pps.instance, "ps:daily_events:external:push_cache", "de_ext"
-    ) as sub:
-        async for raw_message in sub:
-            message = io.BytesIO(raw_message)
-            first_part_len = int.from_bytes(message.read(4), "big", signed=False)
-            first_part = DailyEventsExternalPushCachePubSubMessage.parse_raw(
-                message.read(first_part_len), content_type="application/json"
-            )
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:daily_events:external:push_cache", "de_ext"
+        ) as sub:
+            async for raw_message in sub:
+                message = io.BytesIO(raw_message)
+                first_part_len = int.from_bytes(message.read(4), "big", signed=False)
+                first_part = DailyEventsExternalPushCachePubSubMessage.parse_raw(
+                    message.read(first_part_len), content_type="application/json"
+                )
 
-            if first_part.level is not None:
-                raw = message.read()
+                if first_part.level is not None:
+                    raw = message.read()
 
-            async with Itgs() as itgs:
-                local_cache = await itgs.local_cache()
-                if first_part.level is None:
-                    for level in ALL_LEVELS:
-                        evict_locally_cached(
-                            local_cache, uid=first_part.uid, level=level
+                async with Itgs() as itgs:
+                    local_cache = await itgs.local_cache()
+                    if first_part.level is None:
+                        for level in ALL_LEVELS:
+                            evict_locally_cached(
+                                local_cache, uid=first_part.uid, level=level
+                            )
+                    else:
+                        set_locally_cached(
+                            local_cache,
+                            uid=first_part.uid,
+                            level=first_part.level,
+                            raw=raw,
                         )
-                else:
-                    set_locally_cached(
-                        local_cache, uid=first_part.uid, level=first_part.level, raw=raw
-                    )
 
-                    listeners = cache_received_listeners.pop(
-                        (first_part.uid, first_part.level), []
-                    )
-                    for listener in listeners:
-                        listener(first_part.uid, first_part.level, raw)
+                        listeners = cache_received_listeners.pop(
+                            (first_part.uid, first_part.level), []
+                        )
+                        for listener in listeners:
+                            listener(first_part.uid, first_part.level, raw)
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e)
+    finally:
+        print("read_one_external cache_push_loop exitting")
 
 
 class DailyEventsExternalPushCachePubSubMessage(BaseModel):

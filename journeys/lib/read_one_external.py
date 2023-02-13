@@ -456,27 +456,35 @@ async def cache_push_loop() -> NoReturn:
     purging or updating our cache appropriately. This should be a background task
     that is started when the server starts, as it will mostly idle.
     """
-    async with pps.PPSSubscription(
-        pps.instance, "ps:journeys:external:push_cache", "je-cpl"
-    ) as sub:
-        async for raw_message_bytes in sub:
-            raw_message = io.BytesIO(raw_message_bytes)
-            initial_part_length = int.from_bytes(
-                raw_message.read(4), "big", signed=False
-            )
-            message = JourneysExternalPushCachePubSubMessage.parse_raw(
-                raw_message.read(initial_part_length), content_type="application/json"
-            )
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:journeys:external:push_cache", "je-cpl"
+        ) as sub:
+            async for raw_message_bytes in sub:
+                raw_message = io.BytesIO(raw_message_bytes)
+                initial_part_length = int.from_bytes(
+                    raw_message.read(4), "big", signed=False
+                )
+                message = JourneysExternalPushCachePubSubMessage.parse_raw(
+                    raw_message.read(initial_part_length),
+                    content_type="application/json",
+                )
 
-            async with Itgs() as itgs:
-                if not message.have_updated:
-                    await delete_from_local_cache(itgs, message.uid)
-                    continue
+                async with Itgs() as itgs:
+                    if not message.have_updated:
+                        await delete_from_local_cache(itgs, message.uid)
+                        continue
 
-                await write_to_local_cache(itgs, message.uid, raw_message)
-                to_notify = waiting_for_cache.pop(message.uid, [])
-                for event in to_notify:
-                    event.set()
+                    await write_to_local_cache(itgs, message.uid, raw_message)
+                    to_notify = waiting_for_cache.pop(message.uid, [])
+                    for event in to_notify:
+                        event.set()
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return
+        await handle_error(e)
+    finally:
+        print("read_one_external cache_push_loop exiting")
 
 
 class JourneysExternalPushCachePubSubMessage(BaseModel):

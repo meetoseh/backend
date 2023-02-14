@@ -102,7 +102,7 @@ async def up(itgs: Itgs) -> None:
     )
 
     new_journey_uids: List[str] = []
-    for journey in journeys.results:
+    for journey in journeys.results or []:
         new_uid = f"oseh_j_{secrets.token_urlsafe(16)}"
         new_journey_uids.append(new_uid)
         await cursor.execute(

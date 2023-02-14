@@ -146,7 +146,7 @@ async def up(itgs: Itgs) -> None:
         (now, now),
     )
 
-    for row in response.results:
+    for row in response.results or []:
         dej_uid: str = row[0]
         journey_id: int = row[1]
 

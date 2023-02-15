@@ -169,10 +169,35 @@ async def create_tokens_for_user(
     """Creates the id token and optionally refresh token for the user with
     the given sub. The returned id token and refresh token are both JWTs.
 
-    This also checks if the user should go through the onboarding flow.
+    This also checks if the user should go through the onboarding flow
+    and may swap their phone number if a better one is available.
     """
-    now = int(time.time())
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
 
+    response = await cursor.execute(
+        """
+        SELECT
+            EXISTS (
+                SELECT 1 FROM journey_sessions
+                WHERE 
+                    journey_sessions.user_id = users.id
+                    AND EXISTS (
+                        SELECT 1 FROM journey_events
+                        WHERE journey_events.journey_session_id = journey_sessions.id
+                    )
+            ) AS b1,
+            phone_number,
+            phone_number_verified
+        FROM users WHERE sub = ?
+        """,
+        (user.user_sub, user.user_sub),
+    )
+    onboard: bool = not response.results[0][0]
+    phone_number: Optional[str] = response.results[0][1]
+    phone_number_verified: bool = bool(response.results[0][2])
+
+    now = int(time.time())
     id_token = jwt.encode(
         {
             "sub": user.user_sub,
@@ -185,7 +210,15 @@ async def create_tokens_for_user(
             "given_name": interpreted_claims.given_name,
             "family_name": interpreted_claims.family_name,
             "email": interpreted_claims.email,
-            "phone_number": interpreted_claims.phone_number,
+            "phone_number": (
+                interpreted_claims.phone_number
+                if (
+                    interpreted_claims.phone_number is not None
+                    or not phone_number_verified
+                    or phone_number is None
+                )
+                else phone_number
+            ),
         },
         os.environ["OSEH_ID_TOKEN_SECRET"],
         algorithm="HS256",
@@ -219,30 +252,6 @@ async def create_tokens_for_user(
             key=os.environ["OSEH_REFRESH_TOKEN_SECRET"],
             algorithm="HS256",
         )
-
-    conn = await itgs.conn()
-    cursor = conn.cursor("none")
-
-    response = await cursor.execute(
-        """
-        SELECT
-            EXISTS (
-                SELECT 1 FROM journey_sessions
-                WHERE 
-                    EXISTS (
-                        SELECT 1 FROM users
-                        WHERE users.sub = ?
-                        AND journey_sessions.user_id = users.id
-                    )
-                    AND EXISTS (
-                        SELECT 1 FROM journey_events
-                        WHERE journey_events.journey_session_id = journey_sessions.id
-                    )
-            ) AS b1
-        """,
-        (user.user_sub,),
-    )
-    onboard: bool = not response.results[0][0]
 
     return OauthExchangeResponse(
         id_token=id_token,

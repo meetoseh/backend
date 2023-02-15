@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Literal, Optional
@@ -255,6 +256,8 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                                 api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
                             )
 
+            await cleanup_user_notifications(itgs, auth_result.result.sub)
+
             await cursor.execute(
                 "DELETE FROM users WHERE sub=?", (auth_result.result.sub,)
             )
@@ -276,6 +279,57 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
             )
 
             return Response(status_code=204)
+
+
+async def cleanup_user_notifications(itgs: Itgs, sub: str) -> None:
+    """Cleans up any user notifications that were stored in s3 for the given user.
+
+    Args:
+        itgs (Itgs): The integrations to (re)use
+        sub (str): The sub of the user whose notifications will be cleaned up
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+    jobs = await itgs.jobs()
+    last_key: Optional[str] = None
+    while True:
+        response = await cursor.execute(
+            """
+            SELECT key FROM s3_files
+            WHERE 
+                EXISTS (
+                    SELECT 1 FROM user_notifications
+                    WHERE user_notifications.contents_s3_file_id = s3_files.id
+                    AND EXISTS (
+                        SELECT 1 FROM users
+                        WHERE users.id = user_notifications.user_id
+                        AND users.sub = ?
+                    )
+                )
+                AND (? IS NULL OR key > ?)
+            ORDER BY key ASC
+            LIMIT 100
+            """,
+            (sub, last_key, last_key),
+        )
+
+        if not response.results:
+            break
+
+        now = time.time()
+        jobs_to_enqueue = [
+            json.dumps(
+                {
+                    "name": "runners.delete_s3_file",
+                    "kwargs": {"key": row[0]},
+                    "queued_at": now,
+                }
+            ).encode("utf-8")
+            for row in response.results
+        ]
+
+        await jobs.conn.rpush(jobs.queue_key, *jobs_to_enqueue)
+        last_key = response.results[-1][0]
 
 
 @asynccontextmanager

@@ -22,6 +22,8 @@ import referral.router
 import oauth.router
 import admin.router
 import dev.router
+import phones.router
+import notifications.router
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.events.helper
 import daily_events.lib.has_started_one
@@ -97,6 +99,10 @@ app.include_router(referral.router.router, prefix="/api/1/referral", tags=["refe
 app.include_router(oauth.router.router, prefix="/api/1/oauth", tags=["oauth"])
 app.include_router(admin.router.router, prefix="/api/1/admin", tags=["admin"])
 app.include_router(dev.router.router, prefix="/api/1/dev", tags=["dev"])
+app.include_router(phones.router.router, prefix="/api/1/phones", tags=["phones"])
+app.include_router(
+    notifications.router.router, prefix="/api/1/notifications", tags=["notifications"]
+)
 app.router.redirect_slashes = False
 
 

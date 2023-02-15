@@ -13,6 +13,7 @@ import file_service
 import loguru
 import revenue_cat
 import asyncio
+import twilio.rest
 
 
 our_diskcache: diskcache.Cache = diskcache.Cache(
@@ -59,6 +60,9 @@ class Itgs:
         self._revenue_cat: Optional[revenue_cat.RevenueCat] = None
         """the revenue cat connection if it had been opened"""
 
+        self._twilio: Optional[twilio.rest.Client] = None
+        """the twilio connection if it had been opened"""
+
         self._closures: List[Callable[["Itgs"], Coroutine]] = []
         """functions to run on __aexit__ to cleanup opened resources"""
 
@@ -94,7 +98,7 @@ class Itgs:
                     me._conn = None
 
             self._closures.append(cleanup)
-            self._conn = rqdb.connect_async(
+            c = rqdb.connect_async(
                 hosts=rqlite_ips,
                 log=rqdb.LogConfig(
                     read_start={"method": loguru.logger.debug},
@@ -109,7 +113,8 @@ class Itgs:
                     backup_end={"method": loguru.logger.info},
                 ),
             )
-            await self._conn.__aenter__()
+            await c.__aenter__()
+            self._conn = c
 
         return self._conn
 
@@ -152,14 +157,15 @@ class Itgs:
             if self._slack is not None:
                 return self._slack
 
-            self._slack = slack.Slack()
-            await self._slack.__aenter__()
+            s = slack.Slack()
+            await s.__aenter__()
 
             async def cleanup(me: "Itgs") -> None:
                 await me._slack.__aexit__(None, None, None)
                 me._slack = None
 
             self._closures.append(cleanup)
+            self._slack = s
 
         return self._slack
 
@@ -173,14 +179,15 @@ class Itgs:
             if self._jobs is not None:
                 return self._jobs
 
-            self._jobs = jobs.Jobs(_redis)
-            await self._jobs.__aenter__()
+            j = jobs.Jobs(_redis)
+            await j.__aenter__()
 
             async def cleanup(me: "Itgs") -> None:
                 await me._jobs.__aexit__(None, None, None)
                 me._jobs = None
 
             self._closures.append(cleanup)
+            self._jobs = j
 
         return self._jobs
 
@@ -197,19 +204,18 @@ class Itgs:
 
             if os.environ.get("ENVIRONMENT", default="production") == "dev":
                 root = os.environ["OSEH_S3_LOCAL_BUCKET_PATH"]
-                self._file_service = file_service.LocalFiles(
-                    root, default_bucket=default_bucket
-                )
+                fs = file_service.LocalFiles(root, default_bucket=default_bucket)
             else:
-                self._file_service = file_service.S3(default_bucket=default_bucket)
+                fs = file_service.S3(default_bucket=default_bucket)
 
-            await self._file_service.__aenter__()
+            await fs.__aenter__()
 
             async def cleanup(me: "Itgs") -> None:
                 await me._file_service.__aexit__(None, None, None)
                 me._file_service = None
 
             self._closures.append(cleanup)
+            self._file_service = fs
 
         return self._file_service
 
@@ -229,14 +235,37 @@ class Itgs:
             sk = os.environ["OSEH_REVENUE_CAT_SECRET_KEY"]
             stripe_pk = os.environ["OSEH_REVENUE_CAT_STRIPE_PUBLIC_KEY"]
 
-            self._revenue_cat = revenue_cat.RevenueCat(sk=sk, stripe_pk=stripe_pk)
+            rc = revenue_cat.RevenueCat(sk=sk, stripe_pk=stripe_pk)
 
-            await self._revenue_cat.__aenter__()
+            await rc.__aenter__()
 
             async def cleanup(me: "Itgs") -> None:
                 await me._revenue_cat.__aexit__(None, None, None)
                 me._revenue_cat = None
 
             self._closures.append(cleanup)
+            self._revenue_cat = rc
 
         return self._revenue_cat
+
+    async def twilio(self) -> twilio.rest.Client:
+        """gets or creates the twilio connection"""
+        if self._twilio is not None:
+            return self._twilio
+
+        async with self._lock:
+            if self._twilio is not None:
+                return self._twilio
+
+            sid = os.environ["OSEH_TWILIO_ACCOUNT_SID"]
+            token = os.environ["OSEH_TWILIO_AUTH_TOKEN"]
+
+            tw = twilio.rest.Client(sid, token)
+
+            async def cleanup(me: "Itgs") -> None:
+                me._twilio = None
+
+            self._closures.append(cleanup)
+            self._twilio = tw
+
+        return self._twilio

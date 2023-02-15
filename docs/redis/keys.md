@@ -179,6 +179,22 @@ the keys that we use in redis
   This is a very short-lived cache to avoid having to ratelimit this endpoint while also not
   allowing for a trivial DOS attack as the endpoint is somewhat costly.
 
+- `phone_verifications:{user_sub}:start` goes to a string acting as an integer (e.g., '1', '2')
+  for how many phone numbers the user has tried to verify with less than 24 hours between
+  them. This is accomplished by incr then expire, see
+  [phones verify](../../phones/routes/start_verify.py).
+
+- `phone_verifications:{user_sub}:finish` goes to a string acting as an integer (e.g., '1', '2')
+  for how many phone number verifications the user has tried to give us the code for with less than
+  10 minutes between them. This is accomplished with incr then expire, see
+  [phones verify](../../phones/routes/finish_verify.py)
+
+- `daily_event:last_notified:uid` goes to the uid of the daily event we last sent notifications
+  out for
+
+- `daily_event:notifications:lock` goes to a string if an instance is processing notifications
+  for daily events, and is unset otherwise
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

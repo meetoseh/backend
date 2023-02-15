@@ -3,6 +3,7 @@ __pycache__
 updater.lock
 dev.bat
 dev-*.bat
+/start.bat
 /s3_buckets
 /tmp
 /*.log

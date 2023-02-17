@@ -132,7 +132,7 @@ async def start_verify(
                 ?, ?, users.id, ?, ?, ?, 0, NULL
             FROM users
             WHERE users.sub = ?
-            ON CONFLICT (sid) IGNORE
+            ON CONFLICT (sid) DO NOTHING
             """,
             (
                 uid,

@@ -6,7 +6,7 @@ class NumericPrompt(BaseModel):
     """E.g., What's your mood? 1-10"""
 
     style: Literal["numeric"] = Field(description="The prompt style")
-    text: constr(strip_whitespace=True, min_length=1, max_length=45) = Field(
+    text: constr(strip_whitespace=True, min_length=1, max_length=75) = Field(
         description="The text to display to the user before they answer"
     )
     min: int = Field(description="The minimum value, inclusive")
@@ -46,7 +46,7 @@ class PressPrompt(BaseModel):
     """E.g., press when you like it"""
 
     style: Literal["press"] = Field(description="The prompt style")
-    text: constr(strip_whitespace=True, min_length=1, max_length=45) = Field(
+    text: constr(strip_whitespace=True, min_length=1, max_length=75) = Field(
         description="The text to display to the user before they answer"
     )
 
@@ -55,7 +55,7 @@ class ColorPrompt(BaseModel):
     """E.g., what color is this song?"""
 
     style: Literal["color"] = Field(description="The prompt style")
-    text: constr(strip_whitespace=True, min_length=1, max_length=45) = Field(
+    text: constr(strip_whitespace=True, min_length=1, max_length=75) = Field(
         description="The text to display to the user before they answer"
     )
     colors: List[str] = Field(
@@ -78,7 +78,7 @@ class WordPrompt(BaseModel):
     """e.g. what are you feeling?"""
 
     style: Literal["word"] = Field(description="The prompt style")
-    text: constr(strip_whitespace=True, min_length=1, max_length=45) = Field(
+    text: constr(strip_whitespace=True, min_length=1, max_length=75) = Field(
         description="The text to display to the user before they answer"
     )
     options: List[constr(min_length=1, max_length=45, strip_whitespace=True)] = Field(

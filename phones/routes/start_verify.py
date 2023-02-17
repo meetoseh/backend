@@ -85,10 +85,11 @@ async def start_verify(
         if response[0] > 3:
             return Response(
                 status_code=429,
-                content={
-                    "error": "too_many_verification_attempts",
-                    "error_description": "Too many verification attempts have been made",
-                },
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                content=StandardErrorResponse[ERROR_429_TYPES](
+                    type="too_many_verification_attempts",
+                    message="Too many verification attempts have been made",
+                ).json(),
             )
 
         twilio = await itgs.twilio()
@@ -108,8 +109,8 @@ async def start_verify(
             return Response(
                 status_code=503,
                 content=StandardErrorResponse[ERROR_503_TYPES](
-                    error="provider_error",
-                    error_description="There was an error with the phone verification provider",
+                    type="provider_error",
+                    message="There was an error with the phone verification provider",
                 ).json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",

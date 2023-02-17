@@ -3,6 +3,7 @@ from fastapi import Request, Response
 from fastapi.responses import PlainTextResponse
 from itgs import Itgs
 import traceback
+import socket
 
 
 async def handle_request_error(request: Request, exc: Exception) -> Response:
@@ -18,7 +19,7 @@ async def handle_error(exc: Exception, *, extra_info: Optional[str] = None) -> N
     message = "\n".join(
         traceback.format_exception(type(exc), exc, exc.__traceback__)[-5:]
     )
-    message = f"```\n{message}\n```"
+    message = f"{socket.gethostname()}\n\n```\n{message}\n```"
 
     if extra_info is not None:
         message += f"\n\n{extra_info}"

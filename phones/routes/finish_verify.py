@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from twilio.base.exceptions import TwilioRestException
 from auth import auth_id
 from itgs import Itgs
+import socket
 import time
 import os
 
@@ -165,6 +166,20 @@ async def finish_verify(
                     message="That phone verification does not exist, has a different code, or is already completed",
                 ).json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
+            )
+
+        if verified_at is not None:
+            slack = await itgs.slack()
+
+            identifier = (
+                f"{auth_result.result.claims['name']} ({auth_result.result.claims['email']})"
+                if auth_result.result.claims is not None
+                and "name" in auth_result.result.claims
+                and "email" in auth_result.result.claims
+                else auth_result.result.sub
+            )
+            await slack.send_oseh_bot_message(
+                f"{identifier} just verified their phone number: {phone_number} via {socket.gethostname()}"
             )
 
         return Response(

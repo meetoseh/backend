@@ -193,9 +193,17 @@ async def create_tokens_for_user(
         """,
         (user.user_sub, user.user_sub),
     )
-    onboard: bool = not response.results[0][0]
-    phone_number: Optional[str] = response.results[0][1]
-    phone_number_verified: bool = bool(response.results[0][2])
+
+    if not response.results:
+        # raced with the create almost certainly, which means we can make a pretty good
+        # assumption about this users state
+        onboard = True
+        phone_number = None
+        phone_number_verified = False
+    else:
+        onboard: bool = not response.results[0][0]
+        phone_number: Optional[str] = response.results[0][1]
+        phone_number_verified: bool = bool(response.results[0][2])
 
     now = int(time.time())
     id_token = jwt.encode(

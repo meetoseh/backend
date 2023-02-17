@@ -437,7 +437,7 @@ async def initialize_user_from_info(
         )
         if response[0].rows_affected is not None and response[0].rows_affected > 0:
             jobs = await itgs.jobs()
-            jobs.enqueue("runners.revenue_cat.ensure_user", user_sub=new_user_sub)
+            await jobs.enqueue("runners.revenue_cat.ensure_user", user_sub=new_user_sub)
             await users.lib.stats.on_user_created(itgs, new_user_sub, now)
 
             if interpreted_claims.picture is not None:

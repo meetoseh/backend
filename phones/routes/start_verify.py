@@ -121,7 +121,7 @@ async def start_verify(
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
 
-        response = await cursor.execute(
+        await cursor.execute(
             """
             INSERT INTO phone_verifications (
                 uid, sid, user_id, phone_number, status, started_at, verification_attempts,
@@ -131,6 +131,7 @@ async def start_verify(
                 ?, ?, users.id, ?, ?, ?, 0, NULL
             FROM users
             WHERE users.sub = ?
+            ON CONFLICT (sid) IGNORE
             """,
             (
                 uid,
@@ -141,23 +142,6 @@ async def start_verify(
                 auth_result.result.sub,
             ),
         )
-        if response.rows_affected is None or response.rows_affected < 1:
-            slack = await itgs.slack()
-            await slack.send_web_error_message(
-                f"Twilio verification start failed to insert for {args.phone_number=}",
-                "Twilio verification start error",
-            )
-            return Response(
-                status_code=503,
-                content=StandardErrorResponse[ERROR_503_TYPES](
-                    error="internal_error",
-                    error_description="There was an internal error starting phone verification",
-                ).json(),
-                headers={
-                    "Content-Type": "application/json; charset=utf-8",
-                    "Retry-After": "600",
-                },
-            )
 
         new_uns_uid = f"oseh_uns_{secrets.token_urlsafe(16)}"
         await cursor.execute(

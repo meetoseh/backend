@@ -130,6 +130,9 @@ class JourneyFilter(BaseModel):
     daily_event_uid: Optional[FilterItemModel[Optional[str]]] = Field(
         None, description="the uid of the daily event the journey belongs to"
     )
+    has_sessions: Optional[FilterItemModel[bool]] = Field(
+        None, description="whether the journey has sessions"
+    )
     introductory_journey_uid: Optional[FilterItemModel[str]] = Field(
         None, description="the uid of the introductory event the journey belongs to"
     )
@@ -237,6 +240,7 @@ async def raw_read_journeys(
     samples = content_files.as_("samples")
     videos = content_files.as_("videos")
     introductory_journeys = Table("introductory_journeys")
+    journey_sessions = Table("journey_sessions")
 
     query: QueryBuilder = (
         Query.from_(journeys)
@@ -325,6 +329,12 @@ async def raw_read_journeys(
             return videos.uid
         elif key == "introductory_journey_uid":
             return introductory_journeys.uid
+        elif key == "has_sessions":
+            return ExistsCriterion(
+                Query.from_(journey_sessions)
+                .select(1)
+                .where(journey_sessions.journey_id == journeys.id)
+            )
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:

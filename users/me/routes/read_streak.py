@@ -149,10 +149,10 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
         response = await cursor.execute(
             """
             WITH oldest_de AS (
-                SELECT daily_events.id, daily_events.available_at
+                SELECT daily_events.id AS id, daily_events.available_at AS available_at
                 FROM daily_events WHERE daily_events.uid = ?
             )
-            SELECT COUNT(*) FROM daily_events
+            SELECT COUNT(*) FROM daily_events, oldest_de
             WHERE
                 daily_events.available_at <= ?
                 AND daily_events.available_at > oldest_de.available_at

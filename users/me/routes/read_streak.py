@@ -1,3 +1,4 @@
+from error_middleware import handle_error
 from itgs import Itgs
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -6,6 +7,8 @@ from typing import Optional
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE
 import time
+import datetime
+import pytz
 
 
 class ReadStreakResponse(BaseModel):
@@ -164,5 +167,41 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
         ), f"{user_sub=}, {oldest_daily_event_uid_in_streak=}, {now=}, {response.results=}"
 
         streak += response.results[0][0] - 1
+
+    try:
+        if streak == 0:
+            # if they took a class today, we never want to return 0
+            dnow = datetime.datetime.now(tz=pytz.timezone("America/Los_Angeles"))
+            today = datetime.datetime(
+                dnow.year,
+                dnow.month,
+                dnow.day,
+                tzinfo=pytz.timezone("America/Los_Angeles"),
+            )
+            response = await cursor.execute(
+                """
+                SELECT
+                    EXISTS (
+                        SELECT 1 FROM journey_sessions
+                        WHERE
+                            EXISTS (
+                                SELECT 1 FROM users
+                                WHERE users.id = journey_sessions.user_id
+                                AND users.sub = ?
+                            )
+                            AND EXISTS (
+                                SELECT 1 FROM journey_events
+                                WHERE journey_events.journey_session_id = journey_sessions.id
+                                AND journey_events.created_at > ?
+                            )
+                    )
+                """,
+                (user_sub, today.timestamp()),
+            )
+            if response.results[0][0]:
+                streak = 1
+    except Exception as e:
+        # i don't have time to test this before launch
+        await handle_error(e, extra_info="0 streak fix")
 
     return streak

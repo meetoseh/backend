@@ -403,7 +403,7 @@ class PerpetualPubSub:
                         )
                         sys.exit(1)
 
-                    await asyncio.sleep(len(failures_times))
+                    await asyncio.sleep(2 ** len(failures_times))
         except BaseException:
             # we've been interrupted, notify all the subscribers that we're shutting down
             logger.debug("PerpetualPubSub detected interrupt")

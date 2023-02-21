@@ -205,3 +205,18 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
         await handle_error(e, extra_info="0 streak fix")
 
     return streak
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    async def main():
+        user_sub = input("enter a user sub: ")
+
+        now = time.time()
+        async with Itgs() as itgs:
+            streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+
+        print(f"{user_sub=} has a streak of {streak} days")
+
+    asyncio.run(main())

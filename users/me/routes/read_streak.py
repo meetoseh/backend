@@ -158,7 +158,7 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
             SELECT COUNT(*) FROM daily_events, oldest_de
             WHERE
                 daily_events.available_at <= ?
-                AND daily_events.available_at > oldest_de.available_at
+                AND daily_events.available_at >= oldest_de.available_at
             """,
             (oldest_daily_event_uid_in_streak, now),
         )

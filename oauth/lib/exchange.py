@@ -376,6 +376,12 @@ async def initialize_user_from_info(
             )
 
             if interpreted_claims.picture is not None:
+                redis = await itgs.redis()
+                await redis.set(
+                    f"users:{user_sub}:checking_profile_image".encode("utf-8"),
+                    b"1",
+                    ex=10,
+                )
                 jobs = await itgs.jobs()
                 await jobs.enqueue(
                     "runners.check_profile_picture",
@@ -449,6 +455,12 @@ async def initialize_user_from_info(
             await users.lib.stats.on_user_created(itgs, new_user_sub, now)
 
             if interpreted_claims.picture is not None:
+                redis = await itgs.redis()
+                await redis.set(
+                    f"users:{new_user_sub}:checking_profile_image".encode("utf-8"),
+                    b"1",
+                    ex=10,
+                )
                 await jobs.enqueue(
                     "runners.check_profile_picture",
                     user_sub=new_user_sub,

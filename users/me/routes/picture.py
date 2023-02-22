@@ -17,7 +17,7 @@ class ShowMyPictureResponse(BaseModel):
     jwt: str = Field(description="The JWT to use to access the image file")
 
 
-ERROR_404_TYPE = Literal["not_found"]
+ERROR_404_TYPE = Literal["not_found", "not_available"]
 
 
 @router.get(
@@ -25,7 +25,10 @@ ERROR_404_TYPE = Literal["not_found"]
     response_model=ShowMyPictureResponse,
     responses={
         "404": {
-            "description": "the user does not have a profile picture, or it hasnt been processed yet",
+            "description": (
+                "the user does not have a profile picture, or it hasnt been processed yet. "
+                "Uses not_available if its definitely not processing.",
+            ),
             "model": StandardErrorResponse[ERROR_404_TYPE],
         },
         **STANDARD_ERRORS_BY_CODE,
@@ -65,6 +68,19 @@ async def show_my_picture(authorization: Optional[str] = Header(None)):
             (auth_result.result.sub,),
         )
         if not response.results:
+            redis = await itgs.redis()
+            result = await redis.get(
+                f"users:{auth_result.result.sub}:checking_profile_image".encode("utf-8")
+            )
+            if result is None:
+                return JSONResponse(
+                    content=StandardErrorResponse[ERROR_404_TYPE](
+                        type="not_available",
+                        message="you do not have a profile picture",
+                    ).dict(),
+                    status_code=404,
+                )
+
             return JSONResponse(
                 content=StandardErrorResponse[ERROR_404_TYPE](
                     type="not_found",

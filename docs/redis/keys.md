@@ -172,6 +172,10 @@ the keys that we use in redis
   generate an excessive number of referral records.
   used [here](../../referral/routes/redeem_user_daily_event_invite.py)
 
+- `users:{sub}:checking_profile_image` goes to a string if we've recently recieved a profile
+  image for the user with the given sub and is not set otherwise. Used to quickly fail out
+  of waiting for processing of profile images.
+
 - `frontend-web:server_images:config` used by frontend-web/server_images for maintaining
   configuration from the last time an instance processed the static public server images
 

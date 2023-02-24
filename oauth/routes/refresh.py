@@ -93,6 +93,10 @@ async def refresh(args: RefreshRequest):
         except Exception as e:
             if not isinstance(e, jwt.exceptions.ExpiredSignatureError):
                 await handle_error(e, extra_info="failed to decode refresh token")
+            else:
+                await handle_error(
+                    e, extra_info=f"refresh token expired: {args.refresh_token}"
+                )
             return UNKNOWN_TOKEN
 
         # generate the new refresh token PRIOR to verifying the previous
@@ -105,6 +109,10 @@ async def refresh(args: RefreshRequest):
         )
 
         if new_refresh_expires_at - now < 30:
+            slack = await itgs.slack()
+            await slack.send_web_error_message(
+                f"Rejecting refresh token (too close to expiration): {args.refresh_token}"
+            )
             return TOO_CLOSE_TO_EXPIRATION
 
         new_jti = secrets.token_urlsafe(16)
@@ -134,6 +142,10 @@ async def refresh(args: RefreshRequest):
             now,
         )
         if not exchange_successful:
+            slack = await itgs.slack()
+            await slack.send_web_error_message(
+                f"Rejecting refresh token (revoked): {args.refresh_token}"
+            )
             return UNKNOWN_TOKEN
 
         # fetch required information for new id token
@@ -151,6 +163,10 @@ async def refresh(args: RefreshRequest):
             # user was deleted since the refresh token was issued; revoke all tokens
             # and return an error
             await redis.delete(f"oauth:valid_refresh_tokens:{payload['sub']}")
+            slack = await itgs.slack()
+            await slack.send_web_error_message(
+                f"Rejecting refresh token (user deleted): {args.refresh_token}"
+            )
             return UNKNOWN_TOKEN
 
         given_name: Optional[str] = response.results[0][0]

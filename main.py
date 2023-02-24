@@ -70,7 +70,7 @@ if os.environ.get("ENVIRONMENT") == "dev":
         allow_origins=[os.environ["ROOT_FRONTEND_URL"]],
         allow_credentials=True,
         allow_methods=["GET", "POST", "HEAD", "PUT", "DELETE", "PATCH"],
-        allow_headers=["Authorization", "Pragma"],
+        allow_headers=["Authorization", "Pragma", "Cache-Control"],
         expose_headers=["x-image-file-jwt"],
     )
 app.include_router(

@@ -8,6 +8,7 @@ from itgs import Itgs
 from redis.asyncio import Redis
 from redis.exceptions import NoScriptError
 import hashlib
+import socket
 import secrets
 import time
 import jwt
@@ -181,6 +182,7 @@ async def refresh(args: RefreshRequest):
             ).strip()
 
         # generate the new id token
+        new_jti = secrets.token_urlsafe(16)
         new_id_token = jwt.encode(
             {
                 "sub": payload["sub"],
@@ -188,7 +190,7 @@ async def refresh(args: RefreshRequest):
                 "aud": "oseh-id",
                 "exp": min(now + 60 * 60, new_refresh_expires_at),
                 "iat": now - 1,
-                "jti": secrets.token_urlsafe(16),
+                "jti": new_jti,
                 "name": name,
                 "given_name": given_name,
                 "family_name": family_name,
@@ -197,6 +199,12 @@ async def refresh(args: RefreshRequest):
             },
             os.environ["OSEH_ID_TOKEN_SECRET"],
             algorithm="HS256",
+        )
+
+        slack = await itgs.slack()
+        await slack.send_web_error_message(
+            f"{socket.gethostname()} Successfully exchanged {payload['jti']} for {new_jti} (for {payload['sub']})",
+            "Refresh token used successfully",
         )
 
         return Response(

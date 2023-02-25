@@ -140,7 +140,7 @@ async def refresh(args: RefreshRequest):
             f"oauth:valid_refresh_tokens:{payload['sub']}",
             payload["jti"],
             new_jti,
-            now,
+            new_refresh_expires_at,
         )
         if not exchange_successful:
             slack = await itgs.slack()

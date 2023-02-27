@@ -201,12 +201,6 @@ async def refresh(args: RefreshRequest):
             algorithm="HS256",
         )
 
-        slack = await itgs.slack()
-        await slack.send_web_error_message(
-            f"{socket.gethostname()} Successfully exchanged {payload['jti']} for {new_jti} (for {payload['sub']})",
-            "Refresh token used successfully",
-        )
-
         return Response(
             content=RefreshResponse(
                 id_token=new_id_token,

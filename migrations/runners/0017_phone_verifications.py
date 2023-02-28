@@ -4,7 +4,7 @@ from itgs import Itgs
 
 async def up(itgs: Itgs) -> None:
     conn = await itgs.conn()
-    cursor = conn.cursor('weak')
+    cursor = conn.cursor("weak")
 
     await cursor.execute(
         """

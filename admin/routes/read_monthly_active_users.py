@@ -201,8 +201,7 @@ async def get_monthly_active_users_from_source(
             the unix epoch
     """
     naive_midnight_unix_timestamp = datetime.datetime.combine(
-        unix_dates.unix_date_to_date(unix_date),
-        datetime.time(),
+        unix_dates.unix_date_to_date(unix_date), datetime.time(), tzinfo=pytz.utc
     ).timestamp()
     end_unix_month = unix_dates.unix_timestamp_to_unix_month(
         naive_midnight_unix_timestamp
@@ -211,8 +210,8 @@ async def get_monthly_active_users_from_source(
         naive_midnight_unix_timestamp - 182 * 86400
     )
 
-    start_naive_date = unix_dates.unix_date_to_date(start_unix_month)
-    end_naive_date = unix_dates.unix_date_to_date(end_unix_month)
+    start_naive_date = unix_dates.unix_month_to_date_of_first(start_unix_month)
+    end_naive_date = unix_dates.unix_month_to_date_of_first(end_unix_month)
 
     conn = await itgs.conn()
     cursor = conn.cursor("none")
@@ -251,6 +250,7 @@ async def get_monthly_active_users_from_source(
             datetime.datetime.combine(
                 retrieved_for_naive_date,
                 datetime.time(),
+                tzinfo=pytz.utc,
             ).timestamp()
         )
 

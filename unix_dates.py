@@ -9,6 +9,7 @@ library, but 100 days before 19052 is 18952 - easy to answer.
 Note this format does not indicate anything about timezones.
 """
 import datetime
+import pytz
 
 
 def unix_timestamp_to_unix_date(
@@ -88,7 +89,9 @@ def date_to_unix_date(date: datetime.date) -> int:
     Returns:
         int: The unix date
     """
-    as_naive_datetime = datetime.datetime.combine(date, datetime.time())
+    as_naive_datetime = datetime.datetime.combine(
+        date, datetime.time(), tzinfo=pytz.utc
+    )
     return int(as_naive_datetime.timestamp() // 86400)
 
 

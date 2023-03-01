@@ -8,6 +8,9 @@ import pytz
 
 
 async def up(itgs: Itgs) -> None:
+    """NOTE: This migration is left for historical reasons but DOES NOT WORK! It only
+    cleared the cache in the instance that happened to run the migration
+    """
     cache = await itgs.local_cache()
 
     unix_date = unix_dates.unix_timestamp_to_unix_date(

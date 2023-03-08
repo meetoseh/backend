@@ -119,3 +119,19 @@ jwt and interactive prompt jwt
 
 The websocket route can be kept mostly as-is with renaming from joining a
 journey to joining an interactive prompt
+
+# Ordered todos
+
+REMINDER: dangerous to commit to main currently, switched branch to interactive prompts
+
+- [ ] journeys/events/helper.py -> interactive_prompts/events/helper.py
+- [ ] the actual event endpoints (join/leave/like/etc)
+- [ ] stats related lib file for interactive prompts
+- [ ] endpoint to start the interactive prompt for a journey: trade a
+      journey jwt & std jwt for a interactive prompt jwt + session uid, track stats
+- [ ] representation of an external journey to remove prompt info & add
+      interactive prompt reference
+- [ ] admin journey endpoints adapted
+- [ ] websocket
+- [ ] frontend-web
+- [ ] frontend-app

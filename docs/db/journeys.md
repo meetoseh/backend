@@ -1,9 +1,8 @@
 # journeys
 
-A journey combines an audio and social experience. It consists of a lobby
-period, where a question is posed to the audience, followed by a short-form
-audio content (~1 minute). During the lobby period, the audience can respond to
-the question and see the responses of others in real-time.
+A journey combines an audio experience and an interactive prompt. It consists of
+lobby period, where the audience responds to the interactive prompt, followed by
+a short-form audio content (~1 minute).
 
 A journey is part of 0-1 [daily events](daily_events.md) in one category. Note
 that the schema can only guarrantee that a journey is part of at most one
@@ -14,42 +13,9 @@ with different effects applied; for consistency across clients and to improve
 performance, these effects are applied in advance and downloaded as images
 by clients.
 
-## Prompts
-
-This section describes the possible prompts for a journey. Prompts are stored
-as json blobs, serialized as if from one of the following:
-
-```py
-class NumericPrompt:
-    """E.g., What's your mood? 1-10
-    Max 10 different values
-    """
-    style: Literal["numeric"]
-    text: str
-    min: int
-    """inclusive"""
-    max: int
-    """inclusive"""
-    step: int
-
-class PressPrompt:
-    """E.g., press when you like it"""
-    style: Literal["press"]
-    text: str
-
-class ColorPrompt:
-    """E.g., what color is this song?"""
-    style: Literal["color"]
-    text: str
-    colors: List[str]
-    """hex codes"""
-
-class WordPrompt:
-    """e.g. what are you feeling?"""
-    style: Literal["word"]
-    text: str
-    options: List[str]
-```
+Two videos are also generated automatically for journeys - a sample and the
+full video. The sample is essentially a 15s version of the full video. These
+videos are 1080x1920 vertical videos optimized for instagram.
 
 ## Fields
 
@@ -78,11 +44,10 @@ class WordPrompt:
 - `title (text not null)`: the title of the journey, typically short
 - `description (text not null)`: the description of the journey, typically longer but still short
 - `journey_subcategory_id (integer not null references journey_subcategories(id) on delete restrict)`: the id of the journey subcategory
-- `prompt (text not null)`: the prompt and corresponding settings as a json dictionary. the
-  prompt format is described in the Prompts section
-- `lobby_duration_seconds (real not null)`: How long the lobby lasts for this journey, in
-  fractional seconds. The lobby duration impacts the bin width on statistics and hence cannot
-  be changed retroactively without an accuracy loss.
+- `interactive_prompt_id (integer not null references interactive_prompts(id) on delete restrict)`:
+  The id of the interactive prompt. For simplicity right now this is marked unique to match how
+  it's intended to be used, though there is nothing technically that forces this behavior - except
+  that analytics would be significantly harder if reusing the prompt.
 - `created_at (real not null)`: when this record was created in seconds since the unix epoch
 - `deleted_at (real null)`: when this record was deleted in seconds since the unix epoch,
   if it has been soft-deleted
@@ -101,10 +66,9 @@ CREATE TABLE journeys(
     title TEXT NOT NULL,
     description TEXT NOT NULL,
     journey_subcategory_id INTEGER NOT NULL REFERENCES journey_subcategories(id) ON DELETE RESTRICT,
-    prompt TEXT NOT NULL,
+    interactive_prompt_id INTEGER NOT NULL REFERENCES interactive_prompts(id) ON DELETE RESTRICT,
     created_at REAL NOT NULL,
     deleted_at REAL NULL,
-    lobby_duration_seconds REAL NOT NULL,
     sample_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL,
     video_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL
 );
@@ -132,6 +96,9 @@ CREATE INDEX journeys_video_content_file_id_idx ON journeys(video_content_file_i
 
 /* foreign key, sort */
 CREATE INDEX journeys_journey_subcategory_id_created_at_idx ON journeys(journey_subcategory_id, created_at);
+
+/* uniqueness, foreign key */
+CREATE UNIQUE INDEX journeys_interactive_prompt_id_idx ON journeys(interactive_prompt_id);
 
 /* sort */
 CREATE INDEX journeys_created_at_idx ON journeys(created_at) WHERE deleted_at IS NULL;

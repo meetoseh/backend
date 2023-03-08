@@ -49,14 +49,14 @@ async def on_journey_session_started(
 
     This impacts the following keys, described in docs/redis/keys.md
 
-    - `stats:journey_sessions:count`
-    - `stats:journey_sessions:monthly:{unix_month}:count`
-    - `stats:journey_sessions:monthly:earliest`
-    - `stats:journey_sessions:{subcategory}:{unix_date}:subs`
-    - `stats:journey_sessions:bysubcat:earliest`
-    - `stats:journey_sessions:bysubcat:subcategories`
-    - `stats:journey_sessions:bysubcat:totals:{unix_date}`
-    - `stats:journey_sessions:bysubcat:totals:earliest`
+    - `stats:interactive_prompt_sessions:count`
+    - `stats:interactive_prompt_sessions:monthly:{unix_month}:count`
+    - `stats:interactive_prompt_sessions:monthly:earliest`
+    - `stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs`
+    - `stats:interactive_prompt_sessions:bysubcat:earliest`
+    - `stats:interactive_prompt_sessions:bysubcat:subcategories`
+    - `stats:interactive_prompt_sessions:bysubcat:totals:{unix_date}`
+    - `stats:interactive_prompt_sessions:bysubcat:totals:earliest`
 
     Args:
         itgs (Itgs): The integrations for networked services
@@ -64,6 +64,9 @@ async def on_journey_session_started(
         started_at (float): The time the journey was started
         user_sub (str): The sub of the user that started the journey
     """
+    raise NotImplementedError(
+        "although this does now reference the correct keys, it needs to be refactored to only do bysubcat"
+    )
 
     unix_date = unix_dates.unix_timestamp_to_unix_date(
         started_at, tz=pytz.timezone("America/Los_Angeles")
@@ -78,28 +81,33 @@ async def on_journey_session_started(
 
     async with redis.pipeline() as pipe:
         pipe.multi()
-        await pipe.incr("stats:journey_sessions:count")
-        await pipe.incr(f"stats:journey_sessions:monthly:{unix_month}:count")
+        await pipe.incr("stats:interactive_prompt_sessions:count")
+        await pipe.incr(f"stats:interactive_prompt_sessions:monthly:{unix_month}:count")
         await set_if_lower(
             pipe,
-            "stats:journey_sessions:monthly:earliest",
+            "stats:interactive_prompt_sessions:monthly:earliest",
             unix_month,
         )
         await pipe.sadd(
-            f"stats:journey_sessions:{subcategory}:{unix_date}:subs", user_sub
+            f"stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs",
+            user_sub,
         )
         await set_if_lower(
             pipe,
-            "stats:journey_sessions:bysubcat:earliest",
+            "stats:interactive_prompt_sessions:bysubcat:earliest",
             unix_date,
         )
-        await pipe.sadd("stats:journey_sessions:bysubcat:subcategories", subcategory)
+        await pipe.sadd(
+            "stats:interactive_prompt_sessions:bysubcat:subcategories", subcategory
+        )
         await pipe.hincrby(
-            f"stats:journey_sessions:bysubcat:totals:{unix_date}", subcategory, 1
+            f"stats:interactive_prompt_sessions:bysubcat:totals:{unix_date}",
+            subcategory,
+            1,
         )
         await set_if_lower(
             pipe,
-            "stats:journey_sessions:bysubcat:totals:earliest",
+            "stats:interactive_prompt_sessions:bysubcat:totals:earliest",
             unix_date,
         )
         await pipe.execute()

@@ -96,7 +96,7 @@ the keys that we use in redis
   nothing if they have not. This is used [here](../../daily_events/lib/has_started_one.py)
 
 - `journeys:external:cache_lock:{uid}` goes to the string '1' if the
-  daily event with the given uid at the level indicated is currently being filled
+  journey with the given uid at the level indicated is currently being filled
   in by one of the instances. This is used
   [here](../../journeys/lib/read_one_external.py) and has a similar purpose
   to load shedding, where we don't want a cache eviction to suddenly cause a

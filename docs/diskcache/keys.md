@@ -222,11 +222,10 @@ the keys we store locally on backend instances via diskcache
   as an enum, and value is the value of the field. The types are:
 
   - `1`: part of the serialized journey
-  - `2`: a marker to indicate that the session uid should be inserted here. no value.
-  - `3`: a marker to indicate that the journey jwt should be inserted here. no value.
-  - `4`: a marker to indicate that an image file jwt should be inserted here. The value is
+  - `2`: a marker to indicate that the journey jwt should be inserted here. no value.
+  - `3`: a marker to indicate that an image file jwt should be inserted here. The value is
     the uid of the image file.
-  - `5`: a marker to indicate that a content file jwt should be inserted here. The value is
+  - `4`: a marker to indicate that a content file jwt should be inserted here. The value is
     the uid of the content file.
 
   Note that this format allows us to inject the JWTs without a deserialize/serialize round trip,
@@ -276,3 +275,6 @@ the keys we store locally on backend instances via diskcache
 - `image_files:public:{uid}` goes to `b'1'` if the image file with the given
   uid is public and `b'0'` if it is not public, and is unset if we don't know.
   Used [here](../../image_files/auth.py)
+
+- `users:{sub}:created_at` goes to a the user with that subs created_at time
+  if set. Used by [join interactive prompt session](../../interactive_prompts/events/routes/join.py)

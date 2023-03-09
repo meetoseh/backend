@@ -2,6 +2,7 @@
 prompt using a 2-layer cooperative caching strategy (db -> local disk)
 """
 import asyncio
+import json
 import random
 from typing import AsyncIterator, Dict, List, Literal, NoReturn, Optional, Union
 from fastapi.responses import Response, StreamingResponse
@@ -22,6 +23,7 @@ class _InteractivePromptFromDB:
     uid: str
     prompt: str
     duration_seconds: int
+    journey_subcategory: Optional[str]
 
 
 @dataclass
@@ -36,6 +38,10 @@ class InteractivePromptMeta:
     """Information about the prompt"""
     duration_seconds: int
     """The duration of the interactive prompt in seconds"""
+    journey_subcategory: Optional[str]
+    """If the interactive prompt is for a journey, this is the subcategory of the
+    journey. Otherwise, this is None.
+    """
 
 
 HEADERS = {
@@ -304,6 +310,8 @@ def convert_interactive_prompt_to_stored_format(
     f.write(interactive_prompt.prompt.encode("ascii"))
     f.write(b',"duration_seconds":')
     f.write(str(interactive_prompt.duration_seconds).encode("ascii"))
+    f.write(b',"journey_subcategory":')
+    f.write(json.dumps(interactive_prompt.journey_subcategory).encode("ascii"))
     f.write(b',"session_uid":"')
 
     curr = f.tell()
@@ -382,7 +390,23 @@ async def get_interactive_prompt_from_db(
     cursor = conn.cursor(consistency)
 
     response = await cursor.execute(
-        "SELECT prompt, duration_seconds FROM interactive_prompts WHERE uid = ?",
+        """
+        SELECT 
+            interactive_prompts.prompt, 
+            interactive_prompts.duration_seconds,
+            journey_subcategories.internal_name
+        FROM interactive_prompts
+        LEFT OUTER JOIN journey_subcategories 
+            ON EXISTS (
+                SELECT 1 FROM journeys
+                WHERE journeys.interactive_prompt_id = interactive_prompts.id
+                  AND journeys.journey_subcategory_id = journey_subcategories.id
+            )
+        WHERE
+            interactive_prompts.uid = ?
+        ORDER BY journey_subcategories.uid ASC
+        LIMIT 1
+        """,
         (interactive_prompt_uid,),
     )
     if not response.results:
@@ -396,6 +420,7 @@ async def get_interactive_prompt_from_db(
         uid=interactive_prompt_uid,
         prompt=response.results[0][0],
         duration_seconds=response.results[0][1],
+        journey_subcategory=response.results[0][2],
     )
 
 

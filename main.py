@@ -26,7 +26,6 @@ import phones.router
 import notifications.router
 import interactive_prompts.router
 import admin.routes.read_journey_subcategory_view_stats
-import journeys.events.helper
 import daily_events.lib.has_started_one
 import daily_events.lib.read_one_external
 import daily_events.routes.now
@@ -135,9 +134,6 @@ def register_background_tasks():
         asyncio.create_task(
             admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
         )
-    )
-    background_tasks.add(
-        asyncio.create_task(journeys.events.helper.purge_journey_meta_loop())
     )
     background_tasks.add(
         asyncio.create_task(daily_events.lib.has_started_one.purge_loop())

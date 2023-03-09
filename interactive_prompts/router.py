@@ -1,7 +1,7 @@
 from fastapi import APIRouter
-import routes.profile_pictures
-import events.router
+import interactive_prompts.routes.profile_pictures
+import interactive_prompts.events.router
 
 router = APIRouter()
-router.include_router(routes.profile_pictures.router)
-router.include_router(events.router.router, prefix="/events")
+router.include_router(interactive_prompts.routes.profile_pictures.router)
+router.include_router(interactive_prompts.events.router.router, prefix="/events")

@@ -12,7 +12,7 @@ from instructors.routes.read import Instructor
 from itgs import Itgs
 from journeys.subcategories.routes.read import JourneySubcategory
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
-from journeys.models.prompt import Prompt
+from interactive_prompts.models.prompt import Prompt
 import journeys.lib.stats
 import time
 
@@ -253,57 +253,78 @@ async def create_journey(
         assert instructor_picture_image_file_uid is not None
         assert instructor_created_at is not None
 
+        interactive_prompt_uid = f"oseh_ip_{secrets.token_urlsafe(16)}"
         uid = f"oseh_j_{secrets.token_urlsafe(16)}"
         now = time.time()
-        response = await cursor.execute(
-            """
-            INSERT INTO journeys (
-                uid,
-                audio_content_file_id,
-                background_image_file_id,
-                blurred_background_image_file_id,
-                darkened_background_image_file_id,
-                instructor_id,
-                title,
-                description,
-                journey_subcategory_id,
-                prompt,
-                lobby_duration_seconds,
-                created_at
-            )
-            SELECT
-                ?,
-                journey_audio_contents.content_file_id,
-                journey_background_images.image_file_id,
-                journey_background_images.blurred_image_file_id,
-                journey_background_images.darkened_image_file_id,
-                instructors.id,
-                ?, ?,
-                journey_subcategories.id,
-                ?, ?, ?
-            FROM journey_audio_contents, journey_background_images, instructors, journey_subcategories
-            WHERE
-                journey_audio_contents.uid = ?
-                AND journey_background_images.uid = ?
-                AND instructors.uid = ?
-                AND instructors.deleted_at IS NULL
-                AND journey_subcategories.uid = ?
-            """,
+        response = await cursor.executemany3(
             (
-                uid,
-                args.title,
-                args.description,
-                args.prompt.json(),
-                args.lobby_duration_seconds,
-                now,
-                args.journey_audio_content_uid,
-                args.journey_background_image_uid,
-                args.instructor_uid,
-                args.journey_subcategory_uid,
-            ),
+                (
+                    """
+                    INSERT INTO interactive_prompts (
+                        uid,
+                        prompt,
+                        duration_seconds,
+                        created_at
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (
+                        interactive_prompt_uid,
+                        args.prompt.json(),
+                        args.lobby_duration_seconds,
+                        now,
+                    ),
+                ),
+                (
+                    """
+                    INSERT INTO journeys (
+                        uid,
+                        audio_content_file_id,
+                        background_image_file_id,
+                        blurred_background_image_file_id,
+                        darkened_background_image_file_id,
+                        instructor_id,
+                        title,
+                        description,
+                        journey_subcategory_id,
+                        interactive_prompt_id,
+                        created_at
+                    )
+                    SELECT
+                        ?,
+                        journey_audio_contents.content_file_id,
+                        journey_background_images.image_file_id,
+                        journey_background_images.blurred_image_file_id,
+                        journey_background_images.darkened_image_file_id,
+                        instructors.id,
+                        ?, ?,
+                        journey_subcategories.id,
+                        interactive_prompts.id, 
+                        ?
+                    FROM journey_audio_contents, journey_background_images, instructors, journey_subcategories, interactive_prompts
+                    WHERE
+                        journey_audio_contents.uid = ?
+                        AND journey_background_images.uid = ?
+                        AND instructors.uid = ?
+                        AND instructors.deleted_at IS NULL
+                        AND journey_subcategories.uid = ?
+                        AND interactive_prompts.uid = ?
+                    """,
+                    (
+                        uid,
+                        args.title,
+                        args.description,
+                        now,
+                        args.journey_audio_content_uid,
+                        args.journey_background_image_uid,
+                        args.instructor_uid,
+                        args.journey_subcategory_uid,
+                        interactive_prompt_uid,
+                    ),
+                ),
+            )
         )
 
-        if response.rows_affected is None or response.rows_affected < 1:
+        if response[1].rows_affected is None or response[1].rows_affected < 1:
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="raced",

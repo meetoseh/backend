@@ -7,7 +7,6 @@ from daily_events.models.external_daily_event import (
 )
 from image_files.models import ImageFileRef
 from content_files.models import ContentFileRef
-from journeys.models.prompt import Prompt
 
 
 class ExternalJourney(BaseModel):
@@ -16,13 +15,12 @@ class ExternalJourney(BaseModel):
     daily event jwt for this response. This is different from the
     ExternalDailyEventJourney, which is used to _preview_ the journey,
     rather than actually start it
+
+    Typically the first thing a client does with this is use the
+    journey jwt to get an interactive prompt jwt for the lobby.
     """
 
     uid: str = Field(description="The UID of the journey")
-
-    session_uid: str = Field(
-        description="The UID of the new session within the journey, for event endpoints"
-    )
 
     jwt: str = Field(description="The JWT which provides access to the journey")
 
@@ -60,12 +58,6 @@ class ExternalJourney(BaseModel):
         description="The description of the journey"
     )
 
-    prompt: Prompt = Field(description="The prompt for the journey")
-
     sample: Optional[ContentFileRef] = Field(
         description="A sample for the journey as a 15 second clip, if one is available."
-    )
-
-    lobby_duration_seconds: float = Field(
-        description="The duration of the lobby, in seconds"
     )

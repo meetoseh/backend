@@ -2,7 +2,7 @@
 accurate. This does not include functions for rolling data from redis to
 rqlite, since that is done by the jobs repo.
 
-This is not an exhausitive list of callbacks: see also journeys/lib/stats.py
+This is not an exhausitive list of callbacks: see also interactive_prompts/lib/stats.py
 """
 import time
 from typing import List, Optional
@@ -60,11 +60,11 @@ async def on_user_created(itgs: Itgs, sub: str, created_at: float) -> None:
         await pipe.execute()
 
 
-async def on_journey_session_started(
+async def on_interactive_prompt_session_started(
     itgs: Itgs, sub: str, *, user_created_at: float, started_at: float
 ) -> None:
     """Updates user-related statistics as a result of a user with the given
-    sub starting a journey session at the given time, which is assumed to be
+    sub starting an interactive prompt session at the given time, which is assumed to be
     near the current clock time.
 
     This impacts the following keys, which are described in docs/redis/keys.md
@@ -76,14 +76,14 @@ async def on_journey_session_started(
     - `stats:retention:{period}:{retained}:{unix_date}`
     - `stats:retention:{period}:{retained}:earliest`
 
-    This function does not handle all the necessary updates for when a journey
-    session starts, see e.g. journeys/lib/stats.py
+    This function does not handle all the necessary updates for when a
+    interactive prompt session starts, see e.g. interactive_prompts/lib/stats.py
 
     Args:
         itgs (Itgs): The integrations for networked services
-        sub (str): The sub of the user that started a journey session
+        sub (str): The sub of the user that started a interactive prompt session
         user_created_at (float): The time the user was created
-        started_at (float): The time the journey session started
+        started_at (float): The time the interactive prompt session started
     """
     redis = await itgs.redis()
 

@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field, constr
 from typing import Literal, Optional
 from auth import auth_admin
 from daily_events.lib.read_one_external import evict_external_daily_event
-from journeys.events.helper import purge_journey_meta
 from journeys.lib.read_one_external import evict_external_journey
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -117,7 +116,6 @@ async def update_instructor(
 
             for _, journey_uid, daily_event_uid in response.results:
                 await evict_external_journey(itgs, uid=journey_uid)
-                await purge_journey_meta(itgs, journey_uid=journey_uid)
 
                 to_clean_daily_events.add(daily_event_uid)
 

@@ -87,3 +87,31 @@ class WordPrompt(BaseModel):
 
 
 Prompt = Union[NumericPrompt, PressPrompt, ColorPrompt, WordPrompt]
+
+
+def is_prompt_swap_trivial(a: Prompt, b: Prompt) -> bool:
+    """Determines if the two prompts are functionally equivalent, i.e., they have
+    the same style and the same number of options, so the events for the two are
+    compatible. An example of a compatible prompt swap is just changing the text,
+    or just changing the values of the options (but not the number of options).
+
+    Args:
+        a (Prompt): The first prompt
+        b (Prompt): The second prompt
+
+    Returns:
+        bool: Whether the prompts are compatible
+    """
+    if a.style == "numeric" and b.style == "numeric":
+        return a.min == b.min and a.max == b.max and a.step == b.step
+
+    if a.style == "press" and b.style == "press":
+        return True
+
+    if a.style == "color" and b.style == "color":
+        return len(a.colors) == len(b.colors)
+
+    if a.style == "word" and b.style == "word":
+        return len(a.options) == len(b.options)
+
+    return False

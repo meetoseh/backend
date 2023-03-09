@@ -370,23 +370,24 @@ rather than external functionality.
 
 - `updates:{repo}`: used to indicate that the main branch of the given repository was updated
 
-- `ps:journeys:{uid}:events`: used to indicate that a new journey event was
-  created for the journey with the given uid. The body of the message should
+- `ps:interactive_prompts:{uid}:events`: used to indicate that a new interactive prompt event was
+  created for the interactive prompt with the given uid. The body of the message should
   be formatted as if by the trivial serialization of the following:
 
   ```py
-  class JourneyEventPubSubMessage:
+  class InteractivePromptEventPubSubMessage:
       uid: str
       user_sub: str
       session_uid: str
       evtype: str
       data: Dict[str, Any]
       icon: Optional[str]
-      journey_time: float
+      prompt_time: float
       created_at: float
   ```
 
-  where the data is described in detail under [../db/journey_events.md](../db/journey_events.md).
+  where the data is described in detail under
+  [../db/interactive_prompt_events.md](../db/interactive_prompt_events.md).
 
 - `ps:entitlements:purge`: used to indicate than any cached information on entitlements for a
   given user should be purged. The body of the message should be formatted as if by the

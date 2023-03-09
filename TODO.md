@@ -124,14 +124,16 @@ journey to joining an interactive prompt
 
 REMINDER: dangerous to commit to main currently, switched branch to interactive prompts
 
-- [ ] journeys/events/helper.py -> interactive_prompts/events/helper.py
-- [ ] the actual event endpoints (join/leave/like/etc)
-- [ ] stats related lib file for interactive prompts
-- [ ] endpoint to start the interactive prompt for a journey: trade a
-      journey jwt & std jwt for a interactive prompt jwt + session uid, track stats
-- [ ] representation of an external journey to remove prompt info & add
-      interactive prompt reference
-- [ ] admin journey endpoints adapted
-- [ ] websocket
+- [x] journeys/events/helper.py -> interactive_prompts/events/helper.py
+- [x] the actual event endpoints (join/leave/like/etc)
+- [x] make sure that changing journey subcategory clears interactive prompt meta,
+      so that view stats go to the right place (and changing journey subcategory
+      internal name also)
+- [x] stats related lib file for interactive prompts
+- [x] endpoint to start the interactive prompt for a journey: trade a
+      journey jwt & std jwt for a interactive prompt jwt + session uid
+- [x] representation of an external journey to remove prompt info
+- [x] admin journey endpoints adapted
+- [x] websocket
 - [ ] frontend-web
 - [ ] frontend-app

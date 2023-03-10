@@ -170,7 +170,7 @@ async def read_one_external(
         )
         await push_interactive_prompt_to_caches(
             itgs,
-            interactive_prompt_uid=int(interactive_prompt_uid),
+            interactive_prompt_uid=interactive_prompt_uid,
             stored_format=stored_format,
         )
         return StreamingResponse(
@@ -320,7 +320,7 @@ def convert_interactive_prompt_to_stored_format(
     f.seek(curr)
 
     f.write(
-        '\x00\x00\x00\x00\x02\x00\x00\x00\x09\x01","jwt":"\x00\x00\x00\x00\x03\x00\x00\x00\x02\x01"}'
+        b'\x00\x00\x00\x00\x02\x00\x00\x00\x09\x01","jwt":"\x00\x00\x00\x00\x03\x00\x00\x00\x02\x01"}'
     )
 
 

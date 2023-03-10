@@ -132,44 +132,11 @@ async def start_random_journey(
         if journey_uid is None:
             return NOT_FOUND
 
-        # preparation
-        session_uid = f"oseh_js_{secrets.token_urlsafe(16)}"
         jwt = await journeys.auth.create_jwt(itgs, journey_uid=journey_uid)
-
-        # fetch info
         journey_response = await journeys.lib.read_one_external.read_one_external(
-            itgs, journey_uid=journey_uid, session_uid=session_uid, jwt=jwt
+            itgs, journey_uid=journey_uid, jwt=jwt
         )
         if journey_response is None:
-            return NOT_FOUND
-
-        # optimistically insert session
-        conn = await itgs.conn()
-        cursor = conn.cursor("weak")
-        response = await cursor.execute(
-            """
-            INSERT INTO journey_sessions (
-                journey_id,
-                user_id,
-                uid
-            )
-            SELECT
-                journeys.id,
-                users.id,
-                ?
-            FROM journeys, users
-            WHERE
-                journeys.uid = ?
-                AND users.sub = ?
-            """,
-            (
-                session_uid,
-                journey_uid,
-                std_auth_result.result.sub,
-            ),
-        )
-        if response.rows_affected is None or response.rows_affected < 1:
-            await cleanup_response(journey_response)
             return NOT_FOUND
 
         # finally, concurrency-safe check
@@ -182,10 +149,6 @@ async def start_random_journey(
                 force=False,
             )
         ):
-            await cursor.execute(
-                "DELETE FROM journey_sessions WHERE uid = ?",
-                (session_uid,),
-            )
             await cleanup_response(journey_response)
             return ALREADY_STARTED_ONE
 

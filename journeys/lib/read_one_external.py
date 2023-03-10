@@ -210,7 +210,6 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
     f.write(b'{"uid":"')
     f.write(journey.uid.encode("ascii"))
     f.write(b'","jwt":"')
-    mark_start += 5
     finish_mark()
     f.write(b'\x00\x00\x00\x00\x02\x00\x00\x00\x00\x01","background_image":{"uid":"')
     mark_start += 5

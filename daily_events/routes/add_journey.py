@@ -95,8 +95,8 @@ async def add_journey_to_daily_event(
                     WHERE dejs.journey_id = journeys.id
                 )
                 AND NOT EXISTS (
-                    SELECT 1 FROM journey_sessions
-                    WHERE journey_sessions.journey_id = journeys.id
+                    SELECT 1 FROM interactive_prompt_sessions
+                    WHERE interactive_prompt_sessions.interactive_prompt_id = journeys.interactive_prompt_id
                 )
             """,
             (uid, created_at, args.daily_event_uid, args.journey_uid),

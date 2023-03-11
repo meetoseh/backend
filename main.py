@@ -24,13 +24,15 @@ import admin.router
 import dev.router
 import phones.router
 import notifications.router
+import interactive_prompts.router
 import admin.routes.read_journey_subcategory_view_stats
-import journeys.events.helper
 import daily_events.lib.has_started_one
 import daily_events.lib.read_one_external
 import daily_events.routes.now
 import journeys.lib.read_one_external
-import journeys.routes.profile_pictures
+import interactive_prompts.routes.profile_pictures
+import interactive_prompts.lib.read_one_external
+import interactive_prompts.lib.read_interactive_prompt_meta
 import asyncio
 from loguru import logger
 
@@ -103,6 +105,11 @@ app.include_router(phones.router.router, prefix="/api/1/phones", tags=["phones"]
 app.include_router(
     notifications.router.router, prefix="/api/1/notifications", tags=["notifications"]
 )
+app.include_router(
+    interactive_prompts.router.router,
+    prefix="/api/1/interactive_prompts",
+    tags=["interactive_prompts"],
+)
 app.router.redirect_slashes = False
 
 
@@ -130,9 +137,6 @@ def register_background_tasks():
         )
     )
     background_tasks.add(
-        asyncio.create_task(journeys.events.helper.purge_journey_meta_loop())
-    )
-    background_tasks.add(
         asyncio.create_task(daily_events.lib.has_started_one.purge_loop())
     )
     background_tasks.add(
@@ -143,7 +147,17 @@ def register_background_tasks():
         asyncio.create_task(journeys.lib.read_one_external.cache_push_loop())
     )
     background_tasks.add(
-        asyncio.create_task(journeys.routes.profile_pictures.cache_push_loop())
+        asyncio.create_task(
+            interactive_prompts.routes.profile_pictures.cache_push_loop()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(interactive_prompts.lib.read_one_external.cache_push_loop())
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            interactive_prompts.lib.read_interactive_prompt_meta.cache_push_loop()
+        )
     )
 
 

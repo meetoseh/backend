@@ -45,9 +45,9 @@ class AuthResult:
 
 async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
     """Verifies that the authorization header is set and matches a bearer
-    token which provides access to a particular image file. In particular,
-    the JWT should be signed with `OSEH_IMAGE_FILE_JWT_SECRET`, have the audience
-    `oseh-image`, and have an iat and exp set and valid.
+    token which provides access to a particular journey. In particular,
+    the JWT should be signed with `OSEH_JOURNEY_JWT_SECRET`, have the audience
+    `oseh-journey`, and have an iat and exp set and valid.
 
     Args:
         itgs (Itgs): The integrations to use to connect to networked services

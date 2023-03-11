@@ -27,7 +27,7 @@ HEADERS = {
 
 
 async def read_one_external(
-    itgs: Itgs, *, journey_uid: str, session_uid: str, jwt: str
+    itgs: Itgs, *, journey_uid: str, jwt: str
 ) -> Optional[Response]:
     """Reads the required information about the journey with the given UID to return
     the appropriate ExternalJourney response object. Due to collaborative caching,
@@ -38,8 +38,6 @@ async def read_one_external(
     Args:
         itgs (Itgs): The integrations to (re)use
         journey_uid (str): The UID of the journey to read
-        session_uid (str): The UID of the session that will be created so that the user
-            can post events to the journey, which is inserted into the response
         jwt (str): The JWT which provides the user access to the journey, which is inserted
             into the response
 
@@ -51,9 +49,7 @@ async def read_one_external(
         if isinstance(locally_cached, (bytes, bytearray, memoryview)):
             locally_cached = io.BytesIO(locally_cached)
         return StreamingResponse(
-            content=inject_from_cached(
-                itgs, locally_cached, session_uid=session_uid, jwt=jwt
-            ),
+            content=inject_from_cached(itgs, locally_cached, jwt=jwt),
             status_code=200,
             headers=HEADERS,
         )
@@ -77,9 +73,7 @@ async def read_one_external(
                 if isinstance(locally_cached, (bytes, bytearray, memoryview)):
                     locally_cached = io.BytesIO(locally_cached)
                 return StreamingResponse(
-                    content=inject_from_cached(
-                        itgs, locally_cached, session_uid=session_uid, jwt=jwt
-                    ),
+                    content=inject_from_cached(itgs, locally_cached, jwt=jwt),
                     status_code=200,
                     headers=HEADERS,
                 )
@@ -121,7 +115,7 @@ async def read_one_external(
     await push_to_caches(itgs, journey_uid, cacheable.getvalue(), now)
     await redis.delete(f"journeys:external:cache_lock:{journey_uid}")
     return StreamingResponse(
-        content=inject_from_cached(itgs, cacheable, session_uid=session_uid, jwt=jwt),
+        content=inject_from_cached(itgs, cacheable, jwt=jwt),
         status_code=200,
         headers=HEADERS,
     )
@@ -146,18 +140,16 @@ async def read_local_cache(
 
 
 async def inject_from_cached(
-    itgs: Itgs, cached: io.BytesIO, session_uid: str, jwt: str
+    itgs: Itgs, cached: io.BytesIO, jwt: str
 ) -> AsyncIterator[bytes]:
     """Injects the required information into the cached journey data to return
     the appropriate dynamic ExternalJourney response object, already serialized.
-    This will inject the specificied session uid and jwt, as well as generating
+    This will inject the specified journey jwt, as well as generating
     any needed image file or content file jwts on the fly.
 
     Args:
         itgs (Itgs): The integrations to (re)use for creating image file and content file jwts
         cached (io.BytesIO): The cached journey data
-        session_uid (str): The UID of the session that will be created so that the user
-            can post events to the journey, which is inserted into the response
         jwt (str): The JWT which provides the user access to the journey, which is inserted
             into the response
 
@@ -176,14 +168,12 @@ async def inject_from_cached(
         if part_type == b"\x01":
             yield value
         elif part_type == b"\x02":
-            yield session_uid.encode("ascii")
-        elif part_type == b"\x03":
             yield jwt.encode("ascii")
-        elif part_type == b"\x04":
+        elif part_type == b"\x03":
             image_file_uid = value.decode("ascii")
             image_file_jwt = await image_files.auth.create_jwt(itgs, image_file_uid)
             yield image_file_jwt.encode("ascii")
-        elif part_type == b"\x05":
+        elif part_type == b"\x04":
             content_file_uid = value.decode("ascii")
             content_file_jwt = await content_files.auth.create_jwt(
                 itgs, content_file_uid
@@ -219,38 +209,35 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
 
     f.write(b'{"uid":"')
     f.write(journey.uid.encode("ascii"))
-    f.write(b'","session_uid":"')
+    f.write(b'","jwt":"')
     finish_mark()
-    f.write(b'\x00\x00\x00\x00\x02\x00\x00\x00\x00\x01","jwt":"')
-    mark_start += 5
-    finish_mark()
-    f.write(b'\x00\x00\x00\x00\x03\x00\x00\x00\x00\x01","background_image":{"uid":"')
+    f.write(b'\x00\x00\x00\x00\x02\x00\x00\x00\x00\x01","background_image":{"uid":"')
     mark_start += 5
     f.write(journey.background_image.uid.encode("ascii"))
     f.write(b'","jwt":"')
     finish_mark()
-    f.write(b"\x00\x00\x00\x00\x04")
+    f.write(b"\x00\x00\x00\x00\x03")
     f.write(journey.background_image.uid.encode("ascii"))
     finish_mark()
     f.write(b'\x00\x00\x00\x00\x01"},"blurred_background_image":{"uid":"')
     f.write(journey.blurred_background_image.uid.encode("ascii"))
     f.write(b'","jwt":"')
     finish_mark()
-    f.write(b"\x00\x00\x00\x00\x04")
+    f.write(b"\x00\x00\x00\x00\x03")
     f.write(journey.blurred_background_image.uid.encode("ascii"))
     finish_mark()
     f.write(b'\x00\x00\x00\x00\x01"},"darkened_background_image":{"uid":"')
     f.write(journey.darkened_background_image.uid.encode("ascii"))
     f.write(b'","jwt":"')
     finish_mark()
-    f.write(b"\x00\x00\x00\x00\x04")
+    f.write(b"\x00\x00\x00\x00\x03")
     f.write(journey.darkened_background_image.uid.encode("ascii"))
     finish_mark()
     f.write(b'\x00\x00\x00\x00\x01"},"audio_content":{"uid":"')
     f.write(journey.audio_content.uid.encode("ascii"))
     f.write(b'","jwt":"')
     finish_mark()
-    f.write(b"\x00\x00\x00\x00\x05")
+    f.write(b"\x00\x00\x00\x00\x04")
     f.write(journey.audio_content.uid.encode("ascii"))
     finish_mark()
     f.write(b'\x00\x00\x00\x00\x01"},"category":{"external_name":')
@@ -261,12 +248,8 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
     f.write(json.dumps(journey.instructor.name).encode("utf-8"))
     f.write(b'},"description":{"text":')
     f.write(json.dumps(journey.description.text).encode("utf-8"))
-    f.write(b'},"prompt":')
-    f.write(journey.prompt.json().encode("utf-8"))
-    f.write(b',"duration_seconds":')
+    f.write(b'},"duration_seconds":')
     f.write(str(journey.duration_seconds).encode("ascii"))
-    f.write(b',"lobby_duration_seconds":')
-    f.write(str(journey.lobby_duration_seconds).encode("ascii"))
     if journey.sample is None:
         f.write(b',"sample":null')
     else:
@@ -274,7 +257,7 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
         f.write(journey.sample.uid.encode("ascii"))
         f.write(b'","jwt":"')
         finish_mark()
-        f.write(b"\x00\x00\x00\x00\x05")
+        f.write(b"\x00\x00\x00\x00\x04")
         f.write(journey.sample.uid.encode("ascii"))
         finish_mark()
         f.write(b'\x00\x00\x00\x00\x01"}')
@@ -340,11 +323,9 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
             journeys.title,
             instructors.name,
             journeys.description,
-            journeys.prompt,
             blurred_image_files.uid,
             darkened_image_files.uid,
-            samples.uid,
-            journeys.lobby_duration_seconds
+            samples.uid
         FROM journeys
         JOIN image_files ON image_files.id = journeys.background_image_file_id
         JOIN image_files AS blurred_image_files ON blurred_image_files.id = journeys.blurred_background_image_file_id
@@ -375,11 +356,9 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         title=row[4],
         instructor=ExternalDailyEventJourneyInstructor(name=row[5]),
         description=ExternalDailyEventJourneyDescription(text=row[6]),
-        prompt=json.loads(row[7]),
-        blurred_background_image=ImageFileRef(uid=row[8], jwt=""),
-        darkened_background_image=ImageFileRef(uid=row[9], jwt=""),
-        sample=ContentFileRef(uid=row[10], jwt="") if row[10] is not None else None,
-        lobby_duration_seconds=row[11],
+        blurred_background_image=ImageFileRef(uid=row[7], jwt=""),
+        darkened_background_image=ImageFileRef(uid=row[8], jwt=""),
+        sample=ContentFileRef(uid=row[9], jwt="") if row[9] is not None else None,
     )
 
 

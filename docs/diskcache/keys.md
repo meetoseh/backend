@@ -222,17 +222,31 @@ the keys we store locally on backend instances via diskcache
   as an enum, and value is the value of the field. The types are:
 
   - `1`: part of the serialized journey
-  - `2`: a marker to indicate that the session uid should be inserted here. no value.
-  - `3`: a marker to indicate that the journey jwt should be inserted here. no value.
-  - `4`: a marker to indicate that an image file jwt should be inserted here. The value is
+  - `2`: a marker to indicate that the journey jwt should be inserted here. no value.
+  - `3`: a marker to indicate that an image file jwt should be inserted here. The value is
     the uid of the image file.
-  - `5`: a marker to indicate that a content file jwt should be inserted here. The value is
+  - `4`: a marker to indicate that a content file jwt should be inserted here. The value is
     the uid of the content file.
 
   Note that this format allows us to inject the JWTs without a deserialize/serialize round trip,
   which can be a significant performance improvement.
 
-- `journeys:profile_pictures:{uid}:{journey_time}` goes to the trivial json
+- `interactive_prompts:external:{uid}` is formatted as repeated block of
+  (len, type, value) where len is 4 bytes representing an unsigned int in
+  big-endian format for the length of the value, type is a single byte acting as
+  an enum, and value is the value of the field. The types are:
+
+  - `1`: part of the serialized interactive prompt
+  - `2`: a marker to indicate that the interactive prompt session uid should be
+    inserted here. no value.
+  - `3`: a marker to indicate that the interactive prompt jwt should be inserted
+    here. no value.
+
+  Note that this format allows us to inject the customizable fields without a
+  deserialize/serialize round trip, which can be a significant performance
+  improvement.
+
+- `interactive_prompts:profile_pictures:{uid}:{prompt_time}` goes to the trivial json
   serialization of UserProfilePictures in
 
   ```py
@@ -241,14 +255,14 @@ the keys we store locally on backend instances via diskcache
       image_file_uid: str
 
   class UserProfilePictures:
-      journey_uid: str
-      journey_time: int
+      interactive_prompt_uid: str
+      prompt_time: int
       fetched_at: float
       profile_pictures: List[ProfilePicturesItem]
   ```
 
-  this is used [here](../../journeys/routes/profile_pictures.py) and has a
-  short expiration time (on the order of minutes). The journey time is
+  this is used [here](../../interactive_prompts/routes/profile_pictures.py) and has a
+  short expiration time (on the order of minutes). The prompt time is
   typically in integer multiples of 2 seconds.
 
   This is the profile pictures to choose from prior to customization, since
@@ -261,3 +275,21 @@ the keys we store locally on backend instances via diskcache
 - `image_files:public:{uid}` goes to `b'1'` if the image file with the given
   uid is public and `b'0'` if it is not public, and is unset if we don't know.
   Used [here](../../image_files/auth.py)
+
+- `users:{sub}:created_at` goes to a the user with that subs created_at time
+  if set. Used by [join interactive prompt session](../../interactive_prompts/events/routes/join.py)
+
+- `interactive_prompts:{uid}:meta` goes to an object that represents the trivial serialization of
+  the following shape
+
+  ```py
+  class InteractivePromptMeta:
+    uid: str
+    prompt: Prompt
+    duration_seconds: int
+    journey_subcategory: Optional[str]
+  ```
+
+  where the fields generally match the [db schema](../db/interactive_prompts.md) except for
+  `journey_subcategory`, which is the internal name of the subcategory of the journey
+  using this interactive prompt, if there is one, for stats.

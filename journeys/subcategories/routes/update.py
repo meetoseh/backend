@@ -4,7 +4,10 @@ from pydantic import BaseModel, Field, constr
 from typing import Literal, Optional
 from auth import auth_admin
 from daily_events.lib.read_one_external import evict_external_daily_event
-from journeys.events.helper import purge_journey_meta
+from interactive_prompts.lib.read_interactive_prompt_meta import (
+    evict_interactive_prompt_meta,
+)
+from interactive_prompts.lib.read_one_external import evict_interactive_prompt
 from journeys.lib.read_one_external import evict_external_journey
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -100,13 +103,14 @@ async def update_journey_subcategory(
             response = await cursor.execute(
                 """
                 SELECT
-                    journeys.id, journeys.uid, daily_events.uid
+                    journeys.id, journeys.uid, daily_events.uid, interactive_prompts.uid
                 FROM journeys
                 JOIN daily_events ON EXISTS (
                     SELECT 1 FROM daily_event_journeys
                     WHERE daily_event_journeys.daily_event_id = daily_events.id
                       AND daily_event_journeys.journey_id = journeys.id
                 )
+                JOIN interactive_prompts ON interactive_prompts.id = journeys.interactive_prompt_id
                 WHERE
                     EXISTS (
                         SELECT 1 FROM journey_subcategories
@@ -130,9 +134,19 @@ async def update_journey_subcategory(
             if not response.results:
                 break
 
-            for _, journey_uid, daily_event_uid in response.results:
+            for (
+                _,
+                journey_uid,
+                daily_event_uid,
+                interactive_prompt_uid,
+            ) in response.results:
                 await evict_external_journey(itgs, uid=journey_uid)
-                await purge_journey_meta(itgs, journey_uid=journey_uid)
+                await evict_interactive_prompt(
+                    itgs, interactive_prompt_uid=interactive_prompt_uid
+                )
+                await evict_interactive_prompt_meta(
+                    itgs, interactive_prompt_uid=interactive_prompt_uid
+                )
 
                 to_clean_daily_events.add(daily_event_uid)
 

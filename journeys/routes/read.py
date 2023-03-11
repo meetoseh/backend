@@ -240,7 +240,8 @@ async def raw_read_journeys(
     samples = content_files.as_("samples")
     videos = content_files.as_("videos")
     introductory_journeys = Table("introductory_journeys")
-    journey_sessions = Table("journey_sessions")
+    interactive_prompt_sessions = Table("interactive_prompt_sessions")
+    interactive_prompts = Table("interactive_prompts")
 
     query: QueryBuilder = (
         Query.from_(journeys)
@@ -258,7 +259,7 @@ async def raw_read_journeys(
             instructors.deleted_at,
             journeys.title,
             journeys.description,
-            journeys.prompt,
+            interactive_prompts.prompt,
             journeys.created_at,
             journeys.deleted_at,
             daily_events.uid,
@@ -280,6 +281,8 @@ async def raw_read_journeys(
         .on(journey_subcategories.id == journeys.journey_subcategory_id)
         .join(instructors)
         .on(instructors.id == journeys.instructor_id)
+        .join(interactive_prompts)
+        .on(journeys.interactive_prompt_id == interactive_prompts.id)
         .left_outer_join(instructor_pictures)
         .on(instructor_pictures.id == instructors.picture_image_file_id)
         .left_outer_join(daily_events)
@@ -316,7 +319,7 @@ async def raw_read_journeys(
         elif key == "instructor_uid":
             return instructors.uid
         elif key == "prompt_style":
-            return Function("json_extract", journeys.prompt, "style")
+            return Function("json_extract", interactive_prompts.prompt, "style")
         elif key == "daily_event_uid":
             return daily_events.uid
         elif key == "blurred_background_image_file_uid":
@@ -331,9 +334,12 @@ async def raw_read_journeys(
             return introductory_journeys.uid
         elif key == "has_sessions":
             return ExistsCriterion(
-                Query.from_(journey_sessions)
+                Query.from_(interactive_prompt_sessions)
                 .select(1)
-                .where(journey_sessions.journey_id == journeys.id)
+                .where(
+                    interactive_prompt_sessions.interactive_prompt_id
+                    == interactive_prompts.id
+                )
             )
         raise ValueError(f"unknown key: {key}")
 

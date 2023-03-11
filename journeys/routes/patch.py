@@ -14,7 +14,10 @@ from instructors.routes.read import Instructor
 from interactive_prompts.lib.read_interactive_prompt_meta import (
     evict_interactive_prompt_meta,
 )
-from interactive_prompts.models.prompt import is_prompt_swap_trivial, parse_prompt_from_json
+from interactive_prompts.models.prompt import (
+    is_prompt_swap_trivial,
+    parse_prompt_from_json,
+)
 from journeys.lib.read_one_external import evict_external_journey
 from journeys.routes.create import Prompt, CreateJourneyResponse
 from journeys.subcategories.routes.read import JourneySubcategory

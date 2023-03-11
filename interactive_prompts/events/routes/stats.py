@@ -359,13 +359,13 @@ async def get_for_prompt(
     if prompt.style == "color":
         lookup = await get_by_category_from_tree(itgs, uid, bin, "color_active")
         return {
-            "color_active": list(lookup.get(i, 0) for i in range(len(prompt["colors"])))
+            "color_active": list(lookup.get(i, 0) for i in range(len(prompt.colors)))
         }
 
     if prompt.style == "word":
         lookup = await get_by_category_from_tree(itgs, uid, bin, "word_active")
         return {
-            "word_active": list(lookup.get(i, 0) for i in range(len(prompt["options"])))
+            "word_active": list(lookup.get(i, 0) for i in range(len(prompt.options)))
         }
 
     raise ValueError(f"Unknown prompt style: {repr(prompt.style)}")

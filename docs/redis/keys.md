@@ -111,7 +111,7 @@ the keys that we use in redis
   cause downstream errors that prevent the cache from being filled in, causing
   more errors, etc.
 
-- `interactive_prompts:profile_pictures:{uid}:{journey_time}` goes to the trivial json
+- `interactive_prompts:profile_pictures:{uid}:{prompt_time}` goes to the trivial json
   serialization of UserProfilePictures in
 
   ```py
@@ -509,3 +509,7 @@ rather than external functionality.
   prompt uid, followed by the interactive prompt uid. If the message is to fill, the
   remainder of the message must be the new value to store in the local cache, otherwise
   the remainder is ignored.
+
+- `ps:interactive_prompts:meta:push_cache`: used to purge backend instances local cache
+  for the local cache key `interactive_prompts:{uid}:meta`. The values are just strings
+  representing the uid of the interactive prompt whose meta information should be purged

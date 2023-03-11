@@ -11,7 +11,10 @@ import content_files.auth as content_files_auth
 from image_files.models import ImageFileRef
 import image_files.auth as image_files_auth
 from instructors.routes.read import Instructor
-from interactive_prompts.models.prompt import is_prompt_swap_trivial
+from interactive_prompts.lib.read_interactive_prompt_meta import (
+    evict_interactive_prompt_meta,
+)
+from interactive_prompts.models.prompt import is_prompt_swap_trivial, parse_prompt_from_json
 from journeys.lib.read_one_external import evict_external_journey
 from journeys.routes.create import Prompt, CreateJourneyResponse
 from journeys.subcategories.routes.read import JourneySubcategory
@@ -137,13 +140,17 @@ async def patch_journey(
         if not auth_result.success:
             return auth_result.error_response
 
-        if (
+        standard_field_update = not (
             args.journey_audio_content_uid is None
             and args.journey_background_image_uid is None
             and args.journey_subcategory_uid is None
             and args.instructor_uid is None
             and args.title is None
             and args.description is None
+        )
+
+        if (
+            not standard_field_update
             and args.prompt is None
             and args.lobby_duration_seconds is None
         ):
@@ -322,7 +329,11 @@ async def patch_journey(
         journey_created_at: Optional[float] = response.results[0][11]
         journey_title: Optional[str] = response.results[0][12]
         journey_description: Optional[str] = response.results[0][13]
-        journey_prompt: Optional[str] = response.results[0][14]
+        journey_prompt: Optional[Prompt] = (
+            parse_prompt_from_json(response.results[0][14])
+            if response.results[0][14] is not None
+            else None
+        )
         blurred_image_file_uid: Optional[str] = response.results[0][15]
         darkened_image_file_uid: Optional[str] = response.results[0][16]
         journey_lobby_duration_seconds: float = response.results[0][17]
@@ -515,20 +526,20 @@ async def patch_journey(
             + " "
             + from_query.get_sql().lstrip("SELECT 1 ")
         )
-
-        response = await cursor.execute(query, set_qargs + join_qargs + where_qargs)
-        if response.rows_affected is None or response.rows_affected < 1:
-            return Response(
-                content=StandardErrorResponse[ERROR_503_TYPES](
-                    type="raced",
-                    message="The journey was updated by another request.",
-                ).json(),
-                headers={
-                    "Content-Type": "application/json; charset=utf-8",
-                    "Retry-After": "1",
-                },
-                status_code=503,
-            )
+        if standard_field_update:
+            response = await cursor.execute(query, set_qargs + join_qargs + where_qargs)
+            if response.rows_affected is None or response.rows_affected < 1:
+                return Response(
+                    content=StandardErrorResponse[ERROR_503_TYPES](
+                        type="raced",
+                        message="The journey was updated by another request.",
+                    ).json(),
+                    headers={
+                        "Content-Type": "application/json; charset=utf-8",
+                        "Retry-After": "1",
+                    },
+                    status_code=503,
+                )
 
         # the following all races
         if (
@@ -663,6 +674,9 @@ async def patch_journey(
             await evict_interactive_prompt(
                 itgs, interactive_prompt_uid=original_interactive_prompt_uid
             )
+            await evict_interactive_prompt_meta(
+                itgs, interactive_prompt_uid=original_interactive_prompt_uid
+            )
 
         jobs = await itgs.jobs()
         await jobs.enqueue("runners.process_journey_video_sample", journey_uid=uid)
@@ -713,9 +727,7 @@ async def patch_journey(
                 description=args.description
                 if args.description is not None
                 else journey_description,
-                prompt=args.prompt
-                if args.prompt is not None
-                else json.loads(journey_prompt),
+                prompt=args.prompt if args.prompt is not None else journey_prompt,
                 created_at=journey_created_at,
                 lobby_duration_seconds=journey_lobby_duration_seconds,
             ).json(),

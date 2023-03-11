@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field, constr
 from typing import Literal, Optional
 from auth import auth_admin
 from daily_events.lib.read_one_external import evict_external_daily_event
+from interactive_prompts.lib.read_interactive_prompt_meta import (
+    evict_interactive_prompt_meta,
+)
 from interactive_prompts.lib.read_one_external import evict_interactive_prompt
 from journeys.lib.read_one_external import evict_external_journey
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
@@ -139,6 +142,9 @@ async def update_journey_subcategory(
             ) in response.results:
                 await evict_external_journey(itgs, uid=journey_uid)
                 await evict_interactive_prompt(
+                    itgs, interactive_prompt_uid=interactive_prompt_uid
+                )
+                await evict_interactive_prompt_meta(
                     itgs, interactive_prompt_uid=interactive_prompt_uid
                 )
 

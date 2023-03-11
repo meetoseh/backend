@@ -21,7 +21,9 @@ from interactive_prompts.events.models import (
     ERROR_INTERACTIVE_PROMPT_SESSION_NOT_STARTED_RESPONSE,
     CreateInteractivePromptEventResponse,
 )
-from interactive_prompts.lib.read_one_external import read_interactive_prompt_meta
+from interactive_prompts.lib.read_interactive_prompt_meta import (
+    read_interactive_prompt_meta,
+)
 from interactive_prompts.models.prompt import Prompt
 from functools import lru_cache
 from models import ERROR_401_TYPE, ERROR_403_TYPE, StandardErrorResponse

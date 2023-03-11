@@ -7,13 +7,8 @@ import random
 from typing import AsyncIterator, Dict, List, Literal, NoReturn, Optional, Union
 from fastapi.responses import Response, StreamingResponse
 from error_middleware import handle_contextless_error, handle_error
-from interactive_prompts.models.external_interactive_prompt import (
-    ExternalInteractivePrompt,
-)
-from interactive_prompts.models.prompt import Prompt
 from itgs import Itgs
 from dataclasses import dataclass
-from response_utils import response_to_bytes
 import perpetual_pub_sub as pps
 import io
 
@@ -24,24 +19,6 @@ class _InteractivePromptFromDB:
     prompt: str
     duration_seconds: int
     journey_subcategory: Optional[str]
-
-
-@dataclass
-class InteractivePromptMeta:
-    """The meta information about an interactive prompt that can be determined
-    from the same cache that is being used for read_one_external.
-    """
-
-    uid: str
-    """The uid of the interactive prompt"""
-    prompt: Prompt
-    """Information about the prompt"""
-    duration_seconds: int
-    """The duration of the interactive prompt in seconds"""
-    journey_subcategory: Optional[str]
-    """If the interactive prompt is for a journey, this is the subcategory of the
-    journey. Otherwise, this is None.
-    """
 
 
 HEADERS = {
@@ -184,41 +161,6 @@ async def read_one_external(
         )
     finally:
         await redis.delete(lock_key)
-
-
-async def read_interactive_prompt_meta(
-    itgs: Itgs, *, interactive_prompt_uid: str
-) -> Optional[InteractivePromptMeta]:
-    """Uses the same cache as read_one_external, except for scenarios where the
-    callee intends to use it for internal purposes (calculating something, verifying
-    something, etc). This has a more convenient calling and return signature.
-
-    Args:
-        itgs (Itgs): The integrations to (re)use
-        interactive_prompt_uid (str): The UID of the interactive prompt to fetch
-
-    Returns:
-        The interactive prompt meta, or None if it is not available anywhere
-            because there is no interactive prompt with that uid.
-    """
-    response = await read_one_external(
-        itgs,
-        interactive_prompt_uid=interactive_prompt_uid,
-        interactive_prompt_jwt="",
-        interactive_prompt_session_uid="",
-    )
-    if response is None:
-        return None
-
-    raw_meta = await response_to_bytes(response)
-    external = ExternalInteractivePrompt.parse_raw(
-        raw_meta, content_type="application/json"
-    )
-    return InteractivePromptMeta(
-        uid=external.uid,
-        prompt=external.prompt,
-        duration_seconds=external.duration_seconds,
-    )
 
 
 async def read_local_cache(

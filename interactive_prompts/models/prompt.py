@@ -1,3 +1,4 @@
+import json
 from pydantic import BaseModel, Field, constr, validator
 from typing import Literal, List, Union
 
@@ -87,6 +88,15 @@ class WordPrompt(BaseModel):
 
 
 Prompt = Union[NumericPrompt, PressPrompt, ColorPrompt, WordPrompt]
+
+
+class PromptWrapper(BaseModel):
+    prompt: Prompt = Field()
+
+
+def parse_prompt_from_json(prompt: str) -> Prompt:
+    """Parses a prompt from a JSON string."""
+    return PromptWrapper(prompt=json.loads(prompt)).prompt
 
 
 def is_prompt_swap_trivial(a: Prompt, b: Prompt) -> bool:

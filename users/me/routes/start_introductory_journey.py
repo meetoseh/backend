@@ -65,54 +65,11 @@ async def start_introductory_journey(authorization: Optional[str] = Header(None)
             )
 
         journey_uid = secrets.choice(response.results)[0]
-
-        # preparation
-        session_uid = f"oseh_js_{secrets.token_urlsafe(16)}"
         jwt = await journeys.auth.create_jwt(itgs, journey_uid=journey_uid)
-
-        # fetch info
         journey_response = await read_one_external(
-            itgs, journey_uid=journey_uid, session_uid=session_uid, jwt=jwt
+            itgs, journey_uid=journey_uid, jwt=jwt
         )
         if journey_response is None:
-            return Response(
-                status_code=503,
-                content=StandardErrorResponse[ERROR_503_TYPES](
-                    type="raced", message="Please try again in a moment."
-                ).json(),
-                headers={
-                    "Content-Type": "application/json; charset=utf-8",
-                    "Retry-After": "5",
-                },
-            )
-
-        # insert session
-        conn = await itgs.conn()
-        cursor = conn.cursor("weak")
-        response = await cursor.execute(
-            """
-            INSERT INTO journey_sessions (
-                journey_id,
-                user_id,
-                uid
-            )
-            SELECT
-                journeys.id,
-                users.id,
-                ?
-            FROM journeys, users
-            WHERE
-                journeys.uid = ?
-                AND users.sub = ?
-            """,
-            (
-                session_uid,
-                journey_uid,
-                auth_result.result.sub,
-            ),
-        )
-        if response.rows_affected is None or response.rows_affected < 1:
-            await cleanup_response(journey_response)
             return Response(
                 status_code=503,
                 content=StandardErrorResponse[ERROR_503_TYPES](

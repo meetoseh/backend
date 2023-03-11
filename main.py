@@ -32,6 +32,7 @@ import daily_events.routes.now
 import journeys.lib.read_one_external
 import interactive_prompts.routes.profile_pictures
 import interactive_prompts.lib.read_one_external
+import interactive_prompts.lib.read_interactive_prompt_meta
 import asyncio
 from loguru import logger
 
@@ -152,6 +153,11 @@ def register_background_tasks():
     )
     background_tasks.add(
         asyncio.create_task(interactive_prompts.lib.read_one_external.cache_push_loop())
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            interactive_prompts.lib.read_interactive_prompt_meta.cache_push_loop()
+        )
     )
 
 

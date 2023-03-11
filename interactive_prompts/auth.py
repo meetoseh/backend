@@ -92,7 +92,9 @@ async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult
         )
 
     return AuthResult(
-        result=SuccessfulAuthResult(journey_uid=claims["sub"], claims=claims),
+        result=SuccessfulAuthResult(
+            interactive_prompt_uid=claims["sub"], claims=claims
+        ),
         error_type=None,
         error_response=None,
     )
@@ -123,7 +125,7 @@ async def create_jwt(
 
     Args:
         itgs (Itgs): The integrations to use to connect to networked services
-        journey_uid (str): The uid of the journey to create a JWT for
+        interactive_prompt_uid (str): The uid of the interactive prompt to create a JWT for
         duration (int, optional): The duration of the JWT in seconds. Defaults to 1800.
 
     Returns:

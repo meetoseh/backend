@@ -258,34 +258,11 @@ async def redeem_user_daily_event_invite(
         journey: Optional[Response] = None
 
         if journey_uid is not None:
-            session_uid = f"oseh_js_{secrets.token_urlsafe(16)}"
             jwt = await create_journey_jwt(itgs, journey_uid=journey_uid)
             journey = await read_one_external_journey(
-                itgs, journey_uid=journey_uid, session_uid=session_uid, jwt=jwt
+                itgs, journey_uid=journey_uid, jwt=jwt
             )
             if journey is None:
-                return CONCURRENT_UPDATE_RESPONSE
-
-            response = await cursor.execute(
-                """
-                INSERT INTO journey_sessions (
-                    journey_id, user_id, uid
-                )
-                SELECT
-                    journeys.id, users.id, ?
-                FROM journeys, users
-                WHERE
-                    journeys.uid = ?
-                    AND users.sub = ?
-                """,
-                (
-                    session_uid,
-                    journey_uid,
-                    auth_result.result.sub,
-                ),
-            )
-            if response.rows_affected is None or response.rows_affected < 1:
-                await cleanup_response(journey)
                 return CONCURRENT_UPDATE_RESPONSE
 
             if not recipient_pro.is_active and not should_grant_oseh_plus:

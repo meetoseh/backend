@@ -10,7 +10,9 @@ from image_files.models import ImageFileRef
 import auth
 import interactive_prompts.auth
 import image_files.auth
-from interactive_prompts.lib.read_one_external import read_interactive_prompt_meta
+from interactive_prompts.lib.read_interactive_prompt_meta import (
+    read_interactive_prompt_meta,
+)
 from models import (
     StandardErrorResponse,
     STANDARD_ERRORS_BY_CODE,
@@ -33,7 +35,9 @@ class ReadInteractivePromptProfilePicturesRequest(BaseModel):
         description="The UID of the interactive prompt to get a list of profile pictures for"
     )
 
-    jwt: str = Field(description="The JWT which allows access to the journey")
+    jwt: str = Field(
+        description="The JWT which allows access to the interactive prompt"
+    )
 
     prompt_time: float = Field(
         description=(
@@ -100,7 +104,7 @@ async def read_profile_pictures(
     """Provides a list of profile pictures that would be reasonable to show
     at the given point in the given interactive prompt for the given user. Since this
     may be tailored to the individual, it requires both the JWT providing
-    access to the journey and standard authorization.
+    access to the interactive prompt and standard authorization.
     """
     async with Itgs() as itgs:
         std_auth_result = await auth.auth_any(itgs, authorization)
@@ -119,7 +123,7 @@ async def read_profile_pictures(
         interactive_prompt_uid = args.uid
         prompt_time = int(args.prompt_time / 2) * 2
         # Round down to 2 second increment. If we round to nearest, then if they
-        # do 3.5 for a 3.7 second journey, we return 404, which is very
+        # do 3.5 for a 3.7 second prompt, we return 404, which is very
         # confusing for the api consumer
 
         user_sub = std_auth_result.result.sub
@@ -201,7 +205,7 @@ class UserProfilePicturesCustomization(BaseModel):
 
 
 class StandardUserProfilePictures(BaseModel):
-    """A list of profile pictures to return for a particular journey at a particular
+    """A list of profile pictures to return for a particular interactive prompt at a particular
     time. Prior to customization, it is generally beneficial to cache this value.
     """
 
@@ -224,12 +228,12 @@ async def get_customizations(
     Args:
         itgs (Itgs): The integrations to (re)use
         user_sub (str): The sub of the user to get customizations for
-        interactive_prompt_uid (str): The UID of the journey to get customizations for
-        prompt_time (int): The time within the journey to get customizations for
+        interactive_prompt_uid (str): The UID of the interactive prompt to get customizations for
+        prompt_time (int): The time within the interactive prompt to get customizations for
     """
     # once implemented, this is primarily intended to return any users the user
     # has reported within the suppressed, and anyone the user has invited which
-    # are in journey at that time within the forced
+    # are in interactive prompt at that time within the forced
 
     return UserProfilePicturesCustomization(
         interactive_prompt_uid=interactive_prompt_uid,
@@ -255,9 +259,9 @@ async def get_standard_profile_pictures(
 
     This uses the following keys to produce a multi-layer, collaborative cache:
 
-    - DISKCACHE: `interactive_prompts:profile_pictures:{uid}:{journey_time}` layer 1 (local)
-    - REDIS: `interactive_prompts:profile_pictures:{uid}:{journey_time}` layer 2 (regional)
-    - REDIS: `interactive_prompts:profile_pictures:cache_lock:{uid}:{journey_time}` prevents multiple
+    - DISKCACHE: `interactive_prompts:profile_pictures:{uid}:{prompt_time}` layer 1 (local)
+    - REDIS: `interactive_prompts:profile_pictures:{uid}:{prompt_time}` layer 2 (regional)
+    - REDIS: `interactive_prompts:profile_pictures:cache_lock:{uid}:{prompt_time}` prevents multiple
       instances filling regional cache at the same time
     - REDIS: `ps:interactive_prompts:profile_pictures:push_cache` ensures filling one instance
       cache fills all the instance caches, and allows purging local caches
@@ -269,8 +273,8 @@ async def get_standard_profile_pictures(
 
     Returns:
         StandardUserProfilePictures, None: If the interactive prompt exists and the time is
-            before the end of the journey, the standard profile pictures for that
-            journey at that time are returned. Otherwise None is returned. The
+            before the end of the prompt, the standard profile pictures for that
+            prompt at that time are returned. Otherwise None is returned. The
             result is semi-random but somewhat stable due to caching.
     """
     res = await get_standard_profile_pictures_from_local_cache(
@@ -524,7 +528,7 @@ async def delete_standard_profile_pictures_from_redis(
     """
     redis = await itgs.redis()
     await redis.delete(
-        f"journeys:profile_pictures:{interactive_prompt_uid}:{prompt_time}".encode(
+        f"interactive_prompts:profile_pictures:{interactive_prompt_uid}:{prompt_time}".encode(
             "ascii"
         )
     )
@@ -544,8 +548,8 @@ async def get_standard_profile_pictures_from_database(
 
     Returns:
         StandardUserProfilePictures: The standard profile pictures to use for that
-            offset within the journey. If the journey does not exist, this returns
-            an empty list. If the journey exists but the time is illogical, the
+            offset within the interactive prompt. If the prompt does not exist, this returns
+            an empty list. If the prompt exists but the time is illogical, the
             result will be nonsense.
     """
     conn = await itgs.conn()
@@ -558,7 +562,7 @@ async def get_standard_profile_pictures_from_database(
     # this to an augment-with-random-and-sort, which is O(Mlog(M)) (much worse).
     # Our actual performance will differ based on the work we have to do on each
     # row, e.g., something like O(Nlog(M)(log(K))^2log(O)(log(P))^2) where K is
-    # the number of journey sessions, O is the number of journey events, and P
+    # the number of prompt sessions, O is the number of prompt events, and P
     # is the number of users should be an upper bound. This makes the difference
     # between an N vs M linear factor very dramatic.
 
@@ -648,7 +652,7 @@ def _make_query(
                             == interactive_prompt_sessions.id
                         )
                         .where(interactive_prompt_events.evtype == Parameter("?"))
-                        .where(interactive_prompt_events.journey_time <= Parameter("?"))
+                        .where(interactive_prompt_events.prompt_time <= Parameter("?"))
                     )
                 )
                 .where(
@@ -660,7 +664,7 @@ def _make_query(
                             == interactive_prompt_sessions.id
                         )
                         .where(interactive_prompt_events.evtype == Parameter("?"))
-                        .where(interactive_prompt_events.journey_time <= Parameter("?"))
+                        .where(interactive_prompt_events.prompt_time <= Parameter("?"))
                     )
                 )
             )
@@ -695,7 +699,7 @@ async def evict_standard_profile_pictures(
 ) -> None:
     """Evicts the standard profile pictures for the given interactive prompt at the
     given time, or if no time is given, all times. All times eviction is done by
-    querying the database for the length of the journey, and then evicting all
+    querying the database for the length of the prompt, and then evicting all
     integer times. A slower SCAN/KEYS approach can be used if non-integer times
     were accidentally cached. If the interactive prompt is not found, this falls
     back to KEYS, raising ValueError on non-integer timed keys.
@@ -816,8 +820,8 @@ class InteractivePromptProfilePicturesPushCachePubSubMessage(BaseModel):
 
 
 waiting_for_cache: Dict[Tuple[str, int], List[asyncio.Event]] = dict()
-"""A mutable dictionary mapping from (uid, journey_time) to the list of asyncio
-events to set if we receive new standard user profile pictures for that journey.
+"""A mutable dictionary mapping from (uid, prompt_time) to the list of asyncio
+events to set if we receive new standard user profile pictures for that prompt.
 The list is removed before the events are set, so the events are only set once.
 However, the push cache loop never cleans this if it doesn't receive a relevant
 message, so callee's should set a timeout and clean up if they don't receive

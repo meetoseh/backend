@@ -96,22 +96,24 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
                 WHERE de.available_at < current_daily_events.available_at
                     AND de.available_at > daily_events.available_at
                     AND NOT EXISTS (
-                        SELECT 1 FROM journey_sessions
-                        WHERE journey_sessions.user_id = users.id
+                        SELECT 1 FROM journeys, interactive_prompt_sessions
+                        WHERE interactive_prompt_sessions.user_id = users.id
+                          AND journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
                           AND EXISTS (
                             SELECT 1 FROM daily_event_journeys
                             WHERE daily_event_journeys.daily_event_id = de.id
-                                AND daily_event_journeys.journey_id = journey_sessions.journey_id
+                                AND daily_event_journeys.journey_id = journeys.id
                           )
                     )
             )
             AND NOT EXISTS (
-                SELECT 1 FROM journey_sessions
-                WHERE journey_sessions.user_id = users.id
+                SELECT 1 FROM interactive_prompt_sessions, journeys
+                WHERE interactive_prompt_sessions.user_id = users.id
+                  AND journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
                     AND EXISTS (
                         SELECT 1 FROM daily_event_journeys
                         WHERE daily_event_journeys.daily_event_id = daily_events.id
-                            AND daily_event_journeys.journey_id = journey_sessions.journey_id
+                            AND daily_event_journeys.journey_id = journeys.id
                     )
             )
         """,
@@ -130,12 +132,13 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
             )
             AND users.sub = ?
             AND EXISTS (
-                SELECT 1 FROM journey_sessions
-                WHERE journey_sessions.user_id = users.id
+                SELECT 1 FROM interactive_prompt_sessions, journeys
+                WHERE interactive_prompt_sessions.user_id = users.id
+                    AND journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
                     AND EXISTS (
                         SELECT 1 FROM daily_event_journeys
                         WHERE daily_event_journeys.daily_event_id = daily_events.id
-                            AND daily_event_journeys.journey_id = journey_sessions.journey_id
+                            AND daily_event_journeys.journey_id = journeys.id
                     )
             )
         """,
@@ -182,17 +185,18 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
                 """
                 SELECT
                     EXISTS (
-                        SELECT 1 FROM journey_sessions
+                        SELECT 1 FROM interactive_prompt_sessions, journeys
                         WHERE
-                            EXISTS (
+                            journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
+                            AND EXISTS (
                                 SELECT 1 FROM users
-                                WHERE users.id = journey_sessions.user_id
+                                WHERE users.id = interactive_prompt_sessions.user_id
                                 AND users.sub = ?
                             )
                             AND EXISTS (
-                                SELECT 1 FROM journey_events
-                                WHERE journey_events.journey_session_id = journey_sessions.id
-                                AND journey_events.created_at > ?
+                                SELECT 1 FROM interactive_prompt_events
+                                WHERE interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
+                                AND interactive_prompt_events.created_at > ?
                             )
                     )
                 """,

@@ -278,3 +278,18 @@ the keys we store locally on backend instances via diskcache
 
 - `users:{sub}:created_at` goes to a the user with that subs created_at time
   if set. Used by [join interactive prompt session](../../interactive_prompts/events/routes/join.py)
+
+- `interactive_prompts:{uid}:meta` goes to an object that represents the trivial serialization of
+  the following shape
+
+  ```py
+  class InteractivePromptMeta:
+    uid: str
+    prompt: Prompt
+    duration_seconds: int
+    journey_subcategory: Optional[str]
+  ```
+
+  where the fields generally match the [db schema](../db/interactive_prompts.md) except for
+  `journey_subcategory`, which is the internal name of the subcategory of the journey
+  using this interactive prompt, if there is one, for stats.

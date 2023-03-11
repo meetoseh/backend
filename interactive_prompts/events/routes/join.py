@@ -10,7 +10,9 @@ from interactive_prompts.events.models import (
     ERROR_INTERACTIVE_PROMPT_NOT_FOUND_RESPONSE,
 )
 import interactive_prompts.events.helper
-from interactive_prompts.lib.read_one_external import read_interactive_prompt_meta
+from interactive_prompts.lib.read_interactive_prompt_meta import (
+    read_interactive_prompt_meta,
+)
 from itgs import Itgs
 from models import StandardErrorResponse
 import users.lib.stats

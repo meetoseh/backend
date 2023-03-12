@@ -13,8 +13,8 @@ router = APIRouter()
 
 
 class UpdateNotificationTimeArgs(BaseModel):
-    notification_time: Literal["morning", "afternoon", "evening"] = Field(
-        description="The time of day to send notifications."
+    notification_time: Literal["morning", "afternoon", "evening", "any"] = Field(
+        description="The time of day to send notifications"
     )
     timezone: str = Field(description="the new timezone")
     timezone_technique: Literal["browser"] = Field(
@@ -77,5 +77,6 @@ async def update_notification_time(
             user_sub=auth_result.result.sub,
             timezone=args.timezone,
             timezone_technique=args.timezone_technique,
+            is_outside_flow=True,
         )
         return Response(status_code=202)

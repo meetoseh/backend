@@ -184,7 +184,7 @@ async def finish_verify(
 
             jobs = await itgs.jobs()
             await jobs.enqueue(
-                "runners.klaviyo.ensure_user", sub=auth_result.result.sub
+                "runners.klaviyo.ensure_user", user_sub=auth_result.result.sub
             )
 
         return Response(

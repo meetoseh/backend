@@ -182,6 +182,11 @@ async def finish_verify(
                 f"{identifier} just verified their phone number: {phone_number} via {socket.gethostname()}"
             )
 
+            jobs = await itgs.jobs()
+            await jobs.enqueue(
+                "runners.klaviyo.ensure_user", sub=auth_result.result.sub
+            )
+
         return Response(
             status_code=201,
             content=FinishVerifyResponse(verified_at=verified_at).json(),

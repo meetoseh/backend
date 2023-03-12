@@ -1,7 +1,6 @@
 from typing import Optional
 from fastapi import Request, Response
 from fastapi.responses import PlainTextResponse
-from itgs import Itgs
 import traceback
 import socket
 from loguru import logger
@@ -29,6 +28,8 @@ async def handle_error(exc: Exception, *, extra_info: Optional[str] = None) -> N
     if extra_info is not None:
         message += f"\n\n{extra_info}"
 
+    from itgs import Itgs
+
     async with Itgs() as itgs:
         slack = await itgs.slack()
         await slack.send_web_error_message(message, "an error occurred in backend")
@@ -50,6 +51,8 @@ async def handle_contextless_error(*, extra_info: Optional[str] = None) -> None:
 
     if extra_info is not None:
         message += f"\n\n{extra_info}"
+
+    from itgs import Itgs
 
     async with Itgs() as itgs:
         slack = await itgs.slack()

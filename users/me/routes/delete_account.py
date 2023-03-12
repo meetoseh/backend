@@ -1,7 +1,7 @@
 import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 from auth import auth_id
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -257,6 +257,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                             )
 
             await cleanup_user_notifications(itgs, auth_result.result.sub)
+            await cleanup_klaviyo(itgs, auth_result.result.sub)
 
             await cursor.execute(
                 "DELETE FROM users WHERE sub=?", (auth_result.result.sub,)
@@ -333,6 +334,53 @@ async def cleanup_user_notifications(itgs: Itgs, sub: str) -> None:
 
         await jobs.conn.rpush(jobs.queue_key, *jobs_to_enqueue)
         last_key = response.results[-1][0]
+
+
+async def cleanup_klaviyo(itgs: Itgs, sub: str) -> None:
+    """If the user has a klaviyo profile, their email is suppressed and we unsubscribe
+    them from any lists we added them to.
+
+    Args:
+        itgs (Itgs): The integrations to (re)use
+        sub (str): The sub of the user whose klaviyo profile will be cleaned up
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+
+    response = await cursor.execute(
+        """
+        SELECT 
+            user_klaviyo_profiles.klaviyo_id,
+            user_klaviyo_profiles.email,
+            user_klaviyo_profiles.phone_number,
+            user_klaviyo_profile_lists.list_id
+        FROM user_klaviyo_profiles
+        LEFT OUTER JOIN user_klaviyo_profile_lists
+            ON user_klaviyo_profile_lists.user_klaviyo_profile_id = user_klaviyo_profiles.id
+        WHERE EXISTS (
+            SELECT 1 FROM users
+            WHERE users.id = user_klaviyo_profiles.user_id
+              AND users.sub = ?
+        )
+        """,
+        (sub,),
+    )
+
+    if not response.results:
+        return
+
+    klaviyo_id: str = response.results[0][0]
+    email: str = response.results[0][1]
+    phone_number: str = response.results[0][2]
+    list_ids: List[str] = [row[3] for row in response.results if row[3] is not None]
+
+    klaviyo = await itgs.klaviyo()
+    await klaviyo.suppress_email(email)
+    for list_id in list_ids:
+        await klaviyo.unsubscribe_from_list(
+            list_id=list_id, emails=[email], phone_numbers=[phone_number]
+        )
+    await klaviyo.request_profile_deletion(klaviyo_id)
 
 
 @asynccontextmanager

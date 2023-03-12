@@ -55,26 +55,27 @@ async def on_interactive_prompt_session_started(
             "stats:interactive_prompt_sessions:monthly:earliest",
             unix_month,
         )
-        await pipe.sadd(
-            f"stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs",
-            user_sub,
-        )
-        await set_if_lower(
-            pipe,
-            "stats:interactive_prompt_sessions:bysubcat:earliest",
-            unix_date,
-        )
-        await pipe.sadd(
-            "stats:interactive_prompt_sessions:bysubcat:subcategories", subcategory
-        )
-        await pipe.hincrby(
-            f"stats:interactive_prompt_sessions:bysubcat:totals:{unix_date}",
-            subcategory,
-            1,
-        )
-        await set_if_lower(
-            pipe,
-            "stats:interactive_prompt_sessions:bysubcat:totals:earliest",
-            unix_date,
-        )
+        if subcategory is not None:
+            await pipe.sadd(
+                f"stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs",
+                user_sub,
+            )
+            await set_if_lower(
+                pipe,
+                "stats:interactive_prompt_sessions:bysubcat:earliest",
+                unix_date,
+            )
+            await pipe.sadd(
+                "stats:interactive_prompt_sessions:bysubcat:subcategories", subcategory
+            )
+            await pipe.hincrby(
+                f"stats:interactive_prompt_sessions:bysubcat:totals:{unix_date}",
+                subcategory,
+                1,
+            )
+            await set_if_lower(
+                pipe,
+                "stats:interactive_prompt_sessions:bysubcat:totals:earliest",
+                unix_date,
+            )
         await pipe.execute()

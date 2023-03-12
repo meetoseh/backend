@@ -207,6 +207,10 @@ the keys that we use in redis
 - `daily_event:notifications:lock` goes to a string if an instance is processing notifications
   for daily events, and is unset otherwise
 
+- `interactive_prompts:special:notification_time:uid`: The UID of the interactive prompt that
+  is used as the control for users setting their notification time. Set on the fly if this
+  is not set.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

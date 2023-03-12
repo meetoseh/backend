@@ -1,3 +1,4 @@
+import json
 import os
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -10,6 +11,7 @@ from itgs import Itgs
 import secrets
 import time
 import phonenumbers
+import pytz
 
 
 class StartVerifyRequest(BaseModel):
@@ -23,6 +25,14 @@ class StartVerifyRequest(BaseModel):
         description="Whether or not to receive notifications on this phone number",
     )
 
+    timezone: str = Field(
+        description="The IANA timezone of the user, e.g. America/New_York. Ignored unless receive_notifications is true."
+    )
+
+    timezone_technique: Literal["browser"] = Field(
+        description="The technique used to determine the timezone. Ignored unless receive_notifications is true."
+    )
+
     @validator("phone_number", pre=True)
     def validate_phone_number(cls, v):
         try:
@@ -32,6 +42,12 @@ class StartVerifyRequest(BaseModel):
         if not phonenumbers.is_valid_number(parsed):
             raise ValueError("Invalid phone number")
         return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+
+    @validator("timezone")
+    def validate_timezone(cls, v):
+        if v not in pytz.all_timezones:
+            raise ValueError("Must be an IANA timezone, e.g. America/New_York")
+        return v
 
 
 class StartVerifyResponse(BaseModel):
@@ -145,24 +161,31 @@ async def start_verify(
         )
 
         new_uns_uid = f"oseh_uns_{secrets.token_urlsafe(16)}"
+        timezone_technique = json.dumps({"style": args.timezone_technique})
         await cursor.execute(
             """
             INSERT INTO user_notification_settings (
-                uid, user_id, channel, daily_event_enabled, created_at
+                uid, user_id, channel, daily_event_enabled, preferred_notification_time, 
+                timezone, timezone_technique, created_at
             )
             SELECT
-                ?, users.id, ?, ?, ?
+                ?, users.id, ?, ?, ?, ?, ?, ?
             FROM users WHERE users.sub = ?
             ON CONFLICT (user_id, channel)
-            DO UPDATE SET daily_event_enabled = ?
+            DO UPDATE SET daily_event_enabled = ?, timezone = ?, timezone_technique = ?
             """,
             (
                 new_uns_uid,
                 "sms",
                 int(args.receive_notifications),
+                "any",
+                args.timezone,
+                timezone_technique,
                 time.time(),
                 auth_result.result.sub,
                 int(args.receive_notifications),
+                args.timezone,
+                timezone_technique,
             ),
         )
 

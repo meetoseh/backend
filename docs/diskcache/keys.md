@@ -293,3 +293,7 @@ the keys we store locally on backend instances via diskcache
   where the fields generally match the [db schema](../db/interactive_prompts.md) except for
   `journey_subcategory`, which is the internal name of the subcategory of the journey
   using this interactive prompt, if there is one, for stats.
+
+- `interactive_prompts:special:notification_time:uid` goes to the uid of the interactive
+  prompt that is used as the control for users setting their preferred notification time,
+  if cached.

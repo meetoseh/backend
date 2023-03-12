@@ -193,7 +193,7 @@ async def get_new_users_from_source(itgs: Itgs, unix_date: int) -> ReadNewUsersR
     if unix_date > next_expected_unix_date:
         async with redis.pipeline() as pipe:
             for missing_unix_date in range(next_expected_unix_date, unix_date):
-                await pipe.scard(f"stats:daily_new_users:{missing_unix_date}")
+                await pipe.get(f"stats:daily_new_users:{missing_unix_date}")
 
             data: List[bytes] = await pipe.execute()
 

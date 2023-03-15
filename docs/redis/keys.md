@@ -211,6 +211,38 @@ the keys that we use in redis
   is used as the control for users setting their notification time. Set on the fly if this
   is not set.
 
+- `users:klaviyo_ensure_user:{user_sub}:lock` goes to either an empty key or the json serialization
+  of
+
+  ```py
+  class KlaviyoEnsureUserLock:
+    typ: Literal["lock"]
+    acquired_at: float
+    host: str
+    pid: str
+    uid: str
+  ```
+
+  where `host` is the result of `socket.gethostname()` on the instance with the lock, the
+  pid is the process id, and uid is a randomly generated uid that is included in certain
+  log messages to further facilitate debugging.
+
+- `users:klaviyo:ensure_user:{user_sub}:queue` goes to either an empty key or a list where the
+  first element is the json serialization of
+
+  ```py
+  class KlaviyoEnsureUserQueuedAction:
+    typ: Literal["action"]
+    queued_at: float
+    timezone: Optional[str]
+    timezone_technique: Optional[Literal["browser"]]
+    is_outside_flow: bool
+  ```
+
+  which represents a call to the jobs `execute` being run, detecting that there was
+  a lock, and queued the action to be queued by the instance which has the lock once
+  it finishes whatever its currently doing.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -367,6 +399,35 @@ rather than external functionality.
 - `stats:daily_new_users:earliest` goes to a string representing the earliest
   date, as a unix date number, for which there may be a daily new users count
   still in redis
+
+- `stats:user_notification_settings:counts`: Goes to a hash where the keys
+  represent a preference, using the same preference values
+  as [uns stats](../db/stats/user_notification_setting_stats) `old_preference`
+  or `new_preference` fields, and the values go to the total number of
+  users with the given notification preference.
+
+- `stats:daily_user_notification_settings:earliest` goes to a string representing
+  the earliest date, as a unix date number, for which there may be a daily user
+  notification settings count still in redis.
+
+- `stats:daily_user_notification_settings:{unix_date}` where:
+
+  - `unix_date` is formatted as the number of days since the epoch
+
+  goes to a hash where the keys are in the form `{old_preference}:{new_preference}`
+  where
+
+  - `old_preference` matches the values in [uns stats](../db/stats/user_notification_setting_stats)
+    `old_preference`
+  - `new_preference` matches the values in [uns stats](../db/stats/user_notification_setting_stats)
+    `new_preference`
+
+  and the values correspond to how many people changed their preference from the old value
+  to the new value, without any attempts at deduplication by user (although duplicate
+  changes by user is unlikely at the time of writing due to how the frontend flow works)
+
+  With 5 preference values, there are `5*4 = 20` possible keys. For N preference values,
+  there are `N*(N-1)` possible keys.
 
 ## pubsub keys
 

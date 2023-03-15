@@ -5,7 +5,7 @@ rqlite, since that is done by the jobs repo.
 This is not an exhausitive list of callbacks: see also interactive_prompts/lib/stats.py
 """
 import time
-from typing import List, Optional
+from typing import List, Literal, Optional, Union
 from itgs import Itgs
 import pytz
 import unix_dates
@@ -127,6 +127,71 @@ async def on_interactive_prompt_session_started(
 
         await pipe.execute()
 
+NotificationPreferenceExceptUnset = Literal[
+    "text-any", "text-morning", "text-afternoon", "text-evening"
+]
+NotificationPreference = Literal[
+    "unset", "text-any", "text-morning", "text-afternoon", "text-evening"
+]
+
+
+async def on_notification_time_updated(
+    itgs: Itgs,
+    *,
+    user_sub: str,
+    old_preference: NotificationPreference,
+    new_preference: NotificationPreference,
+    changed_at: float,
+) -> None:
+    """Tracks that the given user changed their notification preference. This
+    should only be called if the user really will receive notifications at the
+    new preference, i.e., they have a user klaviyo profile, phone number, and
+    daily event notifications enabled (or this was true and the new preference
+    is "unset")
+
+    Updates the following keys, which are described in docs/redis/keys.md
+
+    - `stats:user_notification_settings:counts`
+    - `stats:daily_user_notification_settings:earliest`
+    - `stats:daily_user_notification_settings:{unix_date}`
+
+    Args:
+        itgs (Itgs): The integrations for networked services
+        user_sub (str): The sub of the user that changed their notification preference
+        old_preference (NotificationPreference): The old notification preference
+        new_preference (NotificationPreference): The new notification preference
+        changed_at (float): The time the notification preference was changed
+    """
+    if old_preference == new_preference:
+        return
+
+    unix_date = unix_dates.unix_timestamp_to_unix_date(changed_at, tz=STATS_TIMEZONE)
+    redis = await itgs.redis()
+
+    await ensure_set_if_lower_script_exists(redis)
+
+    async with redis.pipeline() as pipe:
+        pipe.multi()
+        await pipe.hincrby(
+            b"stats:user_notification_settings:counts",
+            old_preference.encode("ascii"),
+            amount=-1,
+        )
+        await pipe.hincrby(
+            b"stats:user_notification_settings:counts",
+            new_preference.encode("ascii"),
+            amount=1,
+        )
+        await pipe.hincrby(
+            f"stats:daily_user_notification_settings:{unix_date}".encode("ascii"),
+            f"{old_preference}:{new_preference}".encode("ascii"),
+            1,
+        )
+        await set_if_lower(
+            pipe, b"stats:daily_user_notification_settings:earliest", unix_date
+        )
+        await pipe.execute()
+
 
 SET_IF_LOWER_LUA_SCRIPT = """
 local key = KEYS[1]
@@ -171,7 +236,7 @@ async def ensure_set_if_lower_script_exists(redis: redis.asyncio.client.Redis) -
 
 
 async def set_if_lower(
-    redis: redis.asyncio.client.Redis, key: str, val: int
+    redis: redis.asyncio.client.Redis, key: Union[str, bytes], val: int
 ) -> Optional[bool]:
     """Updates the value in the given key to the given value iff
     the key is unset or the value is lower than the current value.

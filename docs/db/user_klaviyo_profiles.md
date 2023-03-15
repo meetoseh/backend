@@ -4,6 +4,31 @@ Describes a users profile in klaviyo:
 
 https://developers.klaviyo.com/en/reference/create_profile
 
+Note:
+
+Currently there are users heldover from the first beta which we purposely are not creating
+a klaviyo profile for until they come back to the website. These users can be detected by
+e.g.,
+
+```sql
+SELECT
+  COUNT(*)
+FROM users, user_notification_settings
+WHERE
+  users.id = user_notification_settings.user_id
+  AND NOT EXISTS (
+    SELECT 1 FROM user_klaviyo_profiles
+    WHERE user_klaviyo_profiles.user_id = users.id
+  )
+```
+
+We should be mindful of this in the following cases:
+
+- For statistics, users without a klaviyo profile do not get added to the
+  user notification setting stats
+- When creating a klaviyo profile, then, it may require us to update the
+  user notification setting stats.
+
 ## Fields
 
 - `id (integer primary key)`: Internal row identifier

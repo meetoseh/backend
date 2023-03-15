@@ -8,6 +8,8 @@ from starlette.concurrency import run_in_threadpool
 from twilio.base.exceptions import TwilioRestException
 from auth import auth_id
 from itgs import Itgs
+from loguru import logger
+import users.lib.stats
 import socket
 import time
 import os
@@ -181,6 +183,49 @@ async def finish_verify(
             await slack.send_oseh_bot_message(
                 f"{identifier} just verified their phone number: {phone_number} via {socket.gethostname()}"
             )
+
+            cursor = conn.cursor("weak")
+            response = await cursor.execute(
+                """
+                SELECT
+                    user_notification_settings.preferred_notification_time
+                FROM user_notification_settings
+                WHERE
+                    EXISTS (
+                        SELECT 1 FROM users
+                        WHERE users.id = user_notification_settings.user_id
+                            AND users.sub = ?
+                    )
+                    AND user_notification_settings.channel = 'sms'
+                    AND user_notification_settings.daily_event_enabled = 1
+                    AND NOT EXISTS (
+                        SELECT 1 FROM phone_verifications
+                        WHERE phone_verifications.user_id = user_notification_settings.user_id
+                          AND phone_verifications.status = 'approved'
+                          AND phone_verifications.uid != ?
+                    )
+                """,
+                (auth_result.result.sub, args.uid),
+            )
+
+            if response.results:
+                old_notification_preference = "unset"
+                new_notification_preference: str = f"text-{response.results[0][0]}"
+                logger.info(
+                    f"By verifying their phone number, {auth_result.result.sub} updated their "
+                    f"notification preference to {new_notification_preference}"
+                )
+                await users.lib.stats.on_notification_time_updated(
+                    itgs,
+                    user_sub=auth_result.result.sub,
+                    old_preference=old_notification_preference,
+                    new_preference=new_notification_preference,
+                    changed_at=verified_at,
+                )
+            else:
+                logger.info(
+                    f"Verifying {auth_result.result.sub}'s phone number did not change their notification preference"
+                )
 
             jobs = await itgs.jobs()
             await jobs.enqueue(

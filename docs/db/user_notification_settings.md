@@ -4,6 +4,10 @@ If a user has an entry in this table, they should receive some type of
 notification. If they have multiple rows, they may have multiple channels
 they receive notifications on.
 
+SEE ALSO: [user_klaviyo_profiles](./user_klaviyo_profiles.md): without a
+klaviyo profile a user does not receive notifications regardless of
+this table
+
 ## Fields
 
 - `id (integer primary key)`: The primary internal row identifier

@@ -188,6 +188,7 @@ async def start_verify(
                 timezone_technique,
             ),
         )
+        # didn't klaviyo.ensure_user here so we shouldn't have to update notif stats
 
         return Response(
             status_code=201,

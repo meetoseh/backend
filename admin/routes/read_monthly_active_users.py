@@ -200,14 +200,15 @@ async def get_monthly_active_users_from_source(
         unix_date (int): The date to fetch the chart for, specified in days since
             the unix epoch
     """
+    tz = pytz.timezone("America/Los_Angeles")
     naive_midnight_unix_timestamp = datetime.datetime.combine(
         unix_dates.unix_date_to_date(unix_date), datetime.time(), tzinfo=pytz.utc
     ).timestamp()
     end_unix_month = unix_dates.unix_timestamp_to_unix_month(
-        naive_midnight_unix_timestamp
+        naive_midnight_unix_timestamp, tz=tz
     )
     start_unix_month = unix_dates.unix_timestamp_to_unix_month(
-        naive_midnight_unix_timestamp - 182 * 86400
+        naive_midnight_unix_timestamp - 182 * 86400, tz=tz
     )
 
     start_naive_date = unix_dates.unix_month_to_date_of_first(start_unix_month)
@@ -247,11 +248,10 @@ async def get_monthly_active_users_from_source(
             day=1,
         )
         retrieved_for_unix_month = unix_dates.unix_timestamp_to_unix_month(
-            datetime.datetime.combine(
-                retrieved_for_naive_date,
-                datetime.time(),
-                tzinfo=pytz.utc,
-            ).timestamp()
+            unix_dates.unix_date_to_timestamp(
+                unix_dates.date_to_unix_date(retrieved_for_naive_date), tz=tz
+            ),
+            tz=tz,
         )
 
         for missing_unix_month in range(

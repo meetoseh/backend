@@ -275,12 +275,13 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
             cache = await itgs.local_cache()
             cache.delete(f"users:{auth_result.result.sub}:created_at".encode("utf-8"))
 
-            slack = await itgs.slack()
-            await slack.send_ops_message(
-                f"Deleted {auth_result.result.sub=}, {revenue_cat_id=}, {stripe_customer_id=} by "
-                f"request from the user ({force=}). {os.environ.get('ENVIRONMENT')=}",
-                "Deleted user",
-            )
+            if os.environ["ENVIRONMENT"] != "dev":
+                slack = await itgs.slack()
+                await slack.send_ops_message(
+                    f"Deleted {auth_result.result.sub=}, {revenue_cat_id=}, {stripe_customer_id=} by "
+                    f"request from the user ({force=}). {os.environ.get('ENVIRONMENT')=}",
+                    "Deleted user",
+                )
 
             return Response(status_code=204)
 

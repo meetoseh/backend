@@ -25,6 +25,7 @@ import dev.router
 import phones.router
 import notifications.router
 import interactive_prompts.router
+import visitors.router
 import admin.routes.read_journey_subcategory_view_stats
 import daily_events.lib.has_started_one
 import daily_events.lib.read_one_external
@@ -72,7 +73,7 @@ if os.environ.get("ENVIRONMENT") == "dev":
         allow_origins=[os.environ["ROOT_FRONTEND_URL"]],
         allow_credentials=True,
         allow_methods=["GET", "POST", "HEAD", "PUT", "DELETE", "PATCH"],
-        allow_headers=["Authorization", "Pragma", "Cache-Control"],
+        allow_headers=["Authorization", "Pragma", "Cache-Control", "Visitor"],
         expose_headers=["x-image-file-jwt"],
     )
 app.include_router(
@@ -110,6 +111,7 @@ app.include_router(
     prefix="/api/1/interactive_prompts",
     tags=["interactive_prompts"],
 )
+app.include_router(visitors.router.router, prefix="/api/1/visitors", tags=["visitors"])
 app.router.redirect_slashes = False
 
 

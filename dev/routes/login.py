@@ -62,6 +62,9 @@ async def dev_login(args: DevLoginRequest):
         given_name = "NoPic"
         family_name = args.sub[5:]
         picture = None
+    elif args.sub.startswith("test_"):
+        given_name = "Test"
+        picture = None
 
     async with Itgs() as itgs:
         now = int(time.time())

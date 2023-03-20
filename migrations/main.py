@@ -8,13 +8,14 @@ It is strongly recommended that migrations be run in a separate process to
 avoid slowing the boot time for the underlying web server.
 """
 from itgs import Itgs
-from typing import List
+from typing import List, Set
 from error_middleware import handle_error
 import importlib
 import os
 import asyncio
 import time
 import socket
+import db.utils
 
 
 async def main():
@@ -44,15 +45,14 @@ async def main():
                 )
 
                 slack = await itgs.slack()
-                migrations_to_run: List[str] = []
+                candidate_migrations_to_run: List[str] = []
                 for path in os.scandir(os.path.join("migrations", "runners")):
                     if path.is_file() and path.name.endswith(".py"):
-                        response = await cursor.execute(
-                            "SELECT 1 FROM migrations WHERE name = ?", (path.name,)
-                        )
-                        if response.rowcount is None or response.rowcount == 0:
-                            migrations_to_run.append(path.name)
+                        candidate_migrations_to_run.append(path.name)
 
+                migrations_to_run = await determine_unrun_migrations(
+                    itgs, candidate_migrations_to_run
+                )
                 migrations_to_run.sort()
                 for migration in migrations_to_run:
                     mod_path = "migrations.runners." + migration[:-3]
@@ -75,6 +75,26 @@ async def main():
         await handle_error(e)
     finally:
         print("migrations shutdown")
+
+
+async def determine_unrun_migrations(itgs: Itgs, migrations: List[str]) -> List[str]:
+    max_per_query = 100
+
+    migrations_to_run: Set[str] = set(migrations)
+
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+
+    for i in range(0, len(migrations), max_per_query):
+        checking = migrations[i : i + max_per_query]
+        response = await cursor.execute(
+            f"SELECT name FROM migrations WHERE name IN ({db.utils.question_mark_list(len(checking))})",
+            checking,
+        )
+        for row in response.results:
+            migrations_to_run.remove(row[0])
+
+    return list(migrations_to_run)
 
 
 def main_sync():

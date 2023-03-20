@@ -10,6 +10,7 @@ from itgs import Itgs
 from temp_files import temp_file
 from collections import deque
 from urllib.parse import urlencode
+import os
 
 
 DOWNLOAD_LOCKS: Dict[str, asyncio.Lock] = dict()
@@ -129,6 +130,21 @@ def read_in_parts(f: io.BytesIO) -> Generator[bytes, None, None]:
             chunk = f.read(8192)
     finally:
         f.close()
+
+
+def read_file_in_parts(
+    file_path: str, *, delete_after: bool = False
+) -> Generator[bytes, None, None]:
+    """Convenience generator for reading from the given file in chunks"""
+    try:
+        with open(file_path, "rb", buffering=0) as f:
+            chunk = f.read(8192)
+            while chunk:
+                yield chunk
+                chunk = f.read(8192)
+    finally:
+        if delete_after:
+            os.remove(file_path)
 
 
 async def serve_cfep(itgs: Itgs, meta: CachedContentFileExportPartMetadata) -> Response:

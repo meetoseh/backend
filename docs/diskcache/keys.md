@@ -297,3 +297,6 @@ the keys we store locally on backend instances via diskcache
 - `interactive_prompts:special:notification_time:uid` goes to the uid of the interactive
   prompt that is used as the control for users setting their preferred notification time,
   if cached.
+
+- `utm_conversion_stats:{unix_date}` goes to a serialized `UTMConversionStatsResponse`
+  from [read_utm_conversion_stats](../../admin/routes/read_utm_conversion_stats.py)

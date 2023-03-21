@@ -12,6 +12,7 @@ import daily_events.auth
 import journeys.auth
 import daily_events.lib.read_one_external
 import journeys.lib.read_one_external
+import daily_events.lib.notifs
 from response_utils import response_to_bytes, cleanup_response
 from itgs import Itgs
 import secrets
@@ -156,6 +157,9 @@ async def start_random_journey(
         # which is what we want them to do to refresh access permissions (rather
         # than internally maintaining state)
         await daily_events.auth.revoke_auth(itgs, result=de_auth_result.result)
+        await daily_events.lib.notifs.on_entering_lobby(
+            itgs, user_sub=std_auth_result.result.sub, journey_uid=journey_uid
+        )
         return journey_response
 
 

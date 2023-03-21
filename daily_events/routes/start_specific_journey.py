@@ -11,6 +11,7 @@ import daily_events.auth
 import journeys.auth
 import daily_events.lib.read_one_external
 import journeys.lib.read_one_external
+import daily_events.lib.notifs
 from itgs import Itgs
 import secrets
 
@@ -124,4 +125,7 @@ async def start_specific_journey(
         if journey_response is None:
             return NOT_FOUND
 
+        await daily_events.lib.notifs.on_entering_lobby(
+            itgs, user_sub=std_auth_result.result.sub, journey_uid=args.journey_uid
+        )
         return journey_response

@@ -485,6 +485,7 @@ async def write_response_from_db(
             FROM daily_utm_conversion_stats, utms
             WHERE
                 daily_utm_conversion_stats.retrieved_for = ?
+                AND daily_utm_conversion_stats.utm_id = utms.id
                 AND (
                     ? IS NULL OR daily_utm_conversion_stats.id > ?
                 )

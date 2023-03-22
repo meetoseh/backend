@@ -1,7 +1,7 @@
 import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, Function
+from pypika.terms import Term, Function, ExistsCriterion
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import JSONResponse
@@ -451,6 +451,7 @@ async def raw_read_interactive_prompt_events(
     interactive_prompt_event_counts = Table("interactive_prompt_event_counts")
     users = Table("users")
     image_files = Table("image_files")
+    user_profile_pictures = Table("user_profile_pictures")
 
     query: QueryBuilder = (
         Query.from_(interactive_prompt_events)
@@ -476,7 +477,15 @@ async def raw_read_interactive_prompt_events(
         .join(users)
         .on(users.id == interactive_prompt_sessions.user_id)
         .left_outer_join(image_files)
-        .on(image_files.id == users.picture_image_file_id)
+        .on(
+            ExistsCriterion(
+                Query.from_(user_profile_pictures)
+                .select(1)
+                .where(user_profile_pictures.user_id == users.id)
+                .where(user_profile_pictures.latest == 1)
+                .where(user_profile_pictures.image_file_id == image_files.id)
+            )
+        )
     )
     qargs = []
 

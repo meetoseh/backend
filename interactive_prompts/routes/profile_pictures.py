@@ -617,6 +617,7 @@ def _make_query(
     limit: int,
 ) -> Tuple[str, list]:
     users = Table("users")
+    user_profile_pictures = Table("user_profile_pictures")
     image_files = Table("image_files")
     interactive_prompt_sessions = Table("interactive_prompt_sessions")
     interactive_prompts = Table("interactive_prompts")
@@ -626,7 +627,15 @@ def _make_query(
         Query.from_(image_files)
         .select(users.sub, image_files.uid)
         .join(users)
-        .on(users.picture_image_file_id == image_files.id)
+        .on(
+            ExistsCriterion(
+                Query.from_(user_profile_pictures)
+                .select(1)
+                .where(user_profile_pictures.user_id == users.id)
+                .where(user_profile_pictures.latest == 1)
+                .where(user_profile_pictures.image_file_id == image_files.id)
+            )
+        )
         .where(
             ExistsCriterion(
                 Query.from_(interactive_prompt_sessions)

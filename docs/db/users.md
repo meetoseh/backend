@@ -24,20 +24,6 @@ authorization header via the sub claim.
 - `given_name (text null)`: the given name of the user. we don't get this from apple,
   so it's null for apple users unless they specify it
 - `family_name (text null)`: the family name of the user
-- `picture_url (text null)`: the url where the users profile picture can be found;
-  this comes from the id token, so we should occassionally compare the value in
-  an id token we get to the value in the database - if they don't match, we should
-  try downloading and checking the hash - if they still don't match, replace the
-  picture_image_file_id
-- `picture_image_file_id (integer null references image_files(id) on delete set null)`:
-  our cached copy of the profile picture. This is used to avoid having to
-  download the image from the url every time we need it.
-- `picture_image_file_updated_at (real null)`: the time the `picture_image_file_id`
-  was last updated. Since when a user updates their profile picture, stale
-  JWTs might be around with the old profile picture, we ignore profile
-  pictures with the wrong URL when the JWT was issued before this time.
-  This is set to the issued at time of the JWT when the profile picture
-  is updated.
 - `admin (boolean not null)`: allows access to the admin panel
 - `revenue_cat_id (text unique not null)`: The revenuecat identifier for this user. This
   should be treated as privileged information only accessible by the user and
@@ -60,9 +46,6 @@ CREATE TABLE users(
     phone_number_verified BOOLEAN,
     given_name TEXT,
     family_name TEXT,
-    picture_url TEXT,
-    picture_image_file_id INTEGER REFERENCES image_files(id) ON DELETE SET NULL,
-    picture_image_file_updated_at REAL,
     admin BOOLEAN NOT NULL,
     revenue_cat_id TEXT UNIQUE NOT NULL,
     created_at REAL NOT NULL
@@ -70,7 +53,4 @@ CREATE TABLE users(
 
 /* search */
 CREATE INDEX users_email_idx ON users(email);
-
-/* foreign key */
-CREATE INDEX users_picture_image_file_id_idx ON users(picture_image_file_id);
 ```

@@ -57,13 +57,12 @@ async def show_my_picture(authorization: Optional[str] = Header(None)):
             """
             SELECT
                 image_files.uid
-            FROM image_files
+            FROM image_files, users, user_profile_pictures
             WHERE
-                EXISTS (
-                    SELECT 1 FROM users
-                    WHERE users.sub = ?
-                      AND users.picture_image_file_id = image_files.id
-                )
+                users.sub = ?
+                AND user_profile_pictures.user_id = users.id
+                AND user_profile_pictures.latest = 1
+                AND image_files.id = user_profile_pictures.image_file_id
             """,
             (auth_result.result.sub,),
         )

@@ -55,11 +55,11 @@ async def read_streak(authorization: Optional[str] = Header(None)):
 
 
 async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
-    """Computes the users current streak for attending daily events.
-
-    This is counting how many consecutive daily events the user has attended. If
-    they have not attended the current daily event, their streak is zero. If they've
-    attended the current daily event and not the previous, their streak is one. Etc.
+    """Computes the users current streak for attending daily events. In particular,
+    this first starts at 0 (if they haven't taken a class today), and 1 otherwise.
+    Then, for the immediately preceeding daily event, if they have taken that we
+    add one and continue, otherwise we stop. This is repeated until we reach either
+    the first daily event or a daily event that they have not taken.
 
     Args:
         itgs (Itgs): The integrations to (re)use
@@ -72,59 +72,143 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 
-    # This scales linearly with streak size, but notably does not linearly scale on the
-    # total number of daily events.
-
-    # Query Plan:
-    # CO-ROUTINE events
-    #     SETUP
-    #         SCAN CONSTANT ROW
-    #     RECURSIVE STEP
-    #         SCAN events
-    #         SEARCH daily_events USING COVERING INDEX daily_events_available_at_idx (available_at<?)
-    #         CORRELATED SCALAR SUBQUERY 2
-    #             SEARCH de2 USING COVERING INDEX daily_events_available_at_idx (available_at>? AND available_at<?)
-    #         CORRELATED SCALAR SUBQUERY 3
-    #             SEARCH users USING COVERING INDEX sqlite_autoindex_users_1 (sub=?)
-    #             SEARCH interactive_prompt_sessions USING INDEX interactive_prompt_sessions_user_id_idx (user_id=?)
-    #             SEARCH journeys USING COVERING INDEX journeys_interactive_prompt_id_idx (interactive_prompt_id=?)
-    #             SEARCH daily_event_journeys USING INDEX daily_event_journeys_journey_id_idx (journey_id=?)
-    # SCAN events
-
-    response = await cursor.execute(
+    historical_response = await cursor.execute(
         """
-        WITH RECURSIVE events(days, available_at) AS (
-            VALUES(0, ?)
-            UNION ALL
-            SELECT
-                days + 1,
-                daily_events.available_at
-            FROM events, daily_events
+        WITH current_daily_events AS (
+            SELECT daily_events.id, daily_events.available_at
+            FROM daily_events
             WHERE
-                daily_events.available_at < events.available_at
+                daily_events.available_at <= ?
                 AND NOT EXISTS (
-                    SELECT 1 FROM daily_events de2
-                    WHERE de2.available_at > daily_events.available_at
-                        AND de2.available_at < events.available_at
-                )
-                AND EXISTS (
-                    SELECT 1 FROM daily_event_journeys, journeys, interactive_prompt_sessions, users
-                    WHERE
-                        daily_event_journeys.daily_event_id = daily_events.id
-                        AND journeys.id = daily_event_journeys.journey_id
-                        AND interactive_prompt_sessions.interactive_prompt_id = journeys.interactive_prompt_id
-                        AND users.id = interactive_prompt_sessions.user_id
-                        AND users.sub = ?
+                    SELECT 1 FROM daily_events AS de
+                    WHERE de.available_at <= ?
+                      AND de.available_at > daily_events.available_at
                 )
         )
-        SELECT COUNT(*) FROM events
+        SELECT
+            daily_events.uid
+        FROM daily_events, current_daily_events, users
+        WHERE
+            daily_events.available_at < current_daily_events.available_at
+            AND users.sub = ?
+            AND NOT EXISTS (
+                SELECT 1 FROM daily_events AS de
+                WHERE de.available_at < current_daily_events.available_at
+                    AND de.available_at > daily_events.available_at
+                    AND NOT EXISTS (
+                        SELECT 1 FROM journeys, interactive_prompt_sessions
+                        WHERE interactive_prompt_sessions.user_id = users.id
+                          AND journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
+                          AND EXISTS (
+                            SELECT 1 FROM daily_event_journeys
+                            WHERE daily_event_journeys.daily_event_id = de.id
+                                AND daily_event_journeys.journey_id = journeys.id
+                          )
+                    )
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM interactive_prompt_sessions, journeys
+                WHERE interactive_prompt_sessions.user_id = users.id
+                  AND journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
+                    AND EXISTS (
+                        SELECT 1 FROM daily_event_journeys
+                        WHERE daily_event_journeys.daily_event_id = daily_events.id
+                            AND daily_event_journeys.journey_id = journeys.id
+                    )
+            )
         """,
-        (now, user_sub),
+        (now, now, user_sub),
     )
 
-    if not response.results:
-        return 0
-    return response.results[0][0] - 1
+    current_response = await cursor.execute(
+        """
+        SELECT 1 FROM daily_events, users
+        WHERE
+            daily_events.available_at <= ?
+            AND NOT EXISTS (
+                SELECT 1 FROM daily_events AS de
+                WHERE de.available_at <= ?
+                    AND de.available_at > daily_events.available_at
+            )
+            AND users.sub = ?
+            AND EXISTS (
+                SELECT 1 FROM interactive_prompt_sessions, journeys
+                WHERE interactive_prompt_sessions.user_id = users.id
+                    AND journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
+                    AND EXISTS (
+                        SELECT 1 FROM daily_event_journeys
+                        WHERE daily_event_journeys.daily_event_id = daily_events.id
+                            AND daily_event_journeys.journey_id = journeys.id
+                    )
+            )
+        """,
+        (now, now, user_sub),
+    )
+
+    streak = 0
+    if current_response.results:
+        streak += 1
+
+    if historical_response.results:
+        oldest_daily_event_uid_in_streak = historical_response.results[0][0]
+
+        response = await cursor.execute(
+            """
+            WITH oldest_de AS (
+                SELECT daily_events.id AS id, daily_events.available_at AS available_at
+                FROM daily_events WHERE daily_events.uid = ?
+            )
+            SELECT COUNT(*) FROM daily_events, oldest_de
+            WHERE
+                daily_events.available_at <= ?
+                AND daily_events.available_at >= oldest_de.available_at
+            """,
+            (oldest_daily_event_uid_in_streak, now),
+        )
+        assert (
+            response.results[0][0] > 0
+        ), f"{user_sub=}, {oldest_daily_event_uid_in_streak=}, {now=}, {response.results=}"
+
+        streak += response.results[0][0] - 1
+
+    try:
+        if streak == 0:
+            # if they took a class today, we never want to return 0
+            dnow = datetime.datetime.now(tz=pytz.timezone("America/Los_Angeles"))
+            today = datetime.datetime(
+                dnow.year,
+                dnow.month,
+                dnow.day,
+                tzinfo=pytz.timezone("America/Los_Angeles"),
+            )
+            response = await cursor.execute(
+                """
+                SELECT
+                    EXISTS (
+                        SELECT 1 FROM interactive_prompt_sessions, journeys
+                        WHERE
+                            journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
+                            AND EXISTS (
+                                SELECT 1 FROM users
+                                WHERE users.id = interactive_prompt_sessions.user_id
+                                AND users.sub = ?
+                            )
+                            AND EXISTS (
+                                SELECT 1 FROM interactive_prompt_events
+                                WHERE interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
+                                AND interactive_prompt_events.created_at > ?
+                            )
+                    )
+                """,
+                (user_sub, today.timestamp()),
+            )
+            if response.results[0][0]:
+                streak = 1
+    except Exception as e:
+        # i don't have time to test this before launch
+        await handle_error(e, extra_info="0 streak fix")
+
+    return streak
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ from itgs import Itgs
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from interactive_prompts.events.routes.stats import get_users
+from interactive_prompts.events.helper import compute_bins
 import time
 
 
@@ -45,7 +46,7 @@ async def read_journey_views(
     journey_uid: str, authorization: Optional[str] = Header(None)
 ):
     """Fetches the number of views on the journey with the given uid. This endpoint
-    generally only requires `O(log(N*M)log(M))` time where N is the number of journeys and M is
+    only requires `O(log(N*M)log(M))` time where N is the number of journeys and M is
     the length of the longest journey lobby, making it suitable for being called frequently.
 
     Requires standard admin authorization
@@ -61,23 +62,14 @@ async def read_journey_views(
         response = await cursor.execute(
             """
             SELECT
-                interactive_prompts.uid
+                interactive_prompts.uid,
+                interactive_prompts.duration_seconds
             FROM interactive_prompts
             WHERE
                 EXISTS (
                     SELECT 1 FROM journeys
-                    WHERE 
-                        journeys.uid = ?
-                        AND (
-                            journeys.interactive_prompt_id = interactive_prompts.id
-                            OR (
-                                EXISTS (
-                                    SELECT 1 FROM interactive_prompt_old_journeys
-                                    WHERE interactive_prompt_old_journeys.journey_id = journeys.id
-                                        AND interactive_prompt_old_journeys.interactive_prompt_id = interactive_prompts.id
-                                )
-                            )
-                        )
+                    WHERE journeys.interactive_prompt_id = interactive_prompts.id
+                      AND journeys.uid = ?
                 )
             """,
             (journey_uid,),
@@ -86,15 +78,16 @@ async def read_journey_views(
         if not response.results:
             return NOT_FOUND
 
-        total_views = 0
-        for (interactive_prompt_uid,) in response.results:
-            users = await get_users(itgs, interactive_prompt_uid, 0)
-            views: int = users["users"]
-            total_views += views
+        interactive_prompt_uid: str = response.results[0][0]
+        duration_seconds: int = response.results[0][1]
 
+        bins = compute_bins(duration_seconds)
+        users = await get_users(itgs, interactive_prompt_uid, bins - 1)
+
+        views: int = users["users"]
         return Response(
             content=ReadJourneyViewsResponse(
-                views=total_views, retrieved_at=time.time()
+                views=views, retrieved_at=time.time()
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,

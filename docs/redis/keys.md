@@ -184,6 +184,10 @@ the keys that we use in redis
   image for the user with the given sub and is not set otherwise. Used to quickly fail out
   of waiting for processing of profile images.
 
+- `users:{sub}:recent_profile_image_uploads` goes to a number which is incremented when the
+  user starts the process of uploading a profile image, with a 1 hour expiration. While this
+  number is greater than 10 they are blocked from uploading profile images.
+
 - `frontend-web:server_images:config` used by frontend-web/server_images for maintaining
   configuration from the last time an instance processed the static public server images
 

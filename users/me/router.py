@@ -13,6 +13,7 @@ import users.me.routes.start_notification_time_prompt
 import users.me.routes.update_name
 import users.me.routes.update_notification_time
 import users.me.routes.update_timezone
+import users.me.routes.upload_profile_picture
 
 router = APIRouter()
 
@@ -30,3 +31,4 @@ router.include_router(users.me.routes.start_notification_time_prompt.router)
 router.include_router(users.me.routes.update_name.router)
 router.include_router(users.me.routes.update_notification_time.router)
 router.include_router(users.me.routes.update_timezone.router)
+router.include_router(users.me.routes.upload_profile_picture.router)

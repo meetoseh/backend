@@ -100,6 +100,11 @@ async def refresh(args: RefreshRequest):
                 )
             return UNKNOWN_TOKEN
 
+        if payload["iat"] < 1693500000:
+            # bug caused us to issue invalid tokens because we related user_identities to
+            # the wrong user
+            return UNKNOWN_TOKEN
+
         # generate the new refresh token PRIOR to verifying the previous
         # one is not revoked, since we want to cycle atomically
 

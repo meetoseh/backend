@@ -106,13 +106,14 @@ async def up(itgs: Itgs) -> None:
                 created_at REAL NOT NULL
             )
             """,
+            # WHEN RUNNING THIS MIGRATION HAD A HUGE MISTAKE: NO ID FIELD MEANT IDS SHIFTED!
             """
             INSERT INTO users_new (
-                sub, email, email_verified, phone_number, phone_number_verified,
+                id, sub, email, email_verified, phone_number, phone_number_verified,
                 given_name, family_name, admin, revenue_cat_id, created_at
             )
             SELECT
-                sub, email, email_verified, phone_number, phone_number_verified,
+                id, sub, email, email_verified, phone_number, phone_number_verified,
                 given_name, family_name, admin, revenue_cat_id, created_at
             FROM users
             """,

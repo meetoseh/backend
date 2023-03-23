@@ -74,6 +74,13 @@ async def auth_id(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
             None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
         )
 
+    if payload["iat"] < 1693500000:
+        # bug caused us to issue invalid tokens because we related user_identities to
+        # the wrong user
+        return AuthResult(
+            None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
+        )
+
     return AuthResult(
         result=SuccessfulAuthResult(sub=payload["sub"], claims=payload),
         error_type=None,

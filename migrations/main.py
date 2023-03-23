@@ -105,4 +105,8 @@ def main_sync():
 
 
 if __name__ == "__main__":
+    from loguru import logger
+
+    logger.add("backend.log", enqueue=True, rotation="100 MB")
+
     main_sync()

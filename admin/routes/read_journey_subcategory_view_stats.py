@@ -1,3 +1,4 @@
+import itertools
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
@@ -41,12 +42,27 @@ class ReadJourneySubcategoryViewStatsResponseItem(BaseModel):
         description="The internal name of the subcategory at the time"
     )
 
-    total_journey_sessions: int = Field(
-        description="The total number of journey sessions in this subcategory, all time"
+    total_views: int = Field(
+        description=(
+            "The total number of interactive prompt sessions in this subcategory, all time, "
+            "up to midnight America/Los_Angeles today."
+        )
     )
 
-    recent: ReadJourneySubcategoryViewStatsResponseSubcategoryChart = Field(
-        description="A chart for recent unique views"
+    total_unique_views: int = Field(
+        description=(
+            "The total number of interactive prompt sessions in this subcategory, only "
+            "counting at most one per user per day, all time, up to midnight "
+            "America/Los_Angeles today."
+        )
+    )
+
+    recent_views: ReadJourneySubcategoryViewStatsResponseSubcategoryChart = Field(
+        description="A chart for recent views"
+    )
+
+    recent_unique_views: ReadJourneySubcategoryViewStatsResponseSubcategoryChart = (
+        Field(description="A chart for recent unique views")
     )
 
 
@@ -66,20 +82,21 @@ class ReadJourneySubcategoryViewStatsResponse(BaseModel):
     status_code=200,
 )
 async def read_journey_subcategory_view_stats(
+    date: Optional[str] = None,
     authorization: Optional[str] = Header(None),
 ):
-    """Fetches statistics on journey subcategories. This returns all journey
-    subcategories which have ever existed, even if they no longer exist, and
-    orders them by the total number of journey sessions.
+    """Fetches statistics on journey subcategories, broken by external name
+    at the time views occurred.
 
-    It should be noted that while the total includes repeats from users, the
-    recent charts have at most 1 view per user per day, so the sum of the
-    recent charts may be less than the total, even if all the data is recent.
+    This information is complete up to today at midnight America/Los_Angeles
+    time, meaning it can be cached until tomorrow at midnight America/Los_Angeles.
 
-    This endpoint is well optimized and clients can feel free to request it
-    frequently, however, the data only changes once a day as it does not include
-    partial days, so it can be cached until midnight America/Los_Angeles by
-    sufficiently smart clients.
+    May specify a date. If a date is specified, it must be an isoformat date
+    (e.g., YYYY-MM-DD), and the response will be for data strictly before that
+    date. If no date is specified, the response will be for data strictly before
+    today at midnight America/Los_Angeles.
+
+    Dates after today, or badly formatted dates, are treated as if they were today.
 
     This requires standard authorization for admin users
     """
@@ -88,14 +105,23 @@ async def read_journey_subcategory_view_stats(
         if not auth_result.success:
             return auth_result.error_response
 
-        unix_date = unix_dates.unix_timestamp_to_unix_date(
-            time.time(), tz=pytz.timezone("America/Los_Angeles")
-        )
-        return get_journey_subcategory_view_stats(itgs, unix_date)
+        tz = pytz.timezone("America/Los_Angeles")
+        max_unix_date = unix_dates.unix_date_today(tz=tz)
+
+        if date is None:
+            unix_date = max_unix_date
+        else:
+            try:
+                naive_date = datetime.date.fromisoformat(date)
+                unix_date = min(max_unix_date, unix_dates.date_to_unix_date(naive_date))
+            except ValueError:
+                unix_date = max_unix_date
+
+        return await get_journey_subcategory_view_stats(itgs, unix_date, tz=tz)
 
 
 async def get_journey_subcategory_view_stats_from_local_cache(
-    itgs: Itgs, unix_date: int
+    itgs: Itgs, unix_date: int, *, tz: pytz.BaseTzInfo
 ) -> Optional[Union[bytes, io.BytesIO]]:
     """Fetches the cached response for the given date, if it exists. If
     the data is available it is returned without decoding, since it's typically
@@ -111,24 +137,13 @@ async def get_journey_subcategory_view_stats_from_local_cache(
 
 
 async def set_journey_subcategory_view_stats_in_local_cache(
-    itgs: Itgs, unix_date: int, encoded: bytes
+    itgs: Itgs, unix_date: int, encoded: bytes, *, tz: pytz.BaseTzInfo
 ) -> None:
     """Stores the given encoded response for the given date in the local cache,
     expiring at midnight America/Los_Angeles
     """
     now = time.time()
-    tomorrow_naive_date = unix_dates.unix_date_to_date(
-        unix_dates.unix_timestamp_to_unix_date(now) + 1
-    )
-    tomorrow_naive_midnight = datetime.datetime.combine(
-        tomorrow_naive_date, datetime.time(0, 0, 0)
-    )
-    tomorrow_midnight = (
-        tomorrow_naive_midnight.timestamp()
-        + pytz.timezone("America/Los_Angeles")
-        .utcoffset(tomorrow_naive_midnight)
-        .total_seconds()
-    )
+    tomorrow_midnight = unix_dates.unix_date_to_timestamp(unix_date + 1, tz=tz)
 
     local_cache = await itgs.local_cache()
     local_cache.set(
@@ -162,6 +177,7 @@ async def listen_available_responses_forever() -> NoReturn:
     """Listens for available responses from other backend instances and stores
     them in the local cache.
     """
+    tz = pytz.timezone("America/Los_Angeles")
     try:
         async with Itgs() as itgs:
             async with pps.PPSSubscription(
@@ -172,7 +188,7 @@ async def listen_available_responses_forever() -> NoReturn:
                     unix_date = int.from_bytes(memview[:4], "big", signed=False)
                     encoded = memview[4:]
                     await set_journey_subcategory_view_stats_in_local_cache(
-                        itgs, unix_date, encoded
+                        itgs, unix_date, bytes(encoded), tz=tz
                     )
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
@@ -183,22 +199,27 @@ async def listen_available_responses_forever() -> NoReturn:
 
 
 async def get_journey_subcategory_view_stats_from_source(
-    itgs: Itgs, unix_date: int
+    itgs: Itgs, unix_date: int, *, tz: pytz.BaseTzInfo
 ) -> ReadJourneySubcategoryViewStatsResponse:
     """Fetches the journey subcategory view stats from the source, which is
     a combination of a specialized table in rqlite (journey_subcategory_view_stats)
-    and redis (stats:journey_sessions:bysubcat:total and related)
+    and redis (stats:interactive_prompt_sessions:bysubcat:total and related)
     """
 
     redis = await itgs.redis()
-    totals_by_subcategory: Dict[str, int] = {}
+    total_views_by_subcategory: Dict[str, int] = {}
+    total_unique_views_by_subcategory: Dict[str, int] = {}
 
-    raw = await redis.hgetall("stats:journey_sessions:bysubcat:totals")
+    raw = await redis.hgetall(b"stats:interactive_prompt_sessions:bysubcat:total_views")
     for subcategory, total in raw.items():
-        totals_by_subcategory[str(subcategory, "utf-8")] = int(total)
+        total_views_by_subcategory[str(subcategory, "utf-8")] = int(total)
+
+    raw = await redis.hgetall(b"stats:interactive_prompt_sessions:bysubcat:total_users")
+    for subcategory, total in raw.items():
+        total_unique_views_by_subcategory[str(subcategory, "utf-8")] = int(total)
 
     earliest_unrotated_raw = await redis.get(
-        "stats:journey_sessions:bysubcat:totals:earliest"
+        b"stats:interactive_prompt_sessions:bysubcat:earliest"
     )
     if earliest_unrotated_raw is not None:
         earliest_unrotated_unix_date = int(earliest_unrotated_raw)
@@ -209,7 +230,9 @@ async def get_journey_subcategory_view_stats_from_source(
         async with redis.pipeline() as pipe:
             for missing_unix_date in range(earliest_unrotated_unix_date, unix_date):
                 await redis.hgetall(
-                    f"stats:journey_sessions:bysubcat:totals:{missing_unix_date}"
+                    f"stats:interactive_prompt_sessions:bysubcat:total_views:{missing_unix_date}".encode(
+                        "utf-8"
+                    )
                 )
             data = await pipe.execute()
 
@@ -218,27 +241,39 @@ async def get_journey_subcategory_view_stats_from_source(
         ):
             for subcategory, total in raw.items():
                 subcategory_str = str(subcategory, "utf-8")
-                totals_by_subcategory[subcategory_str] = totals_by_subcategory.get(
-                    subcategory_str, 0
-                ) + int(total)
+                total_views_by_subcategory[
+                    subcategory_str
+                ] = total_views_by_subcategory.get(subcategory_str, 0) + int(total)
 
-    if len(totals_by_subcategory) == 0:
+        subcats = list(total_views_by_subcategory.keys())
+        async with redis.pipeline() as pipe:
+            for missing_unix_date, subcategory in itertools.product(
+                range(earliest_unrotated_unix_date, unix_date), subcats
+            ):
+                await redis.scard(
+                    f"stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs".encode(
+                        "utf-8"
+                    )
+                )
+
+            data = await pipe.execute()
+
+        for (missing_unix_date, subcategory), raw in zip(
+            itertools.product(range(earliest_unrotated_unix_date, unix_date), subcats),
+            data,
+        ):
+            total_unique_views_by_subcategory[
+                subcategory
+            ] = total_unique_views_by_subcategory.get(subcategory, 0) + int(raw)
+
+    if len(total_views_by_subcategory) == 0:
         return ReadJourneySubcategoryViewStatsResponse(items=[])
 
-    earliest_available_in_redis_raw = await redis.get(
-        "stats:journey_sessions:bysubcat:earliest"
-    )
-    earliest_available_in_redis_unix_date = (
-        int(earliest_available_in_redis_raw)
-        if earliest_available_in_redis_raw is not None
-        else unix_date
-    )
-
     charts_by_subcategory: Dict[
-        str, ReadJourneySubcategoryViewStatsResponseSubcategoryChart
+        str, List[ReadJourneySubcategoryViewStatsResponseSubcategoryChart]
     ] = dict()
 
-    not_yet_started_subcategories: List[str] = list(totals_by_subcategory.keys())
+    not_yet_started_subcategories: List[str] = list(total_views_by_subcategory.keys())
     pending_subcategories: Dict[asyncio.Task, str] = dict()
     max_concurrency = 5
 
@@ -250,7 +285,7 @@ async def get_journey_subcategory_view_stats_from_source(
             subcat = not_yet_started_subcategories.pop()
             task = asyncio.create_task(
                 _get_chart_for_subcategory_from_source(
-                    itgs, subcat, unix_date, earliest_available_in_redis_unix_date
+                    itgs, subcat, unix_date, earliest_unrotated_unix_date
                 )
             )
             pending_subcategories[task] = subcat
@@ -271,12 +306,14 @@ async def get_journey_subcategory_view_stats_from_source(
     items = [
         ReadJourneySubcategoryViewStatsResponseItem(
             subcategory=subcat,
-            total_journey_sessions=total,
-            recent=charts_by_subcategory[subcat],
+            total_views=total_views,
+            total_unique_views=total_unique_views_by_subcategory[subcat],
+            recent_views=charts_by_subcategory[subcat][0],
+            recent_unique_views=charts_by_subcategory[subcat][1],
         )
-        for subcat, total in totals_by_subcategory.items()
+        for subcat, total_views in total_views_by_subcategory.items()
     ]
-    items.sort(key=lambda item: item.total_journey_sessions, reverse=True)
+    items.sort(key=lambda item: item.total_views, reverse=True)
     return ReadJourneySubcategoryViewStatsResponse(items=items)
 
 
@@ -285,9 +322,11 @@ async def _get_chart_for_subcategory_from_source(
     subcategory: str,
     unix_date: int,
     earliest_available_in_redis_unix_date: int,
-) -> ReadJourneySubcategoryViewStatsResponseSubcategoryChart:
-    """Fetches the recent chart for the given subcategory. This should be thought of
+) -> List[ReadJourneySubcategoryViewStatsResponseSubcategoryChart]:
+    """Fetches the recent charts for the given subcategory. This should be thought of
     as an implementation detail of `get_journey_subcategory_view_stats_from_source`.
+
+    Returns (recent_views, recent_unique_views)
     """
     start_unix_date = unix_date - 30
     end_unix_date = unix_date
@@ -298,25 +337,28 @@ async def _get_chart_for_subcategory_from_source(
     response = await cursor.execute(
         """
         SELECT
-            retrieved_for, total
+            retrieved_for, total_users, total_views
         FROM journey_subcategory_view_stats
         WHERE
-            retrieved_for >= ? AND retrieved_for < ?
+            retrieved_for >= ? AND retrieved_for < ? AND subcategory = ?
         ORDER BY retrieved_for ASC
         """,
         (
             unix_dates.unix_date_to_date(start_unix_date).isoformat(),
             unix_dates.unix_date_to_date(end_unix_date).isoformat(),
+            subcategory,
         ),
     )
 
     labels: List[str] = []
-    values: List[int] = []
+    view_values: List[int] = []
+    unique_view_values: List[int] = []
     expected_next_unix_date = start_unix_date
 
     for row in response.results or []:
         retrieved_for_raw: str = row[0]
-        total: int = row[1]
+        total_users: int = row[1]
+        total_views: int = row[2]
 
         retrieved_for_date = datetime.date.fromisoformat(retrieved_for_raw)
         retrieved_for_unix_date = unix_dates.date_to_unix_date(retrieved_for_date)
@@ -325,10 +367,12 @@ async def _get_chart_for_subcategory_from_source(
             expected_next_unix_date, retrieved_for_unix_date
         ):
             labels.append(unix_dates.unix_date_to_date(missing_unix_date).isoformat())
-            values.append(0)
+            view_values.append(0)
+            unique_view_values.append(0)
 
         labels.append(retrieved_for_raw)
-        values.append(total)
+        view_values.append(total_views)
+        unique_view_values.append(total_users)
         expected_next_unix_date = retrieved_for_unix_date + 1
 
     for missing_unix_date in range(
@@ -336,7 +380,8 @@ async def _get_chart_for_subcategory_from_source(
         min(earliest_available_in_redis_unix_date, end_unix_date),
     ):
         labels.append(unix_dates.unix_date_to_date(missing_unix_date).isoformat())
-        values.append(0)
+        view_values.append(0)
+        unique_view_values.append(0)
 
     expected_next_unix_date = max(
         expected_next_unix_date,
@@ -347,25 +392,49 @@ async def _get_chart_for_subcategory_from_source(
         redis = await itgs.redis()
         async with redis.pipeline() as pipe:
             for redis_unix_date in range(expected_next_unix_date, end_unix_date):
+                await redis.hget(
+                    f"stats:interactive_prompt_sessions:bysubcat:total_views:{redis_unix_date}".encode(
+                        "utf-8"
+                    ),
+                    subcategory.encode("utf-8"),
+                )
+            data = await pipe.execute()
+
+        for redis_unix_date, total_raw in zip(
+            range(expected_next_unix_date, end_unix_date), data
+        ):
+            labels.append(unix_dates.unix_date_to_date(redis_unix_date).isoformat())
+            view_values.append(int(total_raw) if total_raw is not None else 0)
+
+        async with redis.pipeline() as pipe:
+            for redis_unix_date in range(expected_next_unix_date, end_unix_date):
                 await redis.scard(
-                    f"stats:journey_sessions:{subcategory}:{redis_unix_date}:subs"
+                    f"stats:interactive_prompt_sessions:{subcategory}:{redis_unix_date}:subs".encode(
+                        "utf-8"
+                    )
                 )
             data = await pipe.execute()
 
         for redis_unix_date, total in zip(
             range(expected_next_unix_date, end_unix_date), data
         ):
-            labels.append(unix_dates.unix_date_to_date(redis_unix_date).isoformat())
-            values.append(total)
+            unique_view_values.append(total)
 
         expected_next_unix_date = end_unix_date
 
-    return ReadJourneySubcategoryViewStatsResponseSubcategoryChart(
-        labels=labels, values=values
-    )
+    return [
+        ReadJourneySubcategoryViewStatsResponseSubcategoryChart(
+            labels=labels, values=view_values
+        ),
+        ReadJourneySubcategoryViewStatsResponseSubcategoryChart(
+            labels=labels, values=unique_view_values
+        ),
+    ]
 
 
-async def get_journey_subcategory_view_stats(itgs: Itgs, unix_date: int) -> Response:
+async def get_journey_subcategory_view_stats(
+    itgs: Itgs, unix_date: int, *, tz: pytz.BaseTzInfo
+) -> Response:
     """Fetches the journey subcategory view stats that would be produced on
     the given date, specified in days since the unix epoch. This will fetch
     from the nearest cache, if available, otherwise from the source. When
@@ -384,7 +453,7 @@ async def get_journey_subcategory_view_stats(itgs: Itgs, unix_date: int) -> Resp
             this minimizes unnecessary serialization/deserialization
     """
     locally_cached = await get_journey_subcategory_view_stats_from_local_cache(
-        itgs, unix_date
+        itgs, unix_date, tz=tz
     )
     if locally_cached is not None:
         if isinstance(locally_cached, (bytes, bytearray, memoryview)):
@@ -393,7 +462,7 @@ async def get_journey_subcategory_view_stats(itgs: Itgs, unix_date: int) -> Resp
             content=read_in_parts(locally_cached), headers=HEADERS, status_code=200
         )
 
-    data = await get_journey_subcategory_view_stats_from_source(itgs, unix_date)
+    data = await get_journey_subcategory_view_stats_from_source(itgs, unix_date, tz=tz)
     encoded = data.json().encode("utf-8")
     await notify_backend_instances_of_response(itgs, unix_date, encoded)
     return Response(content=encoded, headers=HEADERS, status_code=200)

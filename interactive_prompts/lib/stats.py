@@ -25,13 +25,13 @@ async def on_interactive_prompt_session_started(
     - `stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs`
     - `stats:interactive_prompt_sessions:bysubcat:earliest`
     - `stats:interactive_prompt_sessions:bysubcat:subcategories`
-    - `stats:interactive_prompt_sessions:bysubcat:totals:{unix_date}`
-    - `stats:interactive_prompt_sessions:bysubcat:totals:earliest`
+    - `stats:interactive_prompt_sessions:bysubcat:total_views:{unix_date}`
+
 
     Args:
         itgs (Itgs): The integrations for networked services
         subcategory (str): If the interactive prompt belongs to a journey, the
-            subcategory of that journey
+            external name of the subcategory of that journey
         started_at (float): The time the interactive prompt session was started
         user_sub (str): The sub of the user that started the interactive prompt
     """
@@ -48,34 +48,37 @@ async def on_interactive_prompt_session_started(
 
     async with redis.pipeline() as pipe:
         pipe.multi()
-        await pipe.incr("stats:interactive_prompt_sessions:count")
-        await pipe.incr(f"stats:interactive_prompt_sessions:monthly:{unix_month}:count")
+        await pipe.incr(b"stats:interactive_prompt_sessions:count")
+        await pipe.incr(
+            f"stats:interactive_prompt_sessions:monthly:{unix_month}:count".encode(
+                "utf-8"
+            )
+        )
         await set_if_lower(
             pipe,
-            "stats:interactive_prompt_sessions:monthly:earliest",
+            b"stats:interactive_prompt_sessions:monthly:earliest",
             unix_month,
         )
         if subcategory is not None:
             await pipe.sadd(
-                f"stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs",
+                f"stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs".encode(
+                    "utf-8"
+                ),
                 user_sub,
             )
             await set_if_lower(
                 pipe,
-                "stats:interactive_prompt_sessions:bysubcat:earliest",
+                b"stats:interactive_prompt_sessions:bysubcat:earliest",
                 unix_date,
             )
             await pipe.sadd(
-                "stats:interactive_prompt_sessions:bysubcat:subcategories", subcategory
+                b"stats:interactive_prompt_sessions:bysubcat:subcategories", subcategory
             )
             await pipe.hincrby(
-                f"stats:interactive_prompt_sessions:bysubcat:totals:{unix_date}",
+                f"stats:interactive_prompt_sessions:bysubcat:total_views:{unix_date}".encode(
+                    "utf-8"
+                ),
                 subcategory,
                 1,
-            )
-            await set_if_lower(
-                pipe,
-                "stats:interactive_prompt_sessions:bysubcat:totals:earliest",
-                unix_date,
             )
         await pipe.execute()

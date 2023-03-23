@@ -349,8 +349,8 @@ rather than external functionality.
 
 - `stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs` where:
 
-  - `subcategory` is the subcategory of the journey that the interactive prompt is for, e.g.
-    `spoken-word-meditation`
+  - `subcategory` is the external name of the subcategory of the journey that
+    the prompt is for
   - `unix_date` is the number of days since the unix epoch
 
   goes to a set containing the subs of all the users who have started an interactive prompt
@@ -371,23 +371,25 @@ rather than external functionality.
   avoid leaking keys if the job which is supposed to move the data to the database
   is delayed.
 
-- `stats:interactive_prompt_sessions:bysubcat:totals` goes to a hash where the keys are the
-  internal names of subcategories and the values are the total number of journey
-  sessions for that subcategory, excluding days at and including
-  `stats:interactive_prompt_sessions:bysubcat:totals:earliest`
+- `stats:interactive_prompt_sessions:bysubcat:total_views` goes to a hash where the keys are the
+  internal names of subcategories and the values are the total number of interactive prompt
+  sessions for journeys in that subcategory, excluding days at and after
+  `stats:interactive_prompt_sessions:bysubcat:earliest`. Days are delineated
+  by the America/Los_Angeles timezone.
 
-- `stats:interactive_prompt_sessions:bysubcat:totals:{unix_date}` goes to a hash where the
+- `stats:interactive_prompt_sessions:bysubcat:total_users` goes to a hash where the keys are the
+  internal names of subcategories and the values are the total number of interactive prompt
+  sessions for journeys in that subcategory, with a max of one per user per day, excluding days
+  at and after `stats:interactive_prompt_sessions:bysubcat:earliest`. Days are delineated
+  by the America/Los_Angeles timezone.
+
+- `stats:interactive_prompt_sessions:bysubcat:total_views:{unix_date}` goes to a hash where the
   keys are the internal names of subcategories and the values are the total number
-  of prompt sessions for that subcategory on the given date, expressed as the
+  of prompt sessions for journeys in that subcategory on the given date, expressed as the
   number of days since January 1st, 1970. This is used to ensure that the journey
   session view totals only update once per day, to improve caching. The difference
   between this and the `stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs`
   hash is this does not deduplicate users.
-
-- `stats:interactive_prompt_sessions:bysubcat:totals:earliest` goes to a string representing
-  the earliest unix_date for which `stats:interactive_prompt_sessions:bysubcat:totals:{unix_date}`
-  hasn't yet been rotated into `stats:interactive_prompt_sessions:bysubcat:totals`. This is used
-  to prevent leaking keys if the job which is supposed to rotate the data is delayed.
 
 - `stats:retention:{period}:{retained}:{unix_date}` where:
 

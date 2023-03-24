@@ -55,4 +55,7 @@ CREATE INDEX journey_feedback_user_id_journey_id_cat_idx ON journey_feedback(use
 
 /* Foreign key, search */
 CREATE INDEX journey_feedback_journey_id_user_id_cat_idx ON journey_feedback(journey_id, user_id, created_at);
+
+/* Search for dashboard */
+CREATE INDEX journey_feedback_created_at_idx ON journey_feedback(created_at);
 ```

@@ -4,6 +4,14 @@ import os
 import secrets
 
 
+def get_temp_file() -> str:
+    """Gets a path to a random file which is in a folder that exists. This does not
+    manage cleaning the file on your behalf
+    """
+    os.makedirs("tmp", exist_ok=True)
+    return os.path.join("tmp", secrets.token_hex(16))
+
+
 @contextmanager
 def temp_file() -> Generator[str, None, None]:
     """Creates a temporary file and deletes it when done; yields the path to the file.
@@ -13,8 +21,7 @@ def temp_file() -> Generator[str, None, None]:
 
     Stores the files in the `tmp` folder, which is created if it doesn't exist
     """
-    os.makedirs("tmp", exist_ok=True)
-    tmp_file_loc = os.path.join("tmp", secrets.token_hex(16))
+    tmp_file_loc = get_temp_file()
     try:
         yield tmp_file_loc
     finally:

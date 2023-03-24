@@ -300,3 +300,7 @@ the keys we store locally on backend instances via diskcache
 
 - `utm_conversion_stats:{unix_date}` goes to a serialized `UTMConversionStatsResponse`
   from [read_utm_conversion_stats](../../admin/routes/read_utm_conversion_stats.py)
+
+- `journey_feedback:{unix_date}` goes to the serialized `ReadJourneyFeedbackResponse`
+  for the journey feedback on the given day, if available.
+  See [read_journey_feedback](../../admin/routes/read_journey_feedback.py)

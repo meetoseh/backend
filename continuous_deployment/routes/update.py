@@ -35,7 +35,7 @@ EXPECTED_NUM_SUBSCRIBERS = {
 )
 async def update(args: UpdateArgs, authorization: Optional[str] = Header(None)):
     """Triggers deployment of the latest version of the given repository.
-    Authorization must be of the form 'token <token>' where token is the shared
+    Authorization must be of the form 'bearer <token>' where token is the shared
     deployment secret
     """
     if authorization is None:

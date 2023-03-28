@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -9,7 +10,7 @@ from error_middleware import handle_error
 from itgs import Itgs
 from models import StandardErrorResponse, STANDARD_ERRORS_BY_CODE
 from daily_events.models.external_daily_event import ExternalDailyEvent
-from users.lib.entitlements import get_entitlement
+from users.lib.entitlements import fail_open_entitlement, get_entitlement
 import perpetual_pub_sub as pps
 from daily_events.auth import create_jwt
 import time
@@ -67,6 +68,18 @@ async def get_current_daily_event(authorization: Optional[str] = Header(None)):
         pro = await get_entitlement(
             itgs, user_sub=auth_result.result.sub, identifier="pro"
         )
+
+        # during the beta we want everyone to have access
+        if not pro.is_active and os.environ["ENVIRONMENT"] != "dev":
+            jobs = await itgs.jobs()
+            await jobs.enqueue(
+                "runners.revenue_cat.ensure_user", user_sub=auth_result.result.sub
+            )
+
+            pro = await fail_open_entitlement(
+                itgs, user_sub=auth_result.result.sub, identifier="pro"
+            )
+
         if pro.is_active:
             res = await read_one_external(
                 itgs, uid=current_daily_event_uid, level={"read", "start_full"}

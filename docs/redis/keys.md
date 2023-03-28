@@ -211,10 +211,6 @@ the keys that we use in redis
 - `daily_event:notifications:lock` goes to a string if an instance is processing notifications
   for daily events, and is unset otherwise
 
-- `interactive_prompts:special:notification_time:uid`: The UID of the interactive prompt that
-  is used as the control for users setting their notification time. Set on the fly if this
-  is not set.
-
 - `users:klaviyo_ensure_user:{user_sub}:lock` goes to either an empty key or the json serialization
   of
 
@@ -293,6 +289,19 @@ the keys that we use in redis
   essentially unsanitized input, with the exception that some length sanity
   checks are applied prior to being queued. Hence if the visitor does not
   exist the entry should be ignored.
+
+- `interactive_prompts:special:{public_identifier}:info`: goes to a hash with
+  the following key/value pairs, pertaining the the current interactive prompt
+  instance for the public interactive prompt with the given public identifier:
+
+  - `uid`: The uid of the current interactive prompt
+  - `version`: Which version of the public interactive prompt this is for
+  - `expires_at`: When the current interactive prompt needs to be rotated,
+    in integer unix seconds from the unix epoch.
+
+- `interactive_prompts:special:{public_identifier}:lock` goes to a string while
+  we are creating a new interactive prompt for the public interactive prompt with
+  the given identifier.
 
 ### Stats namespace
 

@@ -5,7 +5,8 @@ a native resolution of 2560x1600
 from typing import List, Optional, Tuple
 from daily_events.lib.read_one_external import evict_external_daily_event
 from itgs import Itgs
-from journeys.events.helper import purge_journey_meta
+
+# from journeys.events.helper import purge_journey_meta REMOVED; was in original migration
 from journeys.lib.read_one_external import evict_external_journey
 import socket
 
@@ -103,7 +104,7 @@ async def up(itgs: Itgs) -> None:
             )
 
         for updated_uid in updated_journey_uids:
-            await purge_journey_meta(itgs, updated_uid)
+            # await purge_journey_meta(itgs, updated_uid)  REMOVED; was in original migration
             await evict_external_journey(itgs, uid=updated_uid)
             response = await cursor.execute(
                 """

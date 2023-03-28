@@ -294,13 +294,20 @@ the keys we store locally on backend instances via diskcache
   `journey_subcategory`, which is the internal name of the subcategory of the journey
   using this interactive prompt, if there is one, for stats.
 
-- `interactive_prompts:special:notification_time:uid` goes to the uid of the interactive
-  prompt that is used as the control for users setting their preferred notification time,
-  if cached.
-
 - `utm_conversion_stats:{unix_date}` goes to a serialized `UTMConversionStatsResponse`
   from [read_utm_conversion_stats](../../admin/routes/read_utm_conversion_stats.py)
 
 - `journey_feedback:{unix_date}` goes to the serialized `ReadJourneyFeedbackResponse`
   for the journey feedback on the given day, if available.
   See [read_journey_feedback](../../admin/routes/read_journey_feedback.py)
+
+- `interactive_prompts:special:{public_identifier}:info` goes to a string key
+  containing the json representaiton of the following, pertaining the the
+  current interactive prompt instance used for the public interactive prompt
+  with the given identifier:
+
+  ```py
+  class LocallyCachedPublicInteractivePrompt:
+      uid: str
+      version: int
+  ```

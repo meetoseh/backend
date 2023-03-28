@@ -180,9 +180,10 @@ async def finish_verify(
                 and "email" in auth_result.result.claims
                 else auth_result.result.sub
             )
-            await slack.send_oseh_bot_message(
-                f"{identifier} just verified their phone number: {phone_number} via {socket.gethostname()}"
-            )
+            if os.environ["ENVIRONMENT"] != "dev":
+                await slack.send_oseh_bot_message(
+                    f"{identifier} just verified their phone number: {phone_number} via {socket.gethostname()}"
+                )
 
             cursor = conn.cursor("weak")
             response = await cursor.execute(

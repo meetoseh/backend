@@ -201,7 +201,7 @@ async def raw_read_introductory_journeys(
             instructors.deleted_at,
             journeys.title,
             journeys.description,
-            journeys.prompt,
+            interactive_prompts.prompt,
             journeys.created_at,
             journeys.deleted_at,
             daily_events.uid,

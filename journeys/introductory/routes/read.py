@@ -183,6 +183,7 @@ async def raw_read_introductory_journeys(
     daily_events = Table("daily_events")
     samples = content_files.as_("samples")
     videos = content_files.as_("videos")
+    interactive_prompts = Table("interactive_prompts")
 
     query: QueryBuilder = (
         Query.from_(introductory_journeys)
@@ -214,6 +215,8 @@ async def raw_read_introductory_journeys(
         )
         .join(journeys)
         .on(journeys.id == introductory_journeys.journey_id)
+        .join(interactive_prompts)
+        .on(interactive_prompts.id == journeys.interactive_prompt_id)
         .join(content_files)
         .on(content_files.id == journeys.audio_content_file_id)
         .join(image_files)
@@ -271,7 +274,7 @@ async def raw_read_introductory_journeys(
         elif key == "instructor_uid":
             return instructors.uid
         elif key == "prompt_style":
-            return Function("json_extract", journeys.prompt, "style")
+            return Function("json_extract", interactive_prompts.prompt, "style")
         elif key == "daily_event_uid":
             return daily_events.uid
         elif key == "blurred_background_image_file_uid":

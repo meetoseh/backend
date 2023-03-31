@@ -155,6 +155,11 @@ async def get_response_for_date(
     if resp is not None:
         return resp
 
+    headers = {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "private, max-age=86400, stale-while-revalidate=86400, stale-if-error=86400",
+    }
+
     tmp_file = await get_response_from_db_as_temp_file(itgs, req_unix_date)
     if tmp_file is not None:
         try:
@@ -166,10 +171,7 @@ async def get_response_for_date(
 
         return StreamingResponse(
             content=read_file_in_parts(tmp_file, delete_after=True),
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Cache-Control": "private, max-age=86400, stale-while-revalidate=86400, stale-if-error=86400",
-            },
+            headers=headers,
         )
 
     tmp_file = await get_response_from_redis_as_temp_file(itgs, req_unix_date)
@@ -178,16 +180,12 @@ async def get_response_for_date(
             content=UTMConversionStatsResponse(
                 rows=[], retrieved_at=time.time()
             ).json(),
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-            },
+            headers=headers,
         )
 
     return StreamingResponse(
         content=read_file_in_parts(tmp_file, delete_after=True),
-        headers={
-            "Content-Type": "application/json; charset=utf-8",
-        },
+        headers=headers,
     )
 
 

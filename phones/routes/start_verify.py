@@ -8,6 +8,7 @@ from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from starlette.concurrency import run_in_threadpool
 from auth import auth_id
 from itgs import Itgs
+from dataclasses import dataclass
 import secrets
 import time
 import phonenumbers
@@ -35,6 +36,9 @@ class StartVerifyRequest(BaseModel):
 
     @validator("phone_number", pre=True)
     def validate_phone_number(cls, v):
+        if os.environ["ENVIRONMENT"] == "dev" and v == "+1555 - 555 - 5555":
+            return "+15555555555"
+
         try:
             parsed = phonenumbers.parse(v)
         except phonenumbers.phonenumberutil.NumberParseException:
@@ -110,11 +114,15 @@ async def start_verify(
 
         twilio = await itgs.twilio()
         service_id = os.environ["OSEH_TWILIO_VERIFY_SERVICE_SID"]
-        verification = await run_in_threadpool(
-            twilio.verify.v2.services(service_id).verifications.create,
-            to=args.phone_number,
-            channel="sms",
-        )
+
+        if os.environ["ENVIRONMENT"] == "dev" and args.phone_number == "+15555555555":
+            verification = FakeVerification(sid=f"oseh_fv_{secrets.token_urlsafe(16)}")
+        else:
+            verification = await run_in_threadpool(
+                twilio.verify.v2.services(service_id).verifications.create,
+                to=args.phone_number,
+                channel="sms",
+            )
 
         if verification.status != "pending":
             slack = await itgs.slack()
@@ -195,3 +203,9 @@ async def start_verify(
             content=StartVerifyResponse(uid=uid).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
+
+
+@dataclass
+class FakeVerification:
+    sid: str
+    status: str = "pending"

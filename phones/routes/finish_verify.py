@@ -9,6 +9,7 @@ from twilio.base.exceptions import TwilioRestException
 from auth import auth_id
 from itgs import Itgs
 from loguru import logger
+from dataclasses import dataclass
 import users.lib.stats
 import socket
 import time
@@ -119,11 +120,14 @@ async def finish_verify(
         service_id = os.environ["OSEH_TWILIO_VERIFY_SERVICE_SID"]
 
         try:
-            response = await run_in_threadpool(
-                twilio.verify.v2.services(service_id).verification_checks.create,
-                to=phone_number,
-                code=args.code,
-            )
+            if os.environ["ENVIRONMENT"] == "dev" and phone_number == "+15555555555":
+                response = FakeVerifyResponse(status="approved")
+            else:
+                response = await run_in_threadpool(
+                    twilio.verify.v2.services(service_id).verification_checks.create,
+                    to=phone_number,
+                    code=args.code,
+                )
         except TwilioRestException as e:
             if e.code != 20404:
                 await handle_error(e)
@@ -238,3 +242,8 @@ async def finish_verify(
             content=FinishVerifyResponse(verified_at=verified_at).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
+
+
+@dataclass
+class FakeVerifyResponse:
+    status: str

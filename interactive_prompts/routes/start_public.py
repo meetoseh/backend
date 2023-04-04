@@ -62,11 +62,15 @@ PUBLIC_INTERACTIVE_PROMPTS: Dict[str, PublicInteractivePrompt] = {
     ),
     "onboarding-prompt-feeling-result": PublicInteractivePrompt(
         identifier="onboarding-prompt-feeling-result",
-        version=0,
+        version=1,
         prompt=WordPrompt(
             style="word",
-            text="How did that class make you feel?",
-            options=["Calming", "Chill", "I’m Vibing it "],
+            text="How are you feeling after your first class?",
+            options=[
+                "Lighter and lifted.",
+                "Calm, cool, collected.",
+                "Grounded and grateful.",
+            ],
         ),
         duration_seconds=60,
         expires_seconds=60 * 60 * 24 * 7 * 4,

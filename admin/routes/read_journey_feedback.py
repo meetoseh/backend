@@ -236,7 +236,7 @@ async def read_feedback_from_db_and_write_to_file(
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 
-    max_per_query = 2  # TODO 50
+    max_per_query = 50
     current_journey_id: Optional[int] = None
     last_journey_feedback_id: Optional[int] = None
 
@@ -301,7 +301,7 @@ async def read_feedback_from_db_and_write_to_file(
             row_user_family_name: Optional[str] = row[5]
             row_user_email: Optional[str] = row[6]
             row_user_created_at: float = row[7]
-            row_journey_feedback_response: bool = bool(row[8])
+            row_journey_feedback_response: bool = int(row[8]) == 1
             row_journey_feedback_created_at: float = row[9]
 
             if current_journey_id != row_journey_id:

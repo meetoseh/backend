@@ -70,7 +70,7 @@ async def get_current_daily_event(authorization: Optional[str] = Header(None)):
         )
 
         # during the beta we want everyone to have access
-        if not pro.is_active and os.environ["ENVIRONMENT"] != "dev":
+        if (pro is None or not pro.is_active) and os.environ["ENVIRONMENT"] != "dev":
             jobs = await itgs.jobs()
             await jobs.enqueue(
                 "runners.revenue_cat.ensure_user", user_sub=auth_result.result.sub

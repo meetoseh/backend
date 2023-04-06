@@ -51,11 +51,11 @@ class PublicInteractivePrompt:
 PUBLIC_INTERACTIVE_PROMPTS: Dict[str, PublicInteractivePrompt] = {
     "onboarding-prompt-feeling": PublicInteractivePrompt(
         identifier="onboarding-prompt-feeling",
-        version=0,
+        version=1,
         prompt=WordPrompt(
             style="word",
-            text="Today, I am here to...",
-            options=["Relax", "Destress", "Focus"],
+            text="Today I want to....",
+            options=["Relax", "Destress", "Connect"],
         ),
         duration_seconds=60,
         expires_seconds=60 * 60 * 24 * 7 * 4,
@@ -77,10 +77,10 @@ PUBLIC_INTERACTIVE_PROMPTS: Dict[str, PublicInteractivePrompt] = {
     ),
     "notification-time": PublicInteractivePrompt(
         identifier="notification-time",
-        version=0,
+        version=1,
         prompt=WordPrompt(
             style="word",
-            text="When do you want to receive text reminders?",
+            text="When’s the best time to remind you to take a class?",
             options=["Morning", "Afternoon", "Evening"],
         ),
         duration_seconds=60,

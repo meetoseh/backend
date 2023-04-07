@@ -311,3 +311,7 @@ the keys we store locally on backend instances via diskcache
       uid: str
       version: int
   ```
+
+- `daily_phone_verifications:{from_unix_date}:{to_unix_date}` goes to a string
+  key containing the serialized daily phone verifications chart for the given
+  date range.

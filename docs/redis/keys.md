@@ -303,6 +303,16 @@ the keys that we use in redis
   we are creating a new interactive prompt for the public interactive prompt with
   the given identifier.
 
+- `daily_phone_verifications:{unix_date}` goes to a hash where the keys are one of:
+
+  - `total` - how many total phone verifications approved on this date
+  - `users` - how many unique users had a phone verification approved on this date
+  - `first` - how many users had their first phone verification approved on this date
+
+    Days are delineated using the America/Los_Angeles timezone. This key is set to
+    automatically expire, and thus this is acting as a true cache, and hence this isn't
+    in the stats namespace (which is primarily for authoritative keys)
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

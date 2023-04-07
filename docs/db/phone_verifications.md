@@ -38,6 +38,9 @@ CREATE TABLE phone_verifications (
     verified_at REAL NULL
 );
 
-/* Foreign key */
-CREATE INDEX phone_verifications_user_id_idx ON phone_verifications(user_id);
+/* Foreign key, search */
+CREATE INDEX phone_verifications_user_id_verified_at_idx ON phone_verifications(user_id, verified_at);
+
+/* Statistics */
+CREATE INDEX phone_verifications_verified_at_idx ON phone_verifications(verified_at) WHERE verified_at IS NOT NULL;
 ```

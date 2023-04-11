@@ -266,7 +266,7 @@ async def create_vip_chat_request(
             if args.display_data.image_caption is None:
                 args.display_data.image_caption = "Actual photo of me as a kid"
             if args.display_data.title is None:
-                args.display_data.title = f"Hi {given_name}"
+                args.display_data.title = f"Hi {given_name},"
             if args.display_data.message is None:
                 args.display_data.message = "You’re an Oseh VIP and we’d love to partner with you on how to make Oseh even better."
             if args.display_data.cta is None:

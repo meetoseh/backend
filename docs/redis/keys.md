@@ -313,6 +313,9 @@ the keys that we use in redis
     automatically expire, and thus this is acting as a true cache, and hence this isn't
     in the stats namespace (which is primarily for authoritative keys)
 
+- `vip_chat_request_image_uid` goes to the uid of the image file that's being used as the
+  default in the vip chat request prompt
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

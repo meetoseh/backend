@@ -26,6 +26,7 @@ import phones.router
 import notifications.router
 import interactive_prompts.router
 import visitors.router
+import vip_chat_requests.router
 import admin.routes.read_journey_subcategory_view_stats
 import daily_events.lib.has_started_one
 import daily_events.lib.read_one_external
@@ -112,6 +113,11 @@ app.include_router(
     tags=["interactive_prompts"],
 )
 app.include_router(visitors.router.router, prefix="/api/1/visitors", tags=["visitors"])
+app.include_router(
+    vip_chat_requests.router.router,
+    prefix="/api/1/vip_chat_requests",
+    tags=["vip_chat_requests"],
+)
 app.router.redirect_slashes = False
 
 

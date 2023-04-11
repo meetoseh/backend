@@ -6,6 +6,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_admin
+from db.utils import sqlite_string_concat
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItem, FilterItemModel
@@ -223,6 +224,8 @@ async def raw_read_vip_chat_requests(
             "user_created_at",
         ):
             return users.field(key[5:])
+        elif key == 'user_name':
+            return sqlite_string_concat(users.given_name, ' ', users.family_name)
         elif key in (
             "added_by_user_sub",
             "added_by_user_given_name",

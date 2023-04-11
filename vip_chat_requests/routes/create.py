@@ -3,6 +3,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
 from typing import Literal, Optional
 from auth import auth_admin
+from image_files.models import ImageFileRef
+from image_files.auth import create_jwt as create_image_file_jwt
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 import time
@@ -10,6 +12,16 @@ import secrets
 
 
 router = APIRouter()
+
+
+class User(BaseModel):
+    sub: str = Field(description="The sub of the user")
+    given_name: str = Field(description="The given name of the user")
+    family_name: str = Field(description="The family name of the user")
+    email: str = Field(description="The email address of the user")
+    created_at: float = Field(
+        description="The time the user was created in seconds since the epoch"
+    )
 
 
 # we don't want to embed any of the defaults into the frontend, and we definitely
@@ -48,6 +60,23 @@ class Phone04102023VariantInternal(BaseModel):
     )
 
 
+class Phone04102023VariantAdmin(BaseModel):
+    """The display data for this variant, in the database"""
+
+    phone_number: str = Field(
+        description="The phone number of the founder to text, E.164 format"
+    )
+    text_prefill: str = Field(
+        description="The text the user should have prefilled in the sms link"
+    )
+    background_image: ImageFileRef = Field(description="The background image")
+    image: ImageFileRef = Field(description="The image of the founder, or similar")
+    image_caption: str = Field(description="The caption of the image")
+    title: str = Field(description="The title text to display")
+    message: str = Field(description="The message to display")
+    cta: str = Field(description="The call-to-action text")
+
+
 class CreateVipChatRequestRequest(BaseModel):
     user_sub: Optional[str] = Field(
         description="The sub of the user who should recieve the chat request."
@@ -77,20 +106,19 @@ class CreateVipChatRequestRequest(BaseModel):
 
 class CreateVipChatRequestResponse(BaseModel):
     uid: str = Field(description="The uid of the newly created chat request")
-    user_sub: str = Field(
-        description="The sub of the user who should recieve the chat request."
-    )
-    added_by_user_sub: str = Field(
-        description="The sub of the user who created this chat request"
-    )
+    user: User = Field(description="The user who should recieve the chat request.")
+    added_by_user: User = Field(description="The user who created this chat request")
     variant: Literal["phone-04102023"] = Field(
         description="Which prompt to show the user"
     )
-    display_data: Phone04102023VariantInternal = Field(
+    display_data: Phone04102023VariantAdmin = Field(
         description="The display data, which depends on the variant"
     )
     reason: Optional[str] = Field(
         description="Why we are sending this chat request. This is for debugging purposes only."
+    )
+    created_at: float = Field(
+        description="The time the chat request was created in seconds since the epoch"
     )
 
 
@@ -173,7 +201,7 @@ async def create_vip_chat_request(
             args.user_sub = response.results[0][0]
 
         response = await cursor.execute(
-            "SELECT given_name FROM users WHERE sub = ?",
+            "SELECT given_name, family_name, email, created_at FROM users WHERE sub = ?",
             (args.user_sub,),
         )
         if not response.results:
@@ -191,6 +219,27 @@ async def create_vip_chat_request(
         given_name: str = response.results[0][0]
         if given_name == "Anonymous":
             given_name = "there"
+
+        (
+            user_given_name,
+            user_family_name,
+            user_email,
+            user_created_at,
+        ) = response.results[0]
+
+        response = await cursor.execute(
+            "SELECT given_name, family_name, email, created_at FROM users WHERE sub = ?",
+            (auth_result.result.sub,),
+        )
+        if not response.results:
+            raise Exception("admin user deleted mid-request?")
+
+        (
+            added_by_user_given_name,
+            added_by_user_family_name,
+            added_by_user_email,
+            added_by_user_created_at,
+        ) = response.results[0]
 
         if args.variant == "phone-04102023":
             if args.display_data.phone_number is None:
@@ -302,11 +351,43 @@ async def create_vip_chat_request(
             return Response(
                 content=CreateVipChatRequestResponse(
                     uid=uid,
-                    user_sub=args.user_sub,
-                    added_by_user_sub=auth_result.result.sub,
+                    user=User(
+                        sub=args.user_sub,
+                        given_name=user_given_name,
+                        family_name=user_family_name,
+                        email=user_email,
+                        created_at=user_created_at,
+                    ),
+                    added_by_user=User(
+                        sub=auth_result.result.sub,
+                        given_name=added_by_user_given_name,
+                        family_name=added_by_user_family_name,
+                        email=added_by_user_email,
+                        created_at=added_by_user_created_at,
+                    ),
                     variant=args.variant,
-                    display_data=args.display_data,
+                    display_data=Phone04102023VariantAdmin(
+                        phone_number=args.display_data.phone_number,
+                        text_prefill=args.display_data.text_prefill,
+                        background_image=ImageFileRef(
+                            uid=args.display_data.background_image_uid,
+                            jwt=await create_image_file_jwt(
+                                itgs, args.display_data.background_image_uid
+                            ),
+                        ),
+                        image=ImageFileRef(
+                            uid=args.display_data.image_uid,
+                            jwt=await create_image_file_jwt(
+                                itgs, args.display_data.image_uid
+                            ),
+                        ),
+                        image_caption=args.display_data.image_caption,
+                        title=args.display_data.title,
+                        message=args.display_data.message,
+                        cta=args.display_data.cta,
+                    ),
                     reason=args.reason,
+                    created_at=now,
                 ).json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=201,

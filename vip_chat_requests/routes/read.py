@@ -14,35 +14,12 @@ from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from image_files.models import ImageFileRef
 from itgs import Itgs
-from vip_chat_requests.routes.create import Phone04102023VariantInternal
+from vip_chat_requests.routes.create import (
+    User,
+    Phone04102023VariantInternal,
+    Phone04102023VariantAdmin,
+)
 from image_files.auth import create_jwt as create_image_file_jwt
-
-
-class User(BaseModel):
-    sub: str = Field(description="The sub of the user")
-    given_name: str = Field(description="The given name of the user")
-    family_name: str = Field(description="The family name of the user")
-    email: str = Field(description="The email address of the user")
-    created_at: float = Field(
-        description="The time the user was created in seconds since the epoch"
-    )
-
-
-class Phone04102023VariantAdmin(BaseModel):
-    """The display data for this variant, in the database"""
-
-    phone_number: str = Field(
-        description="The phone number of the founder to text, E.164 format"
-    )
-    text_prefill: str = Field(
-        description="The text the user should have prefilled in the sms link"
-    )
-    background_image: ImageFileRef = Field(description="The background image")
-    image: ImageFileRef = Field(description="The image of the founder, or similar")
-    image_caption: str = Field(description="The caption of the image")
-    title: str = Field(description="The title text to display")
-    message: str = Field(description="The message to display")
-    cta: str = Field(description="The call-to-action text")
 
 
 class VipChatRequest(BaseModel):

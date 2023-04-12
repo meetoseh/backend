@@ -65,6 +65,9 @@ async def dev_login(args: DevLoginRequest):
     elif args.sub.startswith("test_"):
         given_name = "Test"
         picture = None
+    elif args.sub.startswith("dupl_"):
+        given_name = "Duplicate"
+        email = "duplicate@oseh.com"
 
     async with Itgs() as itgs:
         now = int(time.time())

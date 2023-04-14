@@ -316,6 +316,9 @@ the keys that we use in redis
 - `vip_chat_request_image_uid` goes to the uid of the image file that's being used as the
   default in the vip chat request prompt
 
+- `course_activations:{stripe_checkout_session_id}:lock` a basic key used as a lock on
+  activating the course contained in the stripe checkout session with the given id
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

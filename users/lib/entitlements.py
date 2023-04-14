@@ -96,9 +96,7 @@ async def get_entitlements_from_source(
             (
                 key,
                 CachedEntitlement(
-                    is_active=(
-                        value.expires_date is not None and value.expires_date > dnow
-                    ),
+                    is_active=(value.expires_date is None or value.expires_date > dnow),
                     expires_at=(
                         None
                         if value.expires_date is None

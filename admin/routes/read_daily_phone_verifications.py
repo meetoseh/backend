@@ -4,7 +4,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import Dict, Iterable, List, Literal, Optional, Tuple
 from auth import auth_admin
-from content_files.helper import read_in_parts
+from content_files.lib.serve_s3_file import read_in_parts
 from models import STANDARD_ERRORS_BY_CODE
 from dataclasses import dataclass
 from itgs import Itgs

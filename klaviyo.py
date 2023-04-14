@@ -213,6 +213,7 @@ class Klaviyo:
         last_name: Optional[str],
         timezone: Optional[str],
         environment: str,
+        course_links_by_slug: Optional[dict[str, str]] = None,
     ) -> Optional[str]:
         """Creates a profile on klaviyo with the given data, returning the profile id.
         If the profile already exists, returns None.
@@ -225,6 +226,8 @@ class Klaviyo:
             last_name (str, None): The last name of the user, if known
             timezone (str, None): The timezone of the user, if known
             environment (str): The environment the user is in, e.g. dev, production
+            course_links_by_slug (dict[str, str], None): A mapping of course slugs to
+                course links, if known
 
         Returns:
             str: The profile id
@@ -249,6 +252,14 @@ class Klaviyo:
                     ),
                     "properties": {
                         "environment": environment,
+                        **(
+                            dict(
+                                (f"course_link_{slug}", link)
+                                for slug, link in course_links_by_slug.items()
+                            )
+                            if course_links_by_slug is not None
+                            else {}
+                        ),
                     },
                 },
             }
@@ -314,6 +325,8 @@ class Klaviyo:
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
         timezone: Optional[str] = None,
+        course_links_by_slug: Optional[dict[str, str]] = None,
+        preserve_phone: bool = False,
     ) -> None:
         """Updates the klaviyo profile with the given id to match the given data.
 
@@ -330,7 +343,7 @@ class Klaviyo:
             profile_id (str): The profile id to update
             email (str, None): The email address of the user, None to keep the same
             phone_number (str, None): The phone number of the user, if known. Will overwrite
-                the existing phone number even if None.
+                the existing phone number even if None, unless preserve_phone is set to true
             external_id (str, None): The external id to use, typically the user sub, or None
                 to keep the same
             first_name (str, None): The first name of the user, if known
@@ -338,13 +351,20 @@ class Klaviyo:
             timezone (str, None): The timezone of the user, if known
             environment (str, None): The environment the user is in, e.g. dev, production,
                 or None to keep the same
+            course_links_by_slug (dict[str, str], None): A mapping of course slugs to
+                course links. If there are existing course links whose slug are not in this
+                dict they are left as-is. If None, the course links are not changed. Keys
+                in this list are updated or inserted to match the values.
+            preserve_phone (bool): If true, the phone number will not be overwritten if
+                it is None. This is useful if you want to preserve the phone number if
+                it is not known, but still want to update other fields.
         """
         body = {
             "data": {
                 "type": "profile",
                 "id": profile_id,
                 "attributes": {
-                    "phone_number": phone_number,
+                    **({"phone_number": phone_number} if not preserve_phone else {}),
                     **({"email": email} if email is not None else {}),
                     **({"external_id": external_id} if external_id is not None else {}),
                     **({"first_name": first_name} if first_name is not None else {}),
@@ -357,10 +377,22 @@ class Klaviyo:
                     **(
                         {
                             "properties": {
-                                "environment": environment,
+                                **(
+                                    {"environment": environment}
+                                    if environment is not None
+                                    else {}
+                                ),
+                                **(
+                                    dict(
+                                        (f"course_link_{slug}", link)
+                                        for slug, link in course_links_by_slug.items()
+                                    )
+                                    if course_links_by_slug is not None
+                                    else {}
+                                ),
                             }
                         }
-                        if environment is not None
+                        if environment is not None or course_links_by_slug is not None
                         else {}
                     ),
                 },

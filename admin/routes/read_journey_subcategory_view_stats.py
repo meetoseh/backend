@@ -7,7 +7,7 @@ from auth import auth_admin
 from error_middleware import handle_error
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
-from content_files.helper import read_in_parts
+from content_files.lib.serve_s3_file import read_in_parts
 import perpetual_pub_sub as pps
 from loguru import logger
 import unix_dates

@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional, List, Union
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
-from content_files.helper import read_in_parts
+from content_files.lib.serve_s3_file import read_in_parts
 from itgs import Itgs
 import datetime
 import unix_dates

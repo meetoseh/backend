@@ -1,8 +1,8 @@
 import io
-from typing import Dict, Generator, Literal, Optional, TypedDict, Union
+from typing import Dict, Generator, Literal, Optional, TypedDict
 import aiofiles
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response
 from image_files.auth import auth_any
 from itgs import Itgs
 from models import (
@@ -10,11 +10,10 @@ from models import (
     StandardErrorResponse,
     STANDARD_ERRORS_BY_CODE,
 )
-import diskcache
 import asyncio
 import json
 from temp_files import temp_file
-from content_files.helper import DOWNLOAD_LOCKS
+from content_files.lib.serve_s3_file import serve_s3_file, ServableS3File
 
 router = APIRouter()
 
@@ -97,64 +96,14 @@ async def get_image(
 
 async def serve_ife(itgs: Itgs, meta: CachedImageFileExportMetadata) -> Response:
     """Serves the image file export with the given metadata"""
-
-    local_cache = await itgs.local_cache()
-    resp = await serve_ife_from_cache(local_cache, meta)
-    if resp is not None:
-        return resp
-
-    if meta["s3_file_uid"] not in DOWNLOAD_LOCKS:
-        DOWNLOAD_LOCKS[meta["s3_file_uid"]] = asyncio.Lock()
-
-        if len(DOWNLOAD_LOCKS) > 1024:
-            for uid in list(DOWNLOAD_LOCKS.keys()):
-                if not DOWNLOAD_LOCKS[uid].locked():
-                    del DOWNLOAD_LOCKS[uid]
-
-    async with DOWNLOAD_LOCKS[meta["s3_file_uid"]]:
-        resp = await serve_ife_from_cache(local_cache, meta)
-        if resp is not None:
-            return resp
-
-        files = await itgs.files()
-        with temp_file() as tmp_file:
-            async with aiofiles.open(tmp_file, "wb") as f:
-                await files.download(
-                    f, bucket=files.default_bucket, key=meta["s3_file_key"], sync=False
-                )
-
-            with open(tmp_file, "rb") as f:
-                local_cache.set(
-                    f"s3_files:{meta['s3_file_uid']}".encode("utf-8"),
-                    f,
-                    read=True,
-                    expire=900,
-                )
-
-    resp = await serve_ife_from_cache(local_cache, meta)
-    assert resp is not None, "just filled cache, should be in there"
-    return resp
-
-
-async def serve_ife_from_cache(
-    local_cache: diskcache.Cache, meta: CachedImageFileExportMetadata
-) -> Optional[Response]:
-    cached_data: Optional[Union[io.BytesIO, bytes]] = local_cache.get(
-        f"s3_files:{meta['s3_file_uid']}".encode("utf-8"), read=True
-    )
-    if cached_data is None:
-        return None
-
-    headers = {
-        "Content-Type": meta["content_type"],
-        "Content-Length": str(meta["file_size"]),
-    }
-
-    if isinstance(cached_data, (bytes, bytearray)):
-        return Response(content=cached_data, status_code=200, headers=headers)
-
-    return StreamingResponse(
-        content=read_in_parts(cached_data), status_code=200, headers=headers
+    return await serve_s3_file(
+        itgs,
+        file=ServableS3File(
+            uid=meta["s3_file_uid"],
+            key=meta["s3_file_key"],
+            content_type=meta["content_type"],
+            file_size=meta["file_size"],
+        ),
     )
 
 

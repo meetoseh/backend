@@ -38,3 +38,5 @@ existing keys.
   individual [content_file_export_part](../db/content_file_export_parts.md) is
   located, where its a content file export for an video file, and the particular
   export part is for an mp4.
+- `s3_files/courses/{course_uid}/{export_uid}/{random}.zip`: Where course exports
+  are stored. See [../db/course_exports.md]

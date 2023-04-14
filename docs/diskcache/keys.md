@@ -17,7 +17,8 @@ the keys we store locally on backend instances via diskcache
   }
   ```
 - `s3_files:{uid}`: a cache for s3 files. used, for example,
-  [here](../../image_files/routes/image.py) and [here](../../content_files/helper.py)
+  [here](../../image_files/routes/image.py), [here](../../content_files/helper.py),
+  and [here](../../courses/routes/finish_download.py)
 - `auth:is_admin:{sub}`: contains `b'1'` if the user is an admin, `b'0'` otherwise.
   [used here](../../auth.py)
 - `content_files:exports:parts:{uid}` a json object containing some metadata about the

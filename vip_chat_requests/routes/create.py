@@ -268,7 +268,7 @@ async def create_vip_chat_request(
             if args.display_data.title is None:
                 args.display_data.title = f"Hi {given_name},"
             if args.display_data.message is None:
-                args.display_data.message = "You’re an Oseh VIP and we’d love to partner with you on how to make Oseh even better."
+                args.display_data.message = "You’re an Oseh VIP and we’d love to partner with you on how to make Oseh even better. As a thank you for taking the time to chat with us, we’ll gift you a $25 gift card."
             if args.display_data.cta is None:
                 args.display_data.cta = "Let’s Chat"
 

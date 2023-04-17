@@ -94,7 +94,7 @@ async def attach_course(
             itgs, user_sub=auth_result.result.sub
         )
         await users.lib.entitlements.publish_purge_message(
-            itgs, user_sub=auth_result.result.sub
+            itgs, user_sub=auth_result.result.sub, min_checked_at=time.time()
         )
 
         active_entitlement_idens = [

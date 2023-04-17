@@ -223,8 +223,8 @@ async def activate_course(
                         title=row[2],
                         title_short=row[3],
                         description=row[4],
-                        background_image_file_uid=row[5],
-                        circle_image_file_uid=row[6],
+                        background_image_uid=row[5],
+                        circle_image_uid=row[6],
                     )
                     return Response(
                         content=ActivateCourseResponse(
@@ -300,7 +300,7 @@ async def activate_course(
                         courses.revenue_cat_entitlement IN ({question_mark_list(len(active_entitlement_idens))})
                     ORDER BY courses.revenue_cat_entitlement ASC
                     """,
-                    (args.checkout_session_id, *active_entitlement_idens),
+                    active_entitlement_idens,
                 )
 
                 for row in response.results or []:
@@ -312,8 +312,8 @@ async def activate_course(
                             title=row[2],
                             title_short=row[3],
                             description=row[4],
-                            background_image_file_uid=row[5],
-                            circle_image_file_uid=row[6],
+                            background_image_uid=row[5],
+                            circle_image_uid=row[6],
                         )
 
                     link_uid = f"oseh_cdl_{secrets.token_urlsafe(16)}"
@@ -374,6 +374,7 @@ async def activate_course(
                 else:
                     await klaviyo.update_profile(
                         profile_id=new_profile_id,
+                        phone_number=None,
                         course_links_by_slug=course_links,
                         preserve_phone=True,
                     )

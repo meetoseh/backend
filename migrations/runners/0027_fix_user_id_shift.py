@@ -1,4 +1,4 @@
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from itgs import Itgs
 from loguru import logger
 import json
@@ -43,7 +43,7 @@ async def up(itgs: Itgs):
     cursor = conn.cursor()
 
     slack = await itgs.slack()
-    uncorrupted_to_corrupted_id_map: dict[int, int] = dict()
+    uncorrupted_to_corrupted_id_map: Dict[int, int] = dict()
     uncorrupted_with_no_corrupted_id: List[int] = []
 
     last_user_identity_user_id: Optional[int] = None

@@ -1,5 +1,5 @@
 import json
-from typing import AsyncIterator, List, Literal, Optional
+from typing import AsyncIterator, Dict, List, Literal, Optional
 import os
 import aiohttp
 from urllib.parse import urlencode
@@ -219,7 +219,7 @@ class Klaviyo:
         last_name: Optional[str],
         timezone: Optional[str],
         environment: str,
-        course_links_by_slug: Optional[dict[str, str]] = None,
+        course_links_by_slug: Optional[Dict[str, str]] = None,
     ) -> Optional[str]:
         """Creates a profile on klaviyo with the given data, returning the profile id.
         If the profile already exists, returns None.
@@ -331,7 +331,7 @@ class Klaviyo:
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
         timezone: Optional[str] = None,
-        course_links_by_slug: Optional[dict[str, str]] = None,
+        course_links_by_slug: Optional[Dict[str, str]] = None,
         preserve_phone: bool = False,
     ) -> None:
         """Updates the klaviyo profile with the given id to match the given data.

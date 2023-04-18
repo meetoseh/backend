@@ -6,7 +6,7 @@ from typing import List, Optional, Union
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
-from content_files.helper import read_in_parts
+from content_files.lib.serve_s3_file import read_in_parts
 import unix_dates
 import datetime
 import pytz

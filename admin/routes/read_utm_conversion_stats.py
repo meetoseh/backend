@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from itgs import Itgs
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
-from content_files.helper import read_in_parts, read_file_in_parts
+from content_files.lib.serve_s3_file import read_in_parts, read_file_in_parts
 from temp_files import temp_file
 import unix_dates
 import pytz

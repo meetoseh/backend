@@ -15,7 +15,7 @@ import unix_dates
 import pytz
 import time
 from temp_files import get_temp_file
-from content_files.helper import read_file_in_parts, read_in_parts
+from content_files.lib.serve_s3_file import read_file_in_parts, read_in_parts
 import os
 
 

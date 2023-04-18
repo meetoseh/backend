@@ -11,7 +11,7 @@ from models import (
 from starlette.concurrency import run_in_threadpool
 from urllib.parse import urlencode
 import content_files.auth
-import content_files.helper
+from content_files.lib.serve_s3_file import read_in_parts
 import rqdb.result
 import io
 import os
@@ -171,7 +171,7 @@ async def show_ios_playlist(
             )
 
         return StreamingResponse(
-            content=content_files.helper.read_in_parts(playlist),
+            content=read_in_parts(playlist),
             status_code=200,
             headers={"Content-Type": "application/x-mpegURL"},
         )

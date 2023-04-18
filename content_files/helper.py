@@ -1,22 +1,13 @@
-import asyncio
-from typing import Dict, Generator, List, Literal, Optional, Tuple, Union
-import aiofiles
-from fastapi.responses import Response, StreamingResponse
+from typing import List, Literal, Optional, Tuple, Union
+from fastapi.responses import Response
 from dataclasses import dataclass
 import diskcache
 import io
 import json
 from itgs import Itgs
-from temp_files import temp_file
 from collections import deque
 from urllib.parse import urlencode
-import os
-
-
-DOWNLOAD_LOCKS: Dict[str, asyncio.Lock] = dict()
-"""The keys are uids of s3 files, and the values are process-specific locks to prevent us
-from concurrently filling the local cache (which is a waste of time and resources).
-"""
+from content_files.lib.serve_s3_file import serve_s3_file, ServableS3File
 
 
 @dataclass
@@ -121,32 +112,6 @@ async def get_cfep_metadata(
     return result
 
 
-def read_in_parts(f: io.BytesIO) -> Generator[bytes, None, None]:
-    """Convenience generator for reading from the given io.BytesIO in chunks"""
-    try:
-        chunk = f.read(8192)
-        while chunk:
-            yield chunk
-            chunk = f.read(8192)
-    finally:
-        f.close()
-
-
-def read_file_in_parts(
-    file_path: str, *, delete_after: bool = False
-) -> Generator[bytes, None, None]:
-    """Convenience generator for reading from the given file in chunks"""
-    try:
-        with open(file_path, "rb", buffering=0) as f:
-            chunk = f.read(8192)
-            while chunk:
-                yield chunk
-                chunk = f.read(8192)
-    finally:
-        if delete_after:
-            os.remove(file_path)
-
-
 async def serve_cfep(itgs: Itgs, meta: CachedContentFileExportPartMetadata) -> Response:
     """Serves the content file export part with the given metadata. This will
     fill the cache if necessary, and then serve the file from the cache. Thus
@@ -155,69 +120,15 @@ async def serve_cfep(itgs: Itgs, meta: CachedContentFileExportPartMetadata) -> R
     This is multiprocess safe but not thread safe. Further, it will only prevent
     concurrent downloads of the same file if the process and thread is the same.
     """
-
-    local_cache = await itgs.local_cache()
-    resp = await serve_cfep_from_cache(local_cache, meta)
-    if resp is not None:
-        return resp
-
-    if meta.s3_file_uid not in DOWNLOAD_LOCKS:
-        DOWNLOAD_LOCKS[meta.s3_file_uid] = asyncio.Lock()
-
-        if len(DOWNLOAD_LOCKS) > 1024:
-            for uid in list(DOWNLOAD_LOCKS.keys()):
-                if not DOWNLOAD_LOCKS[uid].locked():
-                    del DOWNLOAD_LOCKS[uid]
-
-    async with DOWNLOAD_LOCKS[meta.s3_file_uid]:
-        resp = await serve_cfep_from_cache(local_cache, meta)
-        if resp is not None:
-            return resp
-
-        files = await itgs.files()
-        with temp_file() as tmp_file:
-            async with aiofiles.open(tmp_file, "wb") as f:
-                await files.download(
-                    f, bucket=files.default_bucket, key=meta.s3_file_key, sync=False
-                )
-
-            with open(tmp_file, "rb") as f:
-                local_cache.set(
-                    f"s3_files:{meta.s3_file_uid}".encode("utf-8"),
-                    f,
-                    read=True,
-                    expire=900,
-                )
-
-    resp = await serve_cfep_from_cache(local_cache, meta)
-    assert resp is not None, "just filled cache, should be in there"
-    return resp
-
-
-async def serve_cfep_from_cache(
-    local_cache: diskcache.Cache, meta: CachedContentFileExportPartMetadata
-) -> Optional[Response]:
-    """Returns the response for serving the content file export part with the
-    given metadata from the cache, or None if the file is not in the cache.
-
-    The response will be streamed if the file is sufficiently large.
-    """
-    cached_data: Optional[Union[io.BytesIO, bytes]] = local_cache.get(
-        f"s3_files:{meta.s3_file_uid}".encode("utf-8"), read=True
-    )
-    if cached_data is None:
-        return None
-
-    headers = {
-        "Content-Type": meta.content_type,
-        "Content-Length": str(meta.file_size),
-    }
-
-    if isinstance(cached_data, (bytes, bytearray)):
-        return Response(content=cached_data, status_code=200, headers=headers)
-
-    return StreamingResponse(
-        content=read_in_parts(cached_data), status_code=200, headers=headers
+    return await serve_s3_file(
+        itgs,
+        file=ServableS3File(
+            uid=meta.s3_file_uid,
+            key=meta.s3_file_key,
+            content_type=meta.content_type,
+            file_size=meta.file_size,
+            cache_time=900,
+        ),
     )
 
 

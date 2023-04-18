@@ -45,6 +45,9 @@ We should be mindful of this in the following cases:
   IANA time zone database (e.g., `America/Los_Angeles`)
 - `environment (text not null)`: set in the custom property `environment`, either
   `dev` or `production`
+- `course_links_by_slug (text not null)`: a json object where the keys are course slugs
+  and the values are links. This describes the corresponding course links attributes in
+  klaviyo.
 - `created_at (real not null)`: When this record was created, in seconds since the epoch
 - `updated_at (real not null)`: The last time we updated this record, in seconds since the epoch
 
@@ -62,6 +65,7 @@ CREATE TABLE user_klaviyo_profiles (
     last_name TEXT NULL,
     timezone TEXT NOT NULL,
     environment TEXT NOT NULL,
+    course_links_by_slug TEXT NOT NULL,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL
 );

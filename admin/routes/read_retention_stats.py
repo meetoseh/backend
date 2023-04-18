@@ -2,7 +2,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional, Union
-from content_files.helper import read_in_parts
+from content_files.lib.serve_s3_file import read_in_parts
 from models import STANDARD_ERRORS_BY_CODE
 from auth import auth_admin
 from itgs import Itgs

@@ -15,7 +15,7 @@ from starlette.concurrency import run_in_threadpool
 from dataclasses import dataclass
 from urllib.parse import urlencode
 import os
-import content_files.helper
+from content_files.lib.serve_s3_file import read_in_parts
 import content_files.auth
 import rqdb.result
 
@@ -144,7 +144,7 @@ async def show_m3u_vod(
             )
 
         return StreamingResponse(
-            content=content_files.helper.read_in_parts(result),
+            content=read_in_parts(result),
             headers={
                 "Content-Type": "application/x-mpegURL",
             },

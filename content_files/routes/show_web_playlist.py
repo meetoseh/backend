@@ -10,7 +10,7 @@ from models import (
 from pydantic import BaseModel, Field
 from itgs import Itgs
 import content_files.auth
-from content_files.helper import read_in_parts
+from content_files.lib.serve_s3_file import read_in_parts
 from urllib.parse import urlencode
 import io
 import os

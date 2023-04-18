@@ -224,8 +224,10 @@ async def raw_read_vip_chat_requests(
             "user_created_at",
         ):
             return users.field(key[5:])
-        elif key == 'user_name':
-            return sqlite_string_concat(sqlite_string_concat(users.given_name, ' '), users.family_name)
+        elif key == "user_name":
+            return sqlite_string_concat(
+                sqlite_string_concat(users.given_name, " "), users.family_name
+            )
         elif key in (
             "added_by_user_sub",
             "added_by_user_given_name",

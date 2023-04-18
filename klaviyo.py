@@ -1,10 +1,11 @@
 import json
-from typing import List, Literal, Optional
+from typing import AsyncIterator, List, Literal, Optional
 import os
 import aiohttp
 from urllib.parse import urlencode
-
 from error_middleware import handle_contextless_error
+from dataclasses import dataclass
+import asyncio
 
 
 class DuplicateProfileError(Exception):
@@ -14,6 +15,15 @@ class DuplicateProfileError(Exception):
             + duplicate_profile_id
         )
         self.duplicate_profile_id = duplicate_profile_id
+
+
+@dataclass
+class ProfileListsResponse:
+    items: List[str]
+    """The list ids on this page of results"""
+
+    next_uri: Optional[str]
+    """If there are more results, the uri to use to fetch them"""
 
 
 class Klaviyo:
@@ -132,7 +142,13 @@ class Klaviyo:
         phone_numbers: List[Optional[str]],
         list_id: str,
     ) -> None:
-        """Unsubscribes the given email from the given klaviyo list
+        """Unsubscribes the given emails and phone numbers from receiving any emails/
+        sms marketing, and then removes them from the given list.
+
+        This is almost never intended and is left for discoverability only. For
+        removing a profile from a list, use remove_from_list. To prevent a profile
+        from receiving any emails, use suppress_email. To prevent a profile from
+        receiving any sms messages, use suppress_sms.
 
         Args:
             emails (list[str, None]): The email addresses to unsubscribe. Nones are
@@ -141,31 +157,21 @@ class Klaviyo:
                 filtered out and duplicates are removed.
             list_id (str): The list id to unsubscribe from
         """
-        emails = list(set([email for email in emails if email is not None]))
-        phone_numbers = list(
-            set(
-                [
-                    phone_number
-                    for phone_number in phone_numbers
-                    if phone_number is not None
-                ]
-            )
+        raise NotImplementedError(
+            "Use remove from list instead or suppress as appropriate"
         )
-        if not emails and not phone_numbers:
-            return
 
-        async with self.session.post(
-            "https://a.klaviyo.com/api/profile-unsubscription-bulk-create-jobs/",
-            json={
-                "data": {
-                    "type": "profile-unsubscription-bulk-create-job",
-                    "attributes": {
-                        "list_id": list_id,
-                        "emails": emails,
-                        "phone_numbers": phone_numbers,
-                    },
-                }
-            },
+    async def remove_from_list(self, *, profile_id: str, list_id: str) -> None:
+        """Removes the given profile from the given list, without unsubscribing them
+        from receiving any emails/sms marketing on other lists.
+
+        Args:
+            profile_id (str): The profile id to remove from the list
+            list_id (str): The list id to remove the profile from
+        """
+        async with self.session.delete(
+            f"https://a.klaviyo.com/api/lists/{list_id}/relationships/profiles/",
+            json={"data": {"type": "profile", "id": profile_id}},
             headers={
                 "Content-Type": "application/json",
                 "Authorization": f"Klaviyo-API-Key {self.api_key}",
@@ -213,6 +219,7 @@ class Klaviyo:
         last_name: Optional[str],
         timezone: Optional[str],
         environment: str,
+        course_links_by_slug: Optional[dict[str, str]] = None,
     ) -> Optional[str]:
         """Creates a profile on klaviyo with the given data, returning the profile id.
         If the profile already exists, returns None.
@@ -225,6 +232,8 @@ class Klaviyo:
             last_name (str, None): The last name of the user, if known
             timezone (str, None): The timezone of the user, if known
             environment (str): The environment the user is in, e.g. dev, production
+            course_links_by_slug (dict[str, str], None): A mapping of course slugs to
+                course links, if known
 
         Returns:
             str: The profile id
@@ -249,6 +258,14 @@ class Klaviyo:
                     ),
                     "properties": {
                         "environment": environment,
+                        **(
+                            dict(
+                                (f"course_link_{slug}", link)
+                                for slug, link in course_links_by_slug.items()
+                            )
+                            if course_links_by_slug is not None
+                            else {}
+                        ),
                     },
                 },
             }
@@ -314,6 +331,8 @@ class Klaviyo:
         first_name: Optional[str] = None,
         last_name: Optional[str] = None,
         timezone: Optional[str] = None,
+        course_links_by_slug: Optional[dict[str, str]] = None,
+        preserve_phone: bool = False,
     ) -> None:
         """Updates the klaviyo profile with the given id to match the given data.
 
@@ -330,7 +349,7 @@ class Klaviyo:
             profile_id (str): The profile id to update
             email (str, None): The email address of the user, None to keep the same
             phone_number (str, None): The phone number of the user, if known. Will overwrite
-                the existing phone number even if None.
+                the existing phone number even if None, unless preserve_phone is set to true
             external_id (str, None): The external id to use, typically the user sub, or None
                 to keep the same
             first_name (str, None): The first name of the user, if known
@@ -338,13 +357,20 @@ class Klaviyo:
             timezone (str, None): The timezone of the user, if known
             environment (str, None): The environment the user is in, e.g. dev, production,
                 or None to keep the same
+            course_links_by_slug (dict[str, str], None): A mapping of course slugs to
+                course links. If there are existing course links whose slug are not in this
+                dict they are left as-is. If None, the course links are not changed. Keys
+                in this list are updated or inserted to match the values.
+            preserve_phone (bool): If true, the phone number will not be overwritten if
+                it is None. This is useful if you want to preserve the phone number if
+                it is not known, but still want to update other fields.
         """
         body = {
             "data": {
                 "type": "profile",
                 "id": profile_id,
                 "attributes": {
-                    "phone_number": phone_number,
+                    **({"phone_number": phone_number} if not preserve_phone else {}),
                     **({"email": email} if email is not None else {}),
                     **({"external_id": external_id} if external_id is not None else {}),
                     **({"first_name": first_name} if first_name is not None else {}),
@@ -357,10 +383,22 @@ class Klaviyo:
                     **(
                         {
                             "properties": {
-                                "environment": environment,
+                                **(
+                                    {"environment": environment}
+                                    if environment is not None
+                                    else {}
+                                ),
+                                **(
+                                    dict(
+                                        (f"course_link_{slug}", link)
+                                        for slug, link in course_links_by_slug.items()
+                                    )
+                                    if course_links_by_slug is not None
+                                    else {}
+                                ),
                             }
                         }
-                        if environment is not None
+                        if environment is not None or course_links_by_slug is not None
                         else {}
                     ),
                 },
@@ -410,7 +448,7 @@ class Klaviyo:
         phone_number: Optional[str],
         list_id: str,
     ) -> None:
-        """Subscribes the given profile to the given list
+        """Subscribes the given profile to marketing and then adds them to the given list
 
         Args:
             profile_id (str): The profile id to subscribe; this is only used on
@@ -458,3 +496,98 @@ class Klaviyo:
                     extra_info=f"body: ```\n{json.dumps(body)}\n```\nresponse:\n\n```\n{data}\n```"
                 )
             response.raise_for_status()
+
+    async def add_profile_to_list(self, *, profile_id: str, list_id: str) -> None:
+        """Adds the given profile to the given list without changing their subscription
+        status.
+
+        Args:
+            profile_id (str): The profile id to add to the list
+            list_id (str): The list id to add the profile to
+        """
+        body = {
+            "data": {
+                "type": "profile",
+                "id": profile_id,
+            }
+        }
+        async with self.session.post(
+            f"https://a.klaviyo.com/api/lists/{list_id}/relationships/profiles/",
+            json=body,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Authorization": f"Klaviyo-API-Key {self.api_key}",
+                "revision": "2023-02-22",
+            },
+        ) as response:
+            if not response.ok:
+                data = await response.text()
+                await handle_contextless_error(
+                    extra_info=f"body: ```\n{json.dumps(body)}\n```\nresponse:\n\n```\n{data}\n```"
+                )
+
+            if response.status != 409:
+                response.raise_for_status()
+
+    async def get_profile_lists(
+        self, *, profile_id: str, uri: Optional[str] = None
+    ) -> ProfileListsResponse:
+        """Gets the lists that the profile with the given id belongs to.
+
+        Args:
+            profile_id (str): The profile id to get lists for
+            uri (str, None): If specified, should be the next_uri of a previous response.
+                This is used for pagination.
+
+        Returns:
+            ProfileListsResponse: The profile ids and pagination info
+        """
+        request_uri = uri or (
+            f"https://a.klaviyo.com/api/profiles/{profile_id}/lists/?"
+            + urlencode({"fields[list]": "id"})
+        )
+        async with self.session.get(
+            request_uri,
+            headers={
+                "Authorization": f"Klaviyo-API-Key {self.api_key}",
+                "Accept": "application/json",
+                "revision": "2023-02-22",
+            },
+        ) as response:
+            data = await response.text()
+            if not response.ok:
+                await handle_contextless_error(
+                    extra_info=f"{request_uri=} response:\n\n```\n{data}\n```"
+                )
+            response.raise_for_status()
+
+            data_parsed: dict = json.loads(data)
+            list_ids = [list_data["id"] for list_data in data_parsed["data"]]
+            next_uri = data_parsed.get("links", {}).get("next", None)
+
+            return ProfileListsResponse(items=list_ids, next_uri=next_uri)
+
+    async def get_profile_lists_auto_paginated(
+        self, *, profile_id: str
+    ) -> AsyncIterator[str]:
+        """Gets the list ids that the profile with the given id belongs to,
+        automatically paginating through all results. Sleeps 1 seconds between
+        requests, does not sleep before the first request or after the last
+        request.
+
+        Args:
+            profile_id (str): The profile id to get lists for
+
+        Returns:
+            AsyncIterator[str]: The list ids
+        """
+        next_uri = None
+        while True:
+            response = await self.get_profile_lists(profile_id=profile_id, uri=next_uri)
+            for id in response.items:
+                yield id
+            next_uri = response.next_uri
+            if next_uri is None:
+                break
+            await asyncio.sleep(1)

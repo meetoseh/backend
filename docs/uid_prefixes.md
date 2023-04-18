@@ -69,3 +69,12 @@ something (in this case, identify a row)
 - `pip` - [public_interactive_prompts](db/public_interactive_prompts.md)
 - `vcr` - [vip_chat_requests](db/vip_chat_requests.md)
 - `vcra` - [vip_chat_request_actions](db/vip_chat_request_actions.md)
+- `c` - [courses](db/courses.md)
+- `cj` - [course_journeys](db/course_journeys.md)
+- `cu` - [course_users](db/course_users.md)
+- `ce` - [course_exports](db/course_exports.md)
+- `cdl` - [course_download_links](db/course_download_links.md)
+- `cldc` - [course_download_link_clicks](db/course_download_link_clicks.md)
+- `g_rc` - used for guest revenue cat customers, which are used to hold entitlements
+  before a real oseh user account is created
+- `cuc` - [course_user_classes](db/course_user_classes.md)

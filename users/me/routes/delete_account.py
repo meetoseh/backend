@@ -378,9 +378,7 @@ async def cleanup_klaviyo(itgs: Itgs, sub: str) -> None:
     klaviyo = await itgs.klaviyo()
     await klaviyo.suppress_email(email)
     for list_id in list_ids:
-        await klaviyo.unsubscribe_from_list(
-            list_id=list_id, emails=[email], phone_numbers=[phone_number]
-        )
+        await klaviyo.remove_from_list(profile_id=klaviyo_id, list_id=list_id)
     await klaviyo.request_profile_deletion(klaviyo_id)
 
 

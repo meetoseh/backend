@@ -39,10 +39,13 @@ async def finish_course_download(uid: str, authorization: Optional[str] = Header
                 s3_files.uid,
                 s3_files.key,
                 s3_files.file_size
-            FROM course_exports
+            FROM course_exports, courses
             JOIN s3_files ON s3_files.id = course_exports.s3_file_id
-            WHERE course_exports.course_uid = ?
-            ORDER BY course_exports.created_at DESC, uid ASC LIMIT 1
+            WHERE
+                course_exports.course_id = courses.id
+                AND courses.uid = ?
+            ORDER BY course_exports.created_at DESC, course_exports.uid ASC 
+            LIMIT 1
             """,
             (uid,),
         )

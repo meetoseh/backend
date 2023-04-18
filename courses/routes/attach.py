@@ -182,9 +182,7 @@ async def attach_course(
         # download link
         jobs = await itgs.jobs()
         await jobs.enqueue(
-            "runners.klaviyo.ensure_user",
-            user_sub=auth_result.result.sub,
-            checkout_session_id=args.checkout_session_id,
+            "runners.klaviyo.ensure_user", user_sub=auth_result.result.sub
         )
 
         slack = await itgs.slack()

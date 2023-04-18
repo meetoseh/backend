@@ -164,6 +164,29 @@ async def attach_course(
             ),
         )
 
+        # Since the checkout has been transferred to the user, any download links are
+        # also transferred to the user.
+        await cursor.execute(
+            """
+            UPDATE course_download_links
+            SET user_id = users.id
+            FROM users
+            WHERE
+                users.sub = ?
+                AND course_download_links.stripe_checkout_session_id = ?
+            """,
+            (auth_result.result.sub, args.checkout_session_id),
+        )
+
+        # We'll queue a background job to ensure this users klaviyo account has the
+        # download link
+        jobs = await itgs.jobs()
+        await jobs.enqueue(
+            "runners.klaviyo.ensure_user",
+            user_sub=auth_result.result.sub,
+            checkout_session_id=args.checkout_session_id,
+        )
+
         slack = await itgs.slack()
         identifier = (
             f"{auth_result.result.claims['name']} ({auth_result.result.claims['email']})"

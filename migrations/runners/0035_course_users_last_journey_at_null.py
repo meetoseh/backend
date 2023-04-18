@@ -34,5 +34,7 @@ async def up(itgs: Itgs):
             "ALTER TABLE course_users_new RENAME TO course_users",
             "CREATE UNIQUE INDEX course_users_course_user_idx ON course_users(course_id, user_id)",
             "CREATE INDEX course_users_user_created_at_idx ON course_users(user_id, created_at)",
-        )
+            "PRAGMA foreign_keys=ON",
+        ),
+        transaction=False,
     )

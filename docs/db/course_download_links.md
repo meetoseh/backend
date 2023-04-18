@@ -39,6 +39,9 @@ link tracking via `course_download_link_clicks`.
   - Backend sends the purchase to revenue cat for the Oseh accounts revenue cat id,
     this time with the restore flag set. This should remove the entitlements
     from the guest account and add them to the users account.
+- `payment_email (text null)`: If the user specified an email during the payment process,
+  the email they specified. This may differ from the email they eventually create an account
+  with.
 - `revenue_cat_id (text null)`: If we have a purchase identifier, such as the checkout
   session id, and we associated that with a revenue cat account in the process of making
   this link, the id of the revenue cat customer that was created. Note that this account
@@ -62,6 +65,7 @@ CREATE TABLE course_download_links (
     course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
     code TEXT UNIQUE NOT NULL,
     stripe_checkout_session_id TEXT NULL,
+    payment_email TEXT NULL,
     user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
     visitor_id INTEGER NULL REFERENCES visitors(id) ON DELETE SET NULL,
     created_at REAL NOT NULL
@@ -72,6 +76,9 @@ CREATE INDEX course_download_links_course_id_idx ON course_download_links(course
 
 /* Search */
 CREATE INDEX course_download_links_stripe_checkout_session_id_idx ON course_download_links(stripe_checkout_session_id);
+
+/* Search */
+CREATE INDEX course_download_links_payment_email_idx ON course_download_links(payment_email);
 
 /* Foreign key, search */
 CREATE INDEX course_download_links_user_id_idx ON course_download_links(user_id);

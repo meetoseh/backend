@@ -122,7 +122,7 @@ async def advance_course(
             WHERE
                 courses.uid = ?
                 AND users.sub = ?
-                AND course_users.user_id = courses.id
+                AND course_users.user_id = users.id
                 AND course_users.course_id = courses.id
                 AND course_journeys.course_id = courses.id
                 AND course_journeys.journey_id = journeys.id
@@ -133,10 +133,16 @@ async def advance_course(
         if not response.results:
             return NOT_FOUND_RESPONSE
 
-        entitlement_iden: str = response.results[0][0]
-        is_next_journey: bool = bool(response.results[0][1])
-        course_title: str = response.results[0][2]
-        course_slug: str = response.results[0][3]
+        best_row = response.results[0]
+        for row in response.results:
+            if bool(row[1]):
+                best_row = row
+                break
+
+        entitlement_iden: str = best_row[0]
+        is_next_journey: bool = bool(best_row[1])
+        course_title: str = best_row[2]
+        course_slug: str = best_row[3]
 
         entitlement = await users.lib.entitlements.get_entitlement(
             itgs, user_sub=auth_result.result.sub, identifier=entitlement_iden
@@ -155,7 +161,7 @@ async def advance_course(
             WHERE
                 courses.uid = ?
                 AND users.sub = ?
-                AND course_users.user_id = courses.id
+                AND course_users.user_id = users.id
                 AND course_users.course_id = courses.id
                 AND course_journeys.course_id = courses.id
                 AND course_journeys.journey_id = journeys.id

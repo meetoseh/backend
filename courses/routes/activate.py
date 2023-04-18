@@ -331,12 +331,13 @@ async def activate_course(
                             course_id,
                             code,
                             stripe_checkout_session_id,
+                            payment_email,
                             user_id,
                             visitor_id,
                             created_at
                         )
                         SELECT
-                            ?, courses.id, ?, ?, users.id, visitors.id, ?
+                            ?, courses.id, ?, ?, ?, users.id, visitors.id, ?
                         FROM courses
                         LEFT OUTER JOIN users ON (? IS NOT NULL AND users.sub = ?)
                         LEFT OUTER JOIN visitors ON visitors.uid = ?
@@ -347,6 +348,7 @@ async def activate_course(
                             link_uid,
                             code,
                             args.checkout_session_id,
+                            email,
                             request_at,
                             auth_result.result.sub if auth_result.success else None,
                             auth_result.result.sub if auth_result.success else None,

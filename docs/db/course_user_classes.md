@@ -1,6 +1,6 @@
 # course_user_classes
 
-Records when a user starts a class within a course. This is required for
+Records when a user is about to start a class within a course. This is required for
 accurate statistics as courses don't necessarily incorporate a prompt component,
 and hence there may not be something else tracking this activity.
 

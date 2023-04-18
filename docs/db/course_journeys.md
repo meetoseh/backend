@@ -11,6 +11,11 @@ The ordered list of journeys for a course.
   The course that the journey belongs to
 - `journey_id (integer not null references journeys(id) on delete cascade)`:
   The journey that belongs to the course
+
+  Note that the same journey should not occur twice back-to-back as this will
+  break the idempotency on the course advance endpoint, however, otherwise
+  journeys can technically be repeated within a journey.
+
 - `priority (integer not null)`: Lower priority journeys are shown before
   higher priority journeys. Note that a users progress through the course
   is marked by priority, so if the course is changed, the user will continue

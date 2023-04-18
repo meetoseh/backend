@@ -87,10 +87,13 @@ FAILED_TO_START_RESPONSE = Response(
 async def start_next_journey_in_course(
     args: StartNextJourneyInCourseRequest, authorization: Optional[str] = Header(None)
 ):
-    """Starts the next journey in a course for the user. If the user has not
+    """Returns the next journey in a course for the user. If the user has not
     started the course or has already finished the course or the course does
     not exist, returns a 404. Otherwise, if the user is not entitled to the course
     returns a 403.
+
+    This does not actually advance the users progress in the course. Do that by
+    calling advance_course_progress.
 
     Requires standard authorization.
     """
@@ -152,61 +155,35 @@ async def start_next_journey_in_course(
 
         course_user_classes_uid = f"oseh_cuc_{secrets.token_urlsafe(16)}"
         now = time.time()
-        response = await cursor.executemany3(
-            (
-                (
-                    """
-                    INSERT INTO course_user_classes (
-                        uid, course_user_id, journey_id, created_at
-                    )
-                    SELECT
-                        ?, course_users.id, journeys.id, ?
-                    FROM courses, users, course_users, course_journeys, journeys
-                    WHERE
-                        courses.uid = ?
-                        AND users.sub = ?
-                        AND course_users.course_id = courses.id
-                        AND course_users.user_id = users.id
-                        AND course_journeys.course_id = courses.id
-                        AND course_journeys.journey_id = journeys.id
-                        AND journeys.uid = ?
-                    """,
-                    (
-                        course_user_classes_uid,
-                        now,
-                        args.course_uid,
-                        auth_result.result.sub,
-                        journey_uid,
-                    ),
-                ),
-                (
-                    """
-                    UPDATE course_users
-                    SET last_priority = course_journeys.priority, last_journey_at = ?
-                    FROM courses, users, course_journeys, journeys
-                    WHERE
-                        courses.uid = ?
-                        AND users.sub = ?
-                        AND journeys.uid = ?
-                        AND course_journeys.course_id = courses.id
-                        AND course_journeys.journey_id = journeys.id
-                        AND course_users.course_id = courses.id
-                        AND course_users.user_id = users.id
-                    """,
-                    (now, args.course_uid, auth_result.result.sub, journey_uid),
-                ),
+        response = await cursor.execute(
+            """
+            INSERT INTO course_user_classes (
+                uid, course_user_id, journey_id, created_at
             )
+            SELECT
+                ?, course_users.id, journeys.id, ?
+            FROM courses, users, course_users, course_journeys, journeys
+            WHERE
+                courses.uid = ?
+                AND users.sub = ?
+                AND course_users.course_id = courses.id
+                AND course_users.user_id = users.id
+                AND course_journeys.course_id = courses.id
+                AND course_journeys.journey_id = journeys.id
+                AND journeys.uid = ?
+            """,
+            (
+                course_user_classes_uid,
+                now,
+                args.course_uid,
+                auth_result.result.sub,
+                journey_uid,
+            ),
         )
-        if response[0].rows_affected is None or response[0].rows_affected < 1:
+        if response.rows_affected is None or response.rows_affected < 1:
             await cleanup_response(journey_response)
             await handle_contextless_error(
                 extra_info="while starting next journey in course, failed to store course_user_classes record"
-            )
-            return FAILED_TO_START_RESPONSE
-        if response[1].rows_affected is None or response[1].rows_affected < 1:
-            await cleanup_response(journey_response)
-            await handle_contextless_error(
-                extra_info="while starting next journey in course, failed to update course_users record"
             )
             return FAILED_TO_START_RESPONSE
 
@@ -214,7 +191,7 @@ async def start_next_journey_in_course(
             itgs,
             user_sub=auth_result.result.sub,
             journey_uid=journey_uid,
-            action=f"taking the next class in {course_title} ({course_slug})",
+            action=f"considering taking the next class in {course_title} ({course_slug})",
         )
 
         return journey_response

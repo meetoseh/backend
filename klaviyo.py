@@ -1,5 +1,5 @@
 import json
-from typing import AsyncIterator, Dict, List, Literal, Optional
+from typing import AsyncIterator, Dict, List, Literal, Optional, Union
 import os
 import aiohttp
 from urllib.parse import urlencode
@@ -497,19 +497,27 @@ class Klaviyo:
                 )
             response.raise_for_status()
 
-    async def add_profile_to_list(self, *, profile_id: str, list_id: str) -> None:
+    async def add_profile_to_list(
+        self, *, profile_id: Union[str, List[str]], list_id: str
+    ) -> None:
         """Adds the given profile to the given list without changing their subscription
         status.
 
         Args:
-            profile_id (str): The profile id to add to the list
+            profile_id (str, list[str]): The profile id to add to the list, or a list of profile ids
             list_id (str): The list id to add the profile to
         """
+        if isinstance(profile_id, str):
+            profile_id = [profile_id]
+
         body = {
-            "data": {
-                "type": "profile",
-                "id": profile_id,
-            }
+            "data": [
+                {
+                    "type": "profile",
+                    "id": pid,
+                }
+                for pid in profile_id
+            ]
         }
         async with self.session.post(
             f"https://a.klaviyo.com/api/lists/{list_id}/relationships/profiles/",

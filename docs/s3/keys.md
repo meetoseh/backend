@@ -40,3 +40,15 @@ existing keys.
   export part is for an mp4.
 - `s3_files/courses/{course_uid}/{export_uid}/{random}.zip`: Where course exports
   are stored. See [../db/course_exports.md]
+- `s3_files/backup/database/{timestamp}.bak`: Where database backups are
+  stored. These are stored in the same format as the rqlite backup utility,
+  which is the same format as the sqlite binary backup.
+- `s3_files/backup/redis/{timestamp}.bak`: Where redis backups are
+  stored. Since there isn't a standard binary redis backup, this is a very simple
+  custom backup. It consists of an arbitrary number of chunks, where each chunk is
+  `key_length, key, dump_length, dump` where key_length is a uint32 big-endian formatted,
+  followed by that many bytes for the key, followed by the `dump_length` which is also
+  uint32 big-endian formatted, followed by the output of the redis command `dump {key}`,
+  which is redis's binary representation of the value of that key (and can be restored
+  with `restore {key} {dump}`). Only keys which were present for the entire duration of
+  the backup and which did not have an expiration set when they were checked are included.

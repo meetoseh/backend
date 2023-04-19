@@ -243,10 +243,10 @@ async def create_vip_chat_request(
 
         if args.variant == "phone-04102023":
             if args.display_data.phone_number is None:
-                args.display_data.phone_number = "+18184825279"
+                args.display_data.phone_number = "+15104999158"
             if args.display_data.text_prefill is None:
                 args.display_data.text_prefill = (
-                    "Hi Ashley! I'd love to chat. What time were you thinking?"
+                    "Hi Paul! I'd love to chat. What time were you thinking?"
                 )
             if args.display_data.background_image_uid is None:
                 # this is the oseh_ocean_bg created by the frontend-web, so it'll be in all envs
@@ -264,11 +264,11 @@ async def create_vip_chat_request(
                     raise Exception("vip_chat_request_image_uid is not bytes")
                 args.display_data.image_uid = raw_uid.decode("utf-8")
             if args.display_data.image_caption is None:
-                args.display_data.image_caption = "Actual photo of me as a kid"
+                args.display_data.image_caption = "Hi I’m Paul, I’m a founder of Oseh"
             if args.display_data.title is None:
-                args.display_data.title = f"Hi {given_name},"
+                args.display_data.title = "$25 to help us out"
             if args.display_data.message is None:
-                args.display_data.message = "You’re an Oseh VIP and we’d love to partner with you on how to make Oseh even better. As a thank you for taking the time to chat with us, we’ll gift you a $25 gift card."
+                args.display_data.message = "You’re an Oseh VIP and I’d love to learn how we can make Oseh even better. As a thank you for taking the time to chat, we'll gift you a $25 gift card."
             if args.display_data.cta is None:
                 args.display_data.cta = "Let’s Chat"
 

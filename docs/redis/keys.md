@@ -319,6 +319,14 @@ the keys that we use in redis
 - `course_activations:{stripe_checkout_session_id}:lock` a basic key used as a lock on
   activating the course contained in the stripe checkout session with the given id
 
+- `external_apis:api_limiter:{api}`: Certain apis have very restrictive rate limits and/or
+  can get expensive. For these APIs, like Pexels or DALL-E, we apply a ratelimit on ourself
+  to ensure we don't call it too often. API names are:
+  - `pexels`: for pexels.com
+  - `dall-e`: for openai's DALL-E
+    These go to values which, if set, are the `time.time()` we last used that api. They
+    are set to expire around when we can use the api immediately.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

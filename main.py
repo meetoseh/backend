@@ -17,8 +17,6 @@ import journeys.router
 import file_uploads.router
 import content_files.router
 import instructors.router
-import daily_events.router
-import referral.router
 import oauth.router
 import admin.router
 import dev.router
@@ -29,9 +27,6 @@ import visitors.router
 import vip_chat_requests.router
 import courses.router
 import admin.routes.read_journey_subcategory_view_stats
-import daily_events.lib.has_started_one
-import daily_events.lib.read_one_external
-import daily_events.routes.now
 import journeys.lib.read_one_external
 import interactive_prompts.routes.profile_pictures
 import interactive_prompts.lib.read_one_external
@@ -97,10 +92,6 @@ app.include_router(
 app.include_router(
     instructors.router.router, prefix="/api/1/instructors", tags=["instructors"]
 )
-app.include_router(
-    daily_events.router.router, prefix="/api/1/daily_events", tags=["daily_events"]
-)
-app.include_router(referral.router.router, prefix="/api/1/referral", tags=["referral"])
 app.include_router(oauth.router.router, prefix="/api/1/oauth", tags=["oauth"])
 app.include_router(admin.router.router, prefix="/api/1/admin", tags=["admin"])
 app.include_router(dev.router.router, prefix="/api/1/dev", tags=["dev"])
@@ -146,13 +137,6 @@ def register_background_tasks():
             admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
         )
     )
-    background_tasks.add(
-        asyncio.create_task(daily_events.lib.has_started_one.purge_loop())
-    )
-    background_tasks.add(
-        asyncio.create_task(daily_events.lib.read_one_external.cache_push_loop())
-    )
-    background_tasks.add(asyncio.create_task(daily_events.routes.now.purge_loop()))
     background_tasks.add(
         asyncio.create_task(journeys.lib.read_one_external.cache_push_loop())
     )

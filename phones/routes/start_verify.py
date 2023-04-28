@@ -22,10 +22,6 @@ class StartVerifyRequest(BaseModel):
         max_length=60,
     )
 
-    receive_notifications: bool = Field(
-        description="Whether or not to receive notifications on this phone number",
-    )
-
     timezone: str = Field(
         description="The IANA timezone of the user, e.g. America/New_York. Ignored unless receive_notifications is true."
     )
@@ -173,25 +169,23 @@ async def start_verify(
         await cursor.execute(
             """
             INSERT INTO user_notification_settings (
-                uid, user_id, channel, daily_event_enabled, preferred_notification_time, 
+                uid, user_id, channel, preferred_notification_time, 
                 timezone, timezone_technique, created_at
             )
             SELECT
-                ?, users.id, ?, ?, ?, ?, ?, ?
+                ?, users.id, ?, ?, ?, ?, ?
             FROM users WHERE users.sub = ?
             ON CONFLICT (user_id, channel)
-            DO UPDATE SET daily_event_enabled = ?, timezone = ?, timezone_technique = ?
+            DO UPDATE SET timezone = ?, timezone_technique = ?
             """,
             (
                 new_uns_uid,
                 "sms",
-                int(args.receive_notifications),
                 "any",
                 args.timezone,
                 timezone_technique,
                 time.time(),
                 auth_result.result.sub,
-                int(args.receive_notifications),
                 args.timezone,
                 timezone_technique,
             ),

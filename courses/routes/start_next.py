@@ -7,7 +7,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-from daily_events.lib.notifs import on_entering_lobby
+from journeys.lib.notifs import on_entering_lobby
 from error_middleware import handle_contextless_error
 from journeys.lib.read_one_external import read_one_external
 from journeys.models.external_journey import ExternalJourney

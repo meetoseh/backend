@@ -3,7 +3,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, constr
 from typing import Literal, Optional
 from auth import auth_admin
-from daily_events.lib.read_one_external import evict_external_daily_event
 from interactive_prompts.lib.read_interactive_prompt_meta import (
     evict_interactive_prompt_meta,
 )
@@ -94,22 +93,13 @@ async def update_journey_subcategory(
                 status_code=404,
             )
 
-        # we'll only purge journeys which have a daily event that's pretty recent,
-        # otherwise it's good enough to manually clear the cache
-        to_clean_daily_events = set()
         biggest_journey_id = 0
-        now = time.time()
         while True:
             response = await cursor.execute(
                 """
                 SELECT
-                    journeys.id, journeys.uid, daily_events.uid, interactive_prompts.uid
+                    journeys.id, journeys.uid, interactive_prompts.uid
                 FROM journeys
-                JOIN daily_events ON EXISTS (
-                    SELECT 1 FROM daily_event_journeys
-                    WHERE daily_event_journeys.daily_event_id = daily_events.id
-                      AND daily_event_journeys.journey_id = journeys.id
-                )
                 JOIN interactive_prompts ON interactive_prompts.id = journeys.interactive_prompt_id
                 WHERE
                     EXISTS (
@@ -119,16 +109,12 @@ async def update_journey_subcategory(
                     )
                     AND journeys.id > ?
                     AND journeys.deleted_at IS NULL
-                    AND daily_events.available_at IS NOT NULL
-                    AND daily_events.available_at BETWEEN ? AND ?
                 ORDER BY journeys.id ASC
                 LIMIT 100
                 """,
                 (
                     uid,
                     biggest_journey_id,
-                    now - 60 * 60 * 24 * 7,
-                    now + 60 * 60 * 24 * 7,
                 ),
             )
             if not response.results:
@@ -137,7 +123,6 @@ async def update_journey_subcategory(
             for (
                 _,
                 journey_uid,
-                daily_event_uid,
                 interactive_prompt_uid,
             ) in response.results:
                 await evict_external_journey(itgs, uid=journey_uid)
@@ -148,12 +133,7 @@ async def update_journey_subcategory(
                     itgs, interactive_prompt_uid=interactive_prompt_uid
                 )
 
-                to_clean_daily_events.add(daily_event_uid)
-
             biggest_journey_id = response.results[-1][0]
-
-        for daily_event_uid in to_clean_daily_events:
-            await evict_external_daily_event(itgs, uid=daily_event_uid)
 
         return Response(
             content=UpdateJourneySubcategoryResponse(

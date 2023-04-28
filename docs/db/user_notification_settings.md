@@ -16,9 +16,6 @@ this table
 - `user_id (integer not null references users(id) on delete cascade)`:
   The user these settings are for
 - `channel (text not null)`: one of: `sms`
-- `daily_event_enabled (boolean not null)`: True if they want
-  to receive a notification once per day about daily events, false
-  otherwise
 - `preferred_notification_time (text not null)`: When the user would
   prefer to receive notifications. This is one of the following:
   - `any`: Any time of the day / unspecified
@@ -46,7 +43,6 @@ CREATE TABLE user_notification_settings (
     uid TEXT UNIQUE NOT NULL,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     channel TEXT NOT NULL,
-    daily_event_enabled BOOLEAN NOT NULL,
     preferred_notification_time TEXT NOT NULL,
     timezone TEXT NOT NULL,
     timezone_technique TEXT NOT NULL,

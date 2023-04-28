@@ -68,7 +68,6 @@ async def update_notification_time(
             SELECT
                 user_notification_settings.uid,
                 user_notification_settings.preferred_notification_time,
-                user_notification_settings.daily_event_enabled,
                 user_klaviyo_profiles.uid
             FROM user_notification_settings
             LEFT OUTER JOIN user_klaviyo_profiles ON user_klaviyo_profiles.user_id = user_notification_settings.user_id
@@ -95,8 +94,7 @@ async def update_notification_time(
 
         uns_uid: str = response.results[0][0]
         old_notification_time: str = response.results[0][1]
-        daily_event_enabled: bool = bool(response.results[0][2])
-        klaviyo_profile_uid: Optional[str] = response.results[0][3]
+        klaviyo_profile_uid: Optional[str] = response.results[0][2]
 
         # even if old notification time matches the new one, we may still be updating
         # the timezone, so can't early return here
@@ -145,7 +143,6 @@ async def update_notification_time(
         if (
             klaviyo_profile_uid is not None
             and old_notification_time != args.notification_time
-            and daily_event_enabled
         ):
             await users.lib.stats.on_notification_time_updated(
                 itgs,

@@ -190,33 +190,6 @@ the keys we store locally on backend instances via diskcache
   and expires once `unix_date` is in the past, since the admin dashboard only shows the
   current version of this data.
 
-- `daily_events:external:{uid}:{level}` is formatted as repeated blocks of
-  (len, type, value) where len is 4 bytes representing an unsigned int in
-  big-endian format for the length of the value, type is a single byte acting
-  as an enum, and value is the value of the field. The types are:
-
-  - `1`: part of the serialized daily event
-  - `2`: a marker to indicate that the daily event jwt should be inserted here. the length
-    is always 0
-  - `3`: a marker to indicate that an image file jwt should be inserted here. The value is
-    the uid of the image file.
-
-  The level is the level that the injected JWT should be, formatted as a comma-separated list
-  in ascending alphabetical order. This is required since we elaborate on the access levels
-  in the serialized representation so it is more easily consumable by the client.
-
-  Note that this format allows us to inject the JWTs without a deserialize/serialize round trip,
-  which can be a significant performance improvement.
-
-- `daily_events:current` goes to a string representing the uid of the current daily event.
-  This expires at the premiere time of the next event, if there is a next event, otherwise
-  after 24 hours. It is collaboratively updated whenever it may have been changed.
-  This is used [here](../../daily_events/routes/now.py)
-
-- `daily_events:has_started_one:{daily_event_uid}:{user_sub}` goes to the string '1' if the
-  user has started a journey within the daily event with the given uid, goes to '0' if they
-  have not, and goes to nothing if we haven't checked yet.
-
 - `journeys:external:{uid}` is formatted as repeated blocks of
   (len, type, value) where len is 4 bytes representing an unsigned int in
   big-endian format for the length of the value, type is a single byte acting

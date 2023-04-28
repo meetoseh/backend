@@ -50,7 +50,6 @@ async def read_wants_notif_time_prompt(authorization: Optional[str] = Header(Non
                                     AND users.sub = ?
                             )
                             AND user_notification_settings.channel = 'sms'
-                            AND user_notification_settings.daily_event_enabled = 1
                             AND (
                                 user_notification_settings.preferred_notification_time = 'any'
                                 OR json_extract(user_notification_settings.timezone_technique, '$.style') = 'migration'

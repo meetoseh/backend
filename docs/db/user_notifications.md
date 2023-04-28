@@ -32,12 +32,11 @@ weak form of link tracking.
   unused, however, if the full contents are too large to store in the database then the rest
   is stored at the s3 file at this location, if it hasn't been deleted.
 - `reason`: contains additional information as a json object which is at minimum the
-  following: `{"src": "string"}`, where `src` is of the form `{package}.{import_path}`, e.g.,
-  `jobs.runners.notify_daily_events`.
+  following: `{"src": "string"}`, where `src` is of the form `{package}.{import_path}`
 
   All specific examples:
 
-  - `{"src": "jobs.runners.notifications.send_daily_event_notifications", "daily_event_uid": "string"}`
+  (none currently)
 
 - `created_at (real not null)`: when we made this notification
 
@@ -60,11 +59,6 @@ CREATE TABLE user_notifications (
 
 /* Foreign key */
 CREATE INDEX user_notifications_user_id_idx ON user_notifications(user_id);
-
-/* Lookup last notification */
-CREATE INDEX user_notifications_de_lookup_idx
-    ON user_notifications(user_id, json_extract(reason, '$.daily_event_uid'))
-    WHERE json_extract(reason, '$.src') = 'jobs.runners.notifications.send_daily_event_notifications';
 
 /* Foreign key */
 CREATE INDEX user_notifications_contents_s3_file_id_idx

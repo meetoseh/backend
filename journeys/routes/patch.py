@@ -28,7 +28,6 @@ from pypika import Query, Table, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import ExistsCriterion, Term
 from db.utils import ParenthisizeCriterion
-from daily_events.lib.read_one_external import evict_external_daily_event
 
 
 router = APIRouter()
@@ -93,9 +92,7 @@ class PatchJourneyRequest(BaseModel):
 PatchJourneyResponse = CreateJourneyResponse
 
 
-ERROR_400_TYPES = Literal[
-    "nothing_to_patch",
-]
+ERROR_400_TYPES = Literal["nothing_to_patch",]
 
 ERROR_404_TYPES = Literal[
     "journey_not_found",
@@ -642,30 +639,6 @@ async def patch_journey(
                     ),
                 )
             )
-
-        response = await cursor.execute(
-            """
-            SELECT
-                uid
-            FROM daily_events
-            WHERE
-                EXISTS (
-                    SELECT 1 FROM daily_event_journeys
-                    WHERE daily_event_journeys.daily_event_id = daily_events.id
-                      AND EXISTS (
-                        SELECT 1 FROM journeys
-                        WHERE journeys.id = daily_event_journeys.journey_id
-                          AND journeys.uid = ?
-                      )
-                )
-            """,
-            (uid,),
-        )
-        daily_event_uid: Optional[str] = (
-            response.results[0][0] if response.results else None
-        )
-        if daily_event_uid:
-            await evict_external_daily_event(itgs, uid=daily_event_uid)
 
         await evict_external_journey(itgs, uid=uid)
         if (

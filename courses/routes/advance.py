@@ -6,7 +6,7 @@ from typing import Literal, Optional
 from itgs import Itgs
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
-from daily_events.lib.notifs import on_entering_lobby
+from journeys.lib.notifs import on_entering_lobby
 import users.lib.entitlements
 
 

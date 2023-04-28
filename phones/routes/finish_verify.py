@@ -202,7 +202,6 @@ async def finish_verify(
                             AND users.sub = ?
                     )
                     AND user_notification_settings.channel = 'sms'
-                    AND user_notification_settings.daily_event_enabled = 1
                     AND NOT EXISTS (
                         SELECT 1 FROM phone_verifications
                         WHERE phone_verifications.user_id = user_notification_settings.user_id

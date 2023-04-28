@@ -13,7 +13,7 @@ We generally use the following format when generating uids:
 The prefix improves the development and debugging experience, since it can be
 used to quickly notice if we have a uid to the wrong object. For example, if the
 frontend is expecting a `journey` uid, but the prefix indicates it's a
-`daily_event` uid, then we know that we have a bug. On the other hand, without
+`course` uid, then we know that we have a bug. On the other hand, without
 the prefix this would be nearly impossible to notice.
 
 Note that if a uid is omitted then there is generally already an externally
@@ -26,10 +26,8 @@ something (in this case, identify a row)
 
 - `u` - [users](db/users.md)
 - `ui` - [user_identities](db/user_identities.md)
-- `de` - [daily_events](db/daily_events.md)
 - `j` - [journeys](db/journeys.md)
 - `ipe` - [interactive_prompt_events](db/interactive_prompt_events.md)
-- `dej` - [daily_event_journeys](db/daily_event_journeys.md)
 - `s3f` - [s3_files](db/s3_files.md)
 - `s3fu` - [s3_file_uploads](db/s3_file_uploads.md)
 - `s3fup` - [s3_file_upload_parts](db/s3_file_upload_parts.md)
@@ -49,8 +47,6 @@ something (in this case, identify a row)
 - `jsc` - [journey_subcategories](db/journey_subcategories.md)
 - `i` - [instructors](db/instructors.md)
 - `ipp` - [instructor_profile_pictures](db/instructor_profile_pictures.md)
-- `udei` - [user_daily_event_invites](db/user_daily_event_invites.md)
-- `udeir` - [user_daily_event_invite_recipients](db/user_daily_event_invite_recipients.md)
 - `jf` - [journey_feedback](db/journey_feedback.md)
 - `ij` - [introductory_journeys](db/introductory_journeys.md)
 - `pv` - [phone_verifications](db/phone_verifications.md)
@@ -78,3 +74,7 @@ something (in this case, identify a row)
 - `g_rc` - used for guest revenue cat customers, which are used to hold entitlements
   before a real oseh user account is created
 - `cuc` - [course_user_classes](db/course_user_classes.md)
+- `je` - [journey_emotions](db/journey_emotions.md)
+- `t` - [transcripts](db/transcripts.md)
+- `tp` - [transcript_phrases](db/transcript_phrases.md)
+- `cft` - [audio_content_transcripts](db/audio_content_transcripts.md)

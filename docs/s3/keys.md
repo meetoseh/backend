@@ -43,6 +43,9 @@ existing keys.
 - `s3_files/backup/database/{timestamp}.bak`: Where database backups are
   stored. These are stored in the same format as the rqlite backup utility,
   which is the same format as the sqlite binary backup.
+- `s3_files/backup/database/timely/{reason}-{timestamp}.bak`: Where database
+  backups which are automatically generated prior to some particular event, like
+  a complicated migration, are stored.
 - `s3_files/backup/redis/{timestamp}.bak`: Where redis backups are
   stored. Since there isn't a standard binary redis backup, this is a very simple
   custom backup. It consists of an arbitrary number of chunks, where each chunk is

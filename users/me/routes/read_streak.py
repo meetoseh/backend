@@ -7,7 +7,7 @@ from typing import Optional
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE
 import time
-import datetime
+import unix_dates
 import pytz
 
 
@@ -22,7 +22,7 @@ router = APIRouter()
     "/streak", response_model=ReadStreakResponse, responses=STANDARD_ERRORS_BY_CODE
 )
 async def read_streak(authorization: Optional[str] = Header(None)):
-    """Gets the authorized user current streak, i.e., how many daily events the
+    """Gets the authorized user current streak, i.e., how many days the
     user has attended since missing one.
 
     Requires standard authorization.
@@ -55,11 +55,11 @@ async def read_streak(authorization: Optional[str] = Header(None)):
 
 
 async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
-    """Computes the users current streak for attending daily events.
+    """Computes the users current streak for participating in interactive prompts.
 
-    This is counting how many consecutive daily events the user has attended. If
-    they have not attended the current daily event, their streak is zero. If they've
-    attended the current daily event and not the previous, their streak is one. Etc.
+    This is counting how many consecutive days the user has taken an interactive
+    prompt. It's based on UTC-8 and assumes 86400 unix seconds per day,
+    regardless of the current time. This pacific standard time.
 
     Args:
         itgs (Itgs): The integrations to (re)use
@@ -72,54 +72,34 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 
-    # This scales linearly with streak size, but notably does not linearly scale on the
-    # total number of daily events.
-
-    # Query Plan:
-    # CO-ROUTINE events
-    #     SETUP
-    #         SCAN CONSTANT ROW
-    #     RECURSIVE STEP
-    #         SCAN events
-    #         SEARCH daily_events USING COVERING INDEX daily_events_available_at_idx (available_at<?)
-    #         CORRELATED SCALAR SUBQUERY 2
-    #             SEARCH de2 USING COVERING INDEX daily_events_available_at_idx (available_at>? AND available_at<?)
-    #         CORRELATED SCALAR SUBQUERY 3
-    #             SEARCH users USING COVERING INDEX sqlite_autoindex_users_1 (sub=?)
-    #             SEARCH interactive_prompt_sessions USING INDEX interactive_prompt_sessions_user_id_idx (user_id=?)
-    #             SEARCH journeys USING COVERING INDEX journeys_interactive_prompt_id_idx (interactive_prompt_id=?)
-    #             SEARCH daily_event_journeys USING INDEX daily_event_journeys_journey_id_idx (journey_id=?)
-    # SCAN events
+    tz = pytz.FixedOffset(-480)
+    unix_date_today = unix_dates.unix_timestamp_to_unix_date(now, tz=tz)
+    unix_end_of_day = unix_dates.unix_date_to_timestamp(unix_date_today + 1, tz=tz)
 
     response = await cursor.execute(
         """
-        WITH RECURSIVE events(days, available_at) AS (
+        WITH RECURSIVE events(days, end_of_day_at) AS (
             VALUES(0, ?)
             UNION ALL
             SELECT
                 days + 1,
-                daily_events.available_at
-            FROM events, daily_events
+                end_of_day_at - 86400
+            FROM events
             WHERE
-                daily_events.available_at < events.available_at
-                AND NOT EXISTS (
-                    SELECT 1 FROM daily_events de2
-                    WHERE de2.available_at > daily_events.available_at
-                        AND de2.available_at < events.available_at
-                )
-                AND EXISTS (
-                    SELECT 1 FROM daily_event_journeys, journeys, interactive_prompt_sessions, users
+                EXISTS (
+                    SELECT 1 FROM interactive_prompt_sessions, interactive_prompt_events, users
                     WHERE
-                        daily_event_journeys.daily_event_id = daily_events.id
-                        AND journeys.id = daily_event_journeys.journey_id
-                        AND interactive_prompt_sessions.interactive_prompt_id = journeys.interactive_prompt_id
-                        AND users.id = interactive_prompt_sessions.user_id
+                        interactive_prompt_sessions.interactive_prompt_id = interactive_prompt_events.interactive_prompt_id
+                        AND interactive_prompt_sessions.user_id = users.id
                         AND users.sub = ?
+                        AND interactive_prompt_events.created_at >= events.end_of_day_at - 86400
+                        AND interactive_prompt_events.created_at < events.end_of_day_at
+                        AND interactive_prompt_events.evtype = 'join'
                 )
         )
         SELECT COUNT(*) FROM events
         """,
-        (now, user_sub),
+        (unix_end_of_day, user_sub),
     )
 
     if not response.results:

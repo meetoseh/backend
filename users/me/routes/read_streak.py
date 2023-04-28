@@ -89,7 +89,7 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
                 EXISTS (
                     SELECT 1 FROM interactive_prompt_sessions, interactive_prompt_events, users
                     WHERE
-                        interactive_prompt_sessions.interactive_prompt_id = interactive_prompt_events.interactive_prompt_id
+                        interactive_prompt_sessions.id = interactive_prompt_events.interactive_prompt_session_id
                         AND interactive_prompt_sessions.user_id = users.id
                         AND users.sub = ?
                         AND interactive_prompt_events.created_at >= events.end_of_day_at - 86400

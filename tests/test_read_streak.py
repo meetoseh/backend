@@ -238,12 +238,13 @@ if os.environ["ENVIRONMENT"] != "test":
 
             asyncio.run(_inner())
 
-        def test_user_with_unrelated_prompt_streak(self):
+        def test_user_with_old_prompt_streak(self):
             async def _inner():
                 now = time.time()
-                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
-                    itgs
-                ) as prompt:
+                one_week_ago = now - 60 * 60 * 24 * 7
+                async with Itgs() as itgs, temp_user(
+                    itgs, created_at=one_week_ago
+                ) as user_sub, temp_prompt(itgs, created_at=one_week_ago) as prompt:
                     streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 0)
 
@@ -251,8 +252,8 @@ if os.environ["ENVIRONMENT"] != "test":
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt,
-                        join_at=now,
-                        leave_at=now + 1,
+                        join_at=one_week_ago,
+                        leave_at=one_week_ago + 1,
                     )
                     streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 0)

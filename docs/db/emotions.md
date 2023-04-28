@@ -15,6 +15,6 @@ table.
 ```sql
 CREATE TABLE emotions (
     id INTEGER PRIMARY KEY,
-    word TEXT UNIQUE NOT NULL,
+    word TEXT UNIQUE NOT NULL
 )
 ```

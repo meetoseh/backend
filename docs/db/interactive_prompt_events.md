@@ -126,6 +126,6 @@ CREATE INDEX interactive_prompt_events_ips_id_prompt_time_idx
     ON interactive_prompt_events(interactive_prompt_session_id, prompt_time);
 
 /* search (streaks) */
-CREATE INDEX interactive_prompt_events_created_at_user_idx
-    ON interactive_prompt_events(created_at, user_id) WHERE evtype='join';
+CREATE INDEX interactive_prompt_events_created_at_session_idx
+    ON interactive_prompt_events(created_at, interactive_prompt_session_id) WHERE evtype='join';
 ```

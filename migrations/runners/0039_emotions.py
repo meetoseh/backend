@@ -55,7 +55,7 @@ async def cleanup_duplicate_journeys(itgs: Itgs) -> None:
                     AND j2.created_at > journeys.created_at
             )
         """,
-        now,
+        (now,),
     )
 
 
@@ -124,8 +124,8 @@ async def create_new_streak_index(itgs: Itgs) -> None:
 
     await cursor.execute(
         """
-        CREATE INDEX interactive_prompt_events_created_at_user_idx
-            ON interactive_prompt_events(created_at, user_id) WHERE evtype='join'
+        CREATE INDEX interactive_prompt_events_created_at_session_idx
+            ON interactive_prompt_events(created_at, interactive_prompt_session_id) WHERE evtype='join'
         """
     )
 
@@ -179,7 +179,7 @@ async def create_emotions(itgs: Itgs) -> None:
             """
             CREATE TABLE emotions (
                 id INTEGER PRIMARY KEY,
-                word TEXT UNIQUE NOT NULL,
+                word TEXT UNIQUE NOT NULL
             )
             """,
             """

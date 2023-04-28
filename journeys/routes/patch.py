@@ -92,7 +92,7 @@ class PatchJourneyRequest(BaseModel):
 PatchJourneyResponse = CreateJourneyResponse
 
 
-ERROR_400_TYPES = Literal["nothing_to_patch",]
+ERROR_400_TYPES = Literal["nothing_to_patch"]
 
 ERROR_404_TYPES = Literal[
     "journey_not_found",

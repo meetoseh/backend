@@ -26,6 +26,7 @@ import interactive_prompts.router
 import visitors.router
 import vip_chat_requests.router
 import courses.router
+import emotions.router
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.lib.read_one_external
 import interactive_prompts.routes.profile_pictures
@@ -111,6 +112,7 @@ app.include_router(
     tags=["vip_chat_requests"],
 )
 app.include_router(courses.router.router, prefix="/api/1/courses", tags=["courses"])
+app.include_router(emotions.router.router, prefix="/api/1/emotions", tags=["emotions"])
 app.router.redirect_slashes = False
 
 

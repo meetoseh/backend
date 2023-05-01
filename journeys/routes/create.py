@@ -344,6 +344,7 @@ async def create_journey(
 
         await journeys.lib.stats.on_journey_created(itgs, created_at=now)
         jobs = await itgs.jobs()
+        await jobs.enqueue("runners.refresh_journey_emotions", journey_uid=uid)
         await jobs.enqueue("runners.process_journey_video_sample", journey_uid=uid)
         await jobs.enqueue("runners.process_journey_video", journey_uid=uid)
         return Response(

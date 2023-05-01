@@ -290,10 +290,19 @@ the keys that we use in redis
 - `external_apis:api_limiter:{api}`: Certain apis have very restrictive rate limits and/or
   can get expensive. For these APIs, like Pexels or DALL-E, we apply a ratelimit on ourself
   to ensure we don't call it too often. API names are:
+
   - `pexels`: for pexels.com
   - `dall-e`: for openai's DALL-E
     These go to values which, if set, are the `time.time()` we last used that api. They
     are set to expire around when we can use the api immediately.
+  - `whisper-1`: for openai's whisper-1 transcription model
+  - `chatgpt`: for openai's chat completion model chat-gpt-3.5
+
+- `jobs:repopulate_emotions:lock`: A basic lock to ensure we only have one job to repopulate
+  the emotions table at a time. Goes to the string `1` while the lock is held.
+
+- `jobs:generate_transcript:{journey_uid}:lock`: A basic lock to ensure we don't have two jobs
+  tryin to generate a transcript for the same journey at the same time.
 
 ### Stats namespace
 

@@ -6,6 +6,7 @@ handful of emotion words and then are automatically placed into a class.
 from itgs import Itgs
 from temp_files import temp_file
 import time
+import asyncio
 
 
 async def up(itgs: Itgs):
@@ -29,6 +30,13 @@ async def up(itgs: Itgs):
     await create_new_streak_index(itgs)
     await create_transcripts(itgs)
     await create_emotions(itgs)
+
+    # give a couple seconds for things to propagate
+    await asyncio.sleep(2)
+    jobs = await itgs.jobs()
+    await jobs.enqueue("runners.generate_missing_transcripts")
+
+    # after that job finishes, should run runners.repopulate_emotions
 
 
 async def cleanup_duplicate_journeys(itgs: Itgs) -> None:

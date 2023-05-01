@@ -29,8 +29,8 @@ ERROR_RELATIONSHIP_NOT_FOUND = Response(
 )
 
 
-@router.post(
-    "/delete",
+@router.delete(
+    "/",
     status_code=204,
     responses={
         "404": {

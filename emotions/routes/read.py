@@ -149,6 +149,7 @@ async def raw_read_emotions(
         query = query.where(
             ExistsCriterion(
                 Query.from_(journey_emotions)
+                .select(1)
                 .join(journeys)
                 .on(journeys.id == journey_emotions.journey_id)
                 .where(journey_emotions.emotion_id == emotions.id)

@@ -24,7 +24,7 @@ ERROR_JOURNEY_EMOTION_NOT_FOUND = Response(
 
 
 @router.get(
-    "/{journey_uid}/{emotion}",
+    "/",
     response_model=JourneyEmotion,
     responses={
         "404": {

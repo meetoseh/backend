@@ -201,7 +201,7 @@ async def get_new_users_from_source(itgs: Itgs, unix_date: int) -> ReadNewUsersR
             range(next_expected_unix_date, unix_date), data
         ):
             labels.append(unix_dates.unix_date_to_date(missing_unix_date).isoformat())
-            values.append(int(value))
+            values.append(int(value) if value is not None else 0)
 
     return ReadNewUsersResponse(labels=labels, values=values)
 

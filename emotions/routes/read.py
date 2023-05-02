@@ -16,7 +16,12 @@ from itgs import Itgs
 
 
 class Emotion(BaseModel):
-    word: str
+    word: str = Field(
+        description="The unique word that represents this emotion, e.g., lost, angry, sad"
+    )
+    antonym: str = Field(
+        description="The action that is taken to resolve this emotion, e.g., find yourself, calm down, cheer up"
+    )
 
 
 EMOTION_SORT_OPTIONS = [SortItem[Literal["word"], str]]
@@ -26,6 +31,9 @@ EmotionSortOption = (SortItemModel[Literal["word"], str],)
 class EmotionFilter(BaseModel):
     word: Optional[FilterTextItemModel] = Field(
         None, description="the emotion that a class could resolve"
+    )
+    antonym: Optional[FilterTextItemModel] = Field(
+        None, description="the action that resolves this emotion"
     )
     journey_uid: Optional[FilterTextItemModel] = Field(
         None, description="a uid of a journey that resolves this emotion"
@@ -134,12 +142,13 @@ async def raw_read_emotions(
 
     query: QueryBuilder = Query.from_(emotions).select(
         emotions.word,
+        emotions.antonym,
     )
     qargs = []
 
     def pseudocolumn(key: str) -> Term:
-        if key == "word":
-            return emotions.word
+        if key in ("word", "antonym"):
+            return emotions.field(key)
         raise ValueError(f"unknown key {key}")
 
     for key, filter in filters_to_apply:

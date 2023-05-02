@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from journeys.lib.read_one_external import evict_external_journey
+from emotions.lib.emotion_content import purge_emotion_content_statistics_everywhere
 from auth import auth_admin
 from itgs import Itgs
 
@@ -61,6 +62,7 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
         )
         if response.rows_affected is not None and response.rows_affected > 0:
             await evict_external_journey(itgs, uid=uid)
+            await purge_emotion_content_statistics_everywhere(itgs)
             return Response(
                 content=DeleteJourneyResponse(deleted_at=now).json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},

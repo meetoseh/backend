@@ -289,3 +289,10 @@ the keys we store locally on backend instances via diskcache
 - `daily_phone_verifications:{from_unix_date}:{to_unix_date}` goes to a string
   key containing the serialized daily phone verifications chart for the given
   date range.
+
+- `emotion_content_statistics` goes to the jsonified representation of a list of emotion content
+  statistics. See [emotion_content](../../emotions/lib/emotion_content.py)
+
+- `emotion_users:pictures:{word}` goes to a string containing jsonified lists of
+  image file uids representing the profile images of a small (~5) number of
+  people who have recently selected the given emotion.

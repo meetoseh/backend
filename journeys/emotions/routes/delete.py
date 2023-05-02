@@ -2,6 +2,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
+from emotions.lib.emotion_content import purge_emotion_content_statistics_everywhere
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -76,4 +77,5 @@ async def delete_journey_emotion(
         if response.rows_affected is None or response.rows_affected < 1:
             return ERROR_RELATIONSHIP_NOT_FOUND
 
+        await purge_emotion_content_statistics_everywhere(itgs, emotions=[args.emotion])
         return Response(status_code=204)

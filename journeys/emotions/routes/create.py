@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
+from emotions.lib.emotion_content import purge_emotion_content_statistics_everywhere
 from itgs import Itgs
 from journeys.emotions.models import (
     JourneyEmotion,
@@ -133,6 +134,9 @@ async def create_journey_emotion(
             ),
         )
         if response.rows_affected is not None and response.rows_affected > 0:
+            await purge_emotion_content_statistics_everywhere(
+                itgs, emotions=[args.emotion]
+            )
             return Response(
                 content=JourneyEmotion(
                     uid=je_uid,

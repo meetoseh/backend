@@ -141,6 +141,10 @@ async def get_emotion_content_statistics_from_db(
             emotions.id = journey_emotions.emotion_id
             AND journey_emotions.journey_id = journeys.id
             AND journeys.deleted_at IS NULL
+            AND NOT EXISTS (
+                SELECT 1 FROM course_journeys
+                WHERE course_journeys.journey_id = journeys.id
+            )
         GROUP BY emotions.id
         ORDER BY COUNT(*) DESC, emotions.word ASC
         """

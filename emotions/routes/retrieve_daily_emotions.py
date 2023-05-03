@@ -22,19 +22,21 @@ class RetrieveDailyEmotionsRequest(BaseModel):
             "the user, in the order they were presented. Used to "
             "avoid returning the same list the user just shuffled."
         ),
-        max_items=5,
     )
 
     num_emotions: int = Field(
-        description="The number of emotions to return", ge=1, le=10
+        description="The number of emotions to return", ge=1, le=12
     )
 
     @validator("recently_seen")
     def validate_recently_seen(cls, recently_seen):
+        if len(recently_seen) > 5:
+            raise ValueError("recently_seen cannot have more than 5 items")
+
         for emotion_list in recently_seen:
-            if len(emotion_list) > 10:
+            if len(emotion_list) > 12:
                 raise ValueError(
-                    "recently_seen cannot have a sublist with more than 10 items"
+                    "recently_seen cannot have a sublist with more than 12 items"
                 )
             if len(emotion_list) < 1:
                 raise ValueError(
@@ -83,17 +85,24 @@ async def retrieve_daily_emotions(
                     if len(lookup) <= args.num_emotions:
                         break
 
-        options: List[Emotion] = []
-        weights: np.ndarray = np.zeros(len(lookup), dtype=np.float64)
-        for idx, stat in enumerate(lookup.values()):
-            options.append(stat.emotion)
-            weights[idx] = float(stat.num_journeys)
+        if len(lookup) <= args.num_emotions:
+            selected_emotions = [v.emotion for v in lookup.values()]
+            random.shuffle(selected_emotions)
+        else:
+            options: List[Emotion] = []
+            weights: np.ndarray = np.zeros(len(lookup), dtype=np.float64)
+            for idx, stat in enumerate(lookup.values()):
+                options.append(stat.emotion)
+                weights[idx] = float(stat.num_journeys)
 
-        weights /= np.sum(weights)
+            weights /= np.sum(weights)
 
-        selected_emotions = list(
-            np.random.choice(options, size=args.num_emotions, replace=False, p=weights)
-        )
+            selected_emotions = list(
+                np.random.choice(
+                    options, size=args.num_emotions, replace=False, p=weights
+                )
+            )
+
         return Response(
             content=RetrieveDailyEmotionsResponse(items=selected_emotions).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},

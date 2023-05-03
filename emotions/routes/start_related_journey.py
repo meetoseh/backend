@@ -133,7 +133,41 @@ async def start_related_journey(
             """
             SELECT
                 journeys.uid,
-                COUNT(*) AS num_times_taken
+                0 AS num_times_taken,
+                journeys.created_at AS journey_created_at
+            FROM journeys
+            WHERE
+                NOT EXISTS (
+                    SELECT 1 FROM interactive_prompt_sessions, users
+                    WHERE
+                        users.sub = ?
+                        AND interactive_prompt_sessions.user_id = users.id
+                        AND (
+                            interactive_prompt_sessions.interactive_prompt_id = journeys.interactive_prompt_id
+                            OR EXISTS (
+                                SELECT 1 FROM interactive_prompt_old_journeys
+                                WHERE interactive_prompt_old_journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
+                                    AND interactive_prompt_old_journeys.journey_id = journeys.id
+                            )
+                        )
+                )
+                AND EXISTS (
+                    SELECT 1 FROM journey_emotions, emotions
+                    WHERE
+                        journey_emotions.journey_id = journeys.id
+                        AND journey_emotions.emotion_id = emotions.id
+                        AND emotions.word = ?
+                )
+                AND journeys.deleted_at IS NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM course_journeys
+                    WHERE course_journeys.journey_id = journeys.id
+                )
+            UNION ALL
+            SELECT
+                journeys.uid,
+                COUNT(*) AS num_times_taken,
+                journeys.created_at AS journey_created_at
             FROM journeys, interactive_prompt_sessions, users
             WHERE
                 users.sub = ?
@@ -153,10 +187,20 @@ async def start_related_journey(
                         AND journey_emotions.emotion_id = emotions.id
                         AND emotions.word = ?
                 )
-            ORDER BY num_times_taken ASC, journeys.created_at DESC
+                AND journeys.deleted_at IS NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM course_journeys
+                    WHERE course_journeys.journey_id = journeys.id
+                )
+            ORDER BY num_times_taken ASC, journey_created_at DESC
             LIMIT 5
             """,
-            (auth_result.result.sub, args.emotion),
+            (
+                auth_result.result.sub,
+                args.emotion,
+                auth_result.result.sub,
+                args.emotion,
+            ),
         )
         if not response.results:
             return ERROR_EMOTION_NOT_FOUND
@@ -178,7 +222,9 @@ async def start_related_journey(
         )
         picture_uids = await emotion_users.get_emotion_pictures(itgs, word=args.emotion)
         pictures = [
-            ImageFileRef(uid=uid, jwt=create_image_file_jwt(itgs, image_file_uid=uid))
+            ImageFileRef(
+                uid=uid, jwt=await create_image_file_jwt(itgs, image_file_uid=uid)
+            )
             for uid in picture_uids
         ]
 

@@ -10,7 +10,7 @@ table.
 - `word (text unique not null)`: The underlying emotion word. Should be treated
   as immutable.
 - `antonym (text unique not null)`: A present tense verb for what you do to
-  resolve this emotion, e.g, relax, destress, or focus.
+  resolve or maintain this emotion (whatever is preferable), e.g, relax, destress, or focus.
 
 ## Schema
 

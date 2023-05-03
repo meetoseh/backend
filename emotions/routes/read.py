@@ -179,7 +179,7 @@ async def raw_read_emotions(
     response = await cursor.execute(query.get_sql(), qargs)
     items: List[Emotion] = []
     for row in response.results or []:
-        items.append(Emotion(word=row[0]))
+        items.append(Emotion(word=row[0], antonym=row[1]))
     return items
 
 

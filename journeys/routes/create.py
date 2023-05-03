@@ -43,7 +43,7 @@ class CreateJourneyRequest(BaseModel):
         description="The prompt style, text, and options to display to the user"
     )
     lobby_duration_seconds: int = Field(
-        20, description="The duration of the lobby in seconds.", ge=5, le=300
+        10, description="The duration of the lobby in seconds.", ge=5, le=300
     )
 
 

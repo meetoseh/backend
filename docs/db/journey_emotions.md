@@ -1,8 +1,7 @@
 # journey_emotions
 
-Relates which emotions a journey solves for. For example, a journey which
-is about why we meditate might help with "purpose", and a body-scan exercise
-might help with "anxiety".
+Relates which emotions a journey evokes. For example, a journey which
+is about why we meditate might help them find purpose.
 
 ## Fields
 
@@ -12,7 +11,7 @@ might help with "anxiety".
 - `journey_id (integer not null references journeys(id) on delete cascade)`:
   The id of the journey related to the emotion
 - `emotion_id (integer not null references emotions(id) on delete cascade)`:
-  The id of the emotion that the journey solves for
+  The id of the emotion that the journey evokes
 - `creation_hint (text null)`: A JSON object describing how this relation
   was created. One of the following formats:
   `{"type":"manual", "user_sub":"string"}`: Created by the user with the given

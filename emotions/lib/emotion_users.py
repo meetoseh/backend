@@ -202,7 +202,7 @@ async def get_emotion_pictures_from_db(itgs: Itgs, *, word: str) -> List[str]:
         "tj@oseh.com",
         "paul@oseh.com",
         "ashley@oseh.com",
-        "gerilynj@gmail.com",
+        "kgatz14@gmail.com",
     ]
     autofill_user_qmarks = "(" + ",".join(["?"] * len(autofill_user_emails)) + ")"
 

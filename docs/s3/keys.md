@@ -55,3 +55,6 @@ existing keys.
   which is redis's binary representation of the value of that key (and can be restored
   with `restore {key} {dump}`). Only keys which were present for the entire duration of
   the backup and which did not have an expiration set when they were checked are included.
+- `s3_files/jobs/repopulate_emotions/dropped_{datetime.datetime.now().isoformat()}.txt`:
+  When the repopulate_emotions job is run, if a lot of emotions are dropped (>20), they
+  are uploaded here for analysis. Otherwise, they are just posted to slack

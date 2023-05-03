@@ -132,7 +132,7 @@ async def start_related_journey(
         response = await cursor.execute(
             """
             SELECT
-                journeys.uid,
+                journeys.uid AS journey_uid,
                 0 AS num_times_taken,
                 journeys.created_at AS journey_created_at
             FROM journeys
@@ -165,7 +165,7 @@ async def start_related_journey(
                 )
             UNION ALL
             SELECT
-                journeys.uid,
+                journeys.uid AS journey_uid,
                 COUNT(*) AS num_times_taken,
                 journeys.created_at AS journey_created_at
             FROM journeys, interactive_prompt_sessions, users
@@ -177,7 +177,7 @@ async def start_related_journey(
                     OR EXISTS (
                         SELECT 1 FROM interactive_prompt_old_journeys
                         WHERE interactive_prompt_old_journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
-                          AND interactive_prompt_old_journeys.journey_id = journeys.id
+                        AND interactive_prompt_old_journeys.journey_id = journeys.id
                     )
                 )
                 AND EXISTS (
@@ -192,6 +192,7 @@ async def start_related_journey(
                     SELECT 1 FROM course_journeys
                     WHERE course_journeys.journey_id = journeys.id
                 )
+            GROUP BY journey_uid
             ORDER BY num_times_taken ASC, journey_created_at DESC
             LIMIT 5
             """,

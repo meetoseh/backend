@@ -4,10 +4,6 @@ A journey combines an audio experience and an interactive prompt. It consists of
 lobby period, where the audience responds to the interactive prompt, followed by
 a short-form audio content (~1 minute).
 
-A journey is part of 0-1 [daily events](daily_events.md) in one category. Note
-that the schema can only guarrantee that a journey is part of at most one
-daily event in each category, however, we MUST NOT do this.
-
 This has a background image file. It is displayed in many different contexts
 with different effects applied; for consistency across clients and to improve
 performance, these effects are applied in advance and downloaded as images

@@ -85,8 +85,7 @@ async def temp_prompt(itgs: Itgs, *, created_at: Optional[float] = None):
 
 
 @dataclass
-class TempDailyEvent:
-    daily_event_uid: str
+class TempJourney:
     journey_uid: str
     prompt_uid: str
     created_at: float
@@ -97,7 +96,7 @@ _sent = object()
 
 
 @asynccontextmanager
-async def temp_daily_event(
+async def temp_journey(
     itgs: Itgs,
     *,
     prompt_uid: str,
@@ -115,7 +114,6 @@ async def temp_daily_event(
 
     j_uid = f"oseh_j_{secrets.token_urlsafe(16)}"
     de_uid = f"oseh_de_{secrets.token_urlsafe(16)}"
-    dej_uid = f"oseh_dej_{secrets.token_urlsafe(16)}"
 
     await cursor.executemany3(
         (
@@ -154,71 +152,76 @@ async def temp_daily_event(
                     prompt_uid,
                 ),
             ),
-            (
-                """
-                INSERT INTO daily_events (
-                    uid, available_at, created_at
-                )
-                VALUES (?, ?, ?)
-                """,
-                (de_uid, available_at, created_at),
-            ),
-            (
-                """
-                INSERT INTO daily_event_journeys (
-                    uid, daily_event_id, journey_id, created_at
-                )
-                SELECT ?, daily_events.id, journeys.id, ?
-                FROM daily_events, journeys
-                WHERE daily_events.uid = ? AND journeys.uid = ?
-                """,
-                (dej_uid, created_at, de_uid, j_uid),
-            ),
         )
     )
 
     try:
-        yield TempDailyEvent(
-            daily_event_uid=de_uid,
+        yield TempJourney(
             journey_uid=j_uid,
             prompt_uid=prompt_uid,
             created_at=created_at,
             available_at=available_at,
         )
     finally:
-        await cursor.executemany3(
-            (
-                (
-                    "DELETE FROM journeys WHERE uid=?",
-                    (j_uid,),
-                ),
-                (
-                    "DELETE FROM daily_events WHERE uid=?",
-                    (de_uid,),
-                ),
-            )
+        await cursor.execute(
+            "DELETE FROM journeys WHERE uid=?",
+            (j_uid,),
         )
 
 
-async def create_session(itgs: Itgs, *, user_sub: str, prompt_uid: str):
+async def create_event(
+    itgs: Itgs, *, user_sub: str, prompt_uid: str, join_at: float, leave_at: float
+):
     session_uid: str = f"oseh_ips_{secrets.token_urlsafe(16)}"
+    join_uid: str = f"oseh_ipe_{secrets.token_urlsafe(16)}"
+    leave_uid: str = f"oseh_ipe_{secrets.token_urlsafe(16)}"
 
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 
-    await cursor.execute(
-        """
-        INSERT INTO interactive_prompt_sessions (
-            interactive_prompt_id, user_id, uid
+    await cursor.executemany3(
+        (
+            (
+                """
+                INSERT INTO interactive_prompt_sessions (
+                    interactive_prompt_id, user_id, uid
+                )
+                SELECT
+                    interactive_prompts.id, users.id, ?
+                FROM interactive_prompts, users
+                WHERE
+                    interactive_prompts.uid = ?
+                    AND users.sub = ?
+                """,
+                (session_uid, prompt_uid, user_sub),
+            ),
+            (
+                """
+                INSERT INTO interactive_prompt_events (
+                    uid, interactive_prompt_session_id, evtype, data, prompt_time, created_at
+                )
+                SELECT
+                    ?, interactive_prompt_sessions.id, 'join', '{}', ?, ?
+                FROM interactive_prompt_sessions
+                WHERE
+                    interactive_prompt_sessions.uid = ?
+                """,
+                (join_uid, 0, join_at, session_uid),
+            ),
+            (
+                """
+                INSERT INTO interactive_prompt_events (
+                    uid, interactive_prompt_session_id, evtype, data, prompt_time, created_at
+                )
+                SELECT
+                    ?, interactive_prompt_sessions.id, 'leave', '{}', ?, ?
+                FROM interactive_prompt_sessions
+                WHERE
+                    interactive_prompt_sessions.uid = ?
+                """,
+                (leave_uid, max(0, leave_at - join_at), leave_at, session_uid),
+            ),
         )
-        SELECT
-            interactive_prompts.id, users.id, ?
-        FROM interactive_prompts, users
-        WHERE
-            interactive_prompts.uid = ?
-            AND users.sub = ?
-        """,
-        (session_uid, prompt_uid, user_sub),
     )
 
 
@@ -235,20 +238,24 @@ if os.environ["ENVIRONMENT"] != "test":
 
             asyncio.run(_inner())
 
-        def test_user_with_unrelated_prompt_streak(self):
+        def test_user_with_old_prompt_streak(self):
             async def _inner():
-                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
-                    itgs
-                ) as prompt:
-                    streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=time.time()
-                    )
+                now = time.time()
+                one_week_ago = now - 60 * 60 * 24 * 7
+                async with Itgs() as itgs, temp_user(
+                    itgs, created_at=one_week_ago
+                ) as user_sub, temp_prompt(itgs, created_at=one_week_ago) as prompt:
+                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 0)
 
-                    await create_session(itgs, user_sub=user_sub, prompt_uid=prompt)
-                    streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=time.time()
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        join_at=one_week_ago,
+                        leave_at=one_week_ago + 1,
                     )
+                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 0)
 
             asyncio.run(_inner())
@@ -257,16 +264,19 @@ if os.environ["ENVIRONMENT"] != "test":
             async def _inner():
                 async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
                     itgs
-                ) as prompt, temp_daily_event(itgs, prompt_uid=prompt):
-                    streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=time.time()
-                    )
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt):
+                    now = time.time()
+                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 0)
 
-                    await create_session(itgs, user_sub=user_sub, prompt_uid=prompt)
-                    streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=time.time()
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        join_at=now,
+                        leave_at=now + 1,
                     )
+                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 1)
 
             asyncio.run(_inner())
@@ -278,11 +288,11 @@ if os.environ["ENVIRONMENT"] != "test":
 
                 async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
                     itgs, created_at=yesterday
-                ) as prompt1, temp_daily_event(
+                ) as prompt1, temp_journey(
                     itgs, prompt_uid=prompt1, created_at=yesterday
                 ), temp_prompt(
                     itgs, created_at=now
-                ) as prompt2, temp_daily_event(
+                ) as prompt2, temp_journey(
                     itgs, prompt_uid=prompt2, created_at=now
                 ):
                     streak = await read_streak_from_db(
@@ -290,13 +300,25 @@ if os.environ["ENVIRONMENT"] != "test":
                     )
                     self.assertEqual(streak, 0)
 
-                    await create_session(itgs, user_sub=user_sub, prompt_uid=prompt1)
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt1,
+                        join_at=yesterday,
+                        leave_at=yesterday + 1,
+                    )
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, now=now + 1
                     )
                     self.assertEqual(streak, 0)
 
-                    await create_session(itgs, user_sub=user_sub, prompt_uid=prompt2)
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt2,
+                        join_at=now,
+                        leave_at=now + 1,
+                    )
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, now=now + 1
                     )
@@ -312,15 +334,15 @@ if os.environ["ENVIRONMENT"] != "test":
 
                 async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
                     itgs, created_at=two_days_ago
-                ) as prompt1, temp_daily_event(
+                ) as prompt1, temp_journey(
                     itgs, prompt_uid=prompt1, created_at=two_days_ago
                 ), temp_prompt(
                     itgs, created_at=yesterday
-                ) as prompt2, temp_daily_event(
+                ) as prompt2, temp_journey(
                     itgs, prompt_uid=prompt2, created_at=yesterday
                 ), temp_prompt(
                     itgs, created_at=now
-                ) as prompt3, temp_daily_event(
+                ) as prompt3, temp_journey(
                     itgs, prompt_uid=prompt3, created_at=now
                 ):
                     streak = await read_streak_from_db(
@@ -328,19 +350,37 @@ if os.environ["ENVIRONMENT"] != "test":
                     )
                     self.assertEqual(streak, 0)
 
-                    await create_session(itgs, user_sub=user_sub, prompt_uid=prompt1)
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt1,
+                        join_at=two_days_ago,
+                        leave_at=two_days_ago + 1,
+                    )
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, now=now + 1
                     )
                     self.assertEqual(streak, 0)
 
-                    await create_session(itgs, user_sub=user_sub, prompt_uid=prompt3)
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt3,
+                        join_at=now,
+                        leave_at=now + 1,
+                    )
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, now=now + 1
                     )
                     self.assertEqual(streak, 1)
 
-                    await create_session(itgs, user_sub=user_sub, prompt_uid=prompt2)
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt2,
+                        join_at=yesterday,
+                        leave_at=yesterday + 1,
+                    )
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, now=now + 1
                     )

@@ -1,20 +1,32 @@
 from typing import Optional
 from pydantic import BaseModel, Field
-from daily_events.models.external_daily_event import (
-    ExternalDailyEventJourneyCategory,
-    ExternalDailyEventJourneyDescription,
-    ExternalDailyEventJourneyInstructor,
-)
 from image_files.models import ImageFileRef
 from content_files.models import ContentFileRef
 
 
+class ExternalJourneyCategory(BaseModel):
+    """A category as represented for the external-facing journey endpoint"""
+
+    external_name: str = Field(description="The name of the category, e.g., 'Verbal'")
+
+
+class ExternalJourneyInstructor(BaseModel):
+    """An instructor as represented for the external-facing journey endpoint"""
+
+    name: str = Field(description="The name of the instructor")
+
+
+class ExternalJourneyDescription(BaseModel):
+    """A description as represented for the external-facing journey endpoint"""
+
+    text: str = Field(description="The description text")
+
+
 class ExternalJourney(BaseModel):
     """Describes a journey in the format we return it to clients with
-    so that they can start the journey. They will typically exchange a
-    daily event jwt for this response. This is different from the
-    ExternalDailyEventJourney, which is used to _preview_ the journey,
-    rather than actually start it
+    so that they can start the journey. This is the format that is
+    sufficient for the user to actually take the journey, which differs
+    from the format we might provide if the user is just browsing
 
     Typically the first thing a client does with this is use the
     journey jwt to get an interactive prompt jwt for the lobby.
@@ -44,17 +56,17 @@ class ExternalJourney(BaseModel):
         description="The audio content for the journey"
     )
 
-    category: ExternalDailyEventJourneyCategory = Field(
+    category: ExternalJourneyCategory = Field(
         description="How the journey is categorized"
     )
 
     title: str = Field(description="The very short class title")
 
-    instructor: ExternalDailyEventJourneyInstructor = Field(
+    instructor: ExternalJourneyInstructor = Field(
         description="The instructor for the journey"
     )
 
-    description: ExternalDailyEventJourneyDescription = Field(
+    description: ExternalJourneyDescription = Field(
         description="The description of the journey"
     )
 

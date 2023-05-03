@@ -79,22 +79,6 @@ the keys that we use in redis
   basic expiring key for this ratelimit. This is used
   [here](../../users/me/routes/finish_checkout_stripe.py)
 
-- `daily_events:jwt:revoked:{jti}` goes to the string '1' if the given jti has been
-  revoked. This is used [here](../../daily_events/auth.py). These keys expire when
-  the jwt expires, plus a little time to account for clock drift
-
-- `daily_events:external:cache_lock:{uid}:{level}` goes to the string '1' if the
-  daily event with the given uid at the level indicated is currently being filled
-  in by one of the instances. This is used
-  [here](../../daily_events/lib/read_one_external.py) and has a similar purpose
-  to load shedding, where we don't want a cache eviction to suddenly cause a
-  huge load spike downstream of the cache, which would then cause downstream
-  errors that prevent the cache from being filled in, causing more errors, etc.
-
-- `daily_events:has_started_one:{daily_event_uid}:{user_sub}` goes to the string '1' if the
-  user has started a journey within the daily event with the given uid, and goes to '0' or
-  nothing if they have not. This is used [here](../../daily_events/lib/has_started_one.py)
-
 - `journeys:external:cache_lock:{uid}` goes to the string '1' if the
   journey with the given uid is currently being filled in by one of the
   instances. This is used [here](../../journeys/lib/read_one_external.py) and
@@ -170,16 +154,6 @@ the keys that we use in redis
   delete the user with the given sub. Also used when trying to cancel the users
   subscription.
 
-- `users:{sub}:user_daily_event_invites:ratelimit`: goes to a string '1' while the user
-  with the given sub is prevented from redeeming user daily event invites, to prevent
-  brute-forcing codes. used [here](../../referral/routes/redeem_user_daily_event_invite.py)
-
-- `users:{sub}:user_daily_event_invites:success:{code}` goes to a string containing the
-  already encoded response data forr the given user successfully redeeming the given code.
-  Stored for a short while so that if the user presses the link multiple times we don't
-  generate an excessive number of referral records.
-  used [here](../../referral/routes/redeem_user_daily_event_invite.py)
-
 - `users:{sub}:checking_profile_image` goes to a string if we've recently recieved a profile
   image for the user with the given sub and is not set otherwise. Used to quickly fail out
   of waiting for processing of profile images.
@@ -204,12 +178,6 @@ the keys that we use in redis
   for how many phone number verifications the user has tried to give us the code for with less than
   10 minutes between them. This is accomplished with incr then expire, see
   [phones verify](../../phones/routes/finish_verify.py)
-
-- `daily_event:last_notified:uid` goes to the uid of the daily event we last sent notifications
-  out for
-
-- `daily_event:notifications:lock` goes to a string if an instance is processing notifications
-  for daily events, and is unset otherwise
 
 - `users:klaviyo_ensure_user:{user_sub}:lock` goes to either an empty key or the json serialization
   of
@@ -322,10 +290,35 @@ the keys that we use in redis
 - `external_apis:api_limiter:{api}`: Certain apis have very restrictive rate limits and/or
   can get expensive. For these APIs, like Pexels or DALL-E, we apply a ratelimit on ourself
   to ensure we don't call it too often. API names are:
+
   - `pexels`: for pexels.com
   - `dall-e`: for openai's DALL-E
     These go to values which, if set, are the `time.time()` we last used that api. They
     are set to expire around when we can use the api immediately.
+  - `whisper-1`: for openai's whisper-1 transcription model
+  - `chatgpt`: for openai's chat completion model chat-gpt-3.5
+
+- `jobs:repopulate_emotions:lock`: A basic lock to ensure we only have one job to repopulate
+  the emotions table at a time. Goes to the string `1` while the lock is held.
+
+- `jobs:generate_transcript:{journey_uid}:lock`: A basic lock to ensure we don't have two jobs
+  tryin to generate a transcript for the same journey at the same time.
+
+- `emotion_content_statistics:lock` goes to the string `1` while an instance
+  is trying to fill the emotion content statistics lock.
+
+- `emotion_content_statistics` goes to the jsonified representation of a list of emotion content
+  statistics. See [emotion_content](../../emotions/lib/emotion_content.py)
+
+- `emotion_users:choices` goes to a hash where the keys are emotion words and `__total`
+  and the values are integers representing how many votes we are telling users have recently
+  occurred for that choice. Note that this is initialized to small but non-zero numbers regularly
+  in order to give the illusion of more people using the platform, and thus is not a useful number
+  for internal decision making.
+
+- `emotion_users:pictures:{word}` goes to a string containing jsonified lists of
+  image file uids representing the profile images of a small (~5) number of
+  people who have recently selected the given emotion.
 
 ### Stats namespace
 
@@ -592,50 +585,6 @@ rather than external functionality.
   response to a request. The body of the message should be interpreted in bytes, where the
   first 4 bytes are the unix date number as a big-endian 32-bit unsigned integer, and
   the remainder is the utf-8 encoded response.
-
-- `ps:daily_events:external:push_cache` used to purge / fill backend instances local cache
-  for the local cache key `daily_events:external:{uid}:{level}`. Messages start with a 4
-  byte unsigned big-endian integer representing the size of the first messge part, followed
-  by that many bytes for the json-serialization of the following:
-
-  ```py
-  class DailyEventsExternalPushCachePubSubMessage:
-      uid: str
-      min_checked_at: float
-      level: Optional[str]
-  ```
-
-  if `level` is not `None`, then the message continues in the exact format of
-  the diskcached key `daily_events:external:{uid}:{level}`
-
-  This is primarily used [here](../../daily_events/lib/read_one_external.py)
-
-- `ps:daily_events:now:purge_cache`: a message is sent to this channel whenever there was a change
-  that may have modified the current daily event besides time, or when the time when the next
-  daily event will start changes. The body of the message is formatted as if by the trivial
-  serialization of the following:
-
-  ```py
-  class DailyEventsNowPurgeCachePubSubMessage:
-      min_checked_at: float
-  ```
-
-  This is primarily used [here](../../daily_events/routes/now.py)
-
-- `ps:daily_events:has_started_one`: a message is sent to this channel whenever either a user
-  without a pro entitlement starts a journey within a daily event, or another instance went
-  to check and it was found they had not yet, and it wasn't in redis. The body of the message
-  is formatted as if by the trivial serialization of the following:
-
-  ```py
-  class DailyEventsHasStartedOnePubSubMessage:
-      daily_event_uid: str
-      user_sub: str
-      started_one: bool
-  ```
-
-  This is primarily used [here](../../daily_events/lib/has_started_one.py)
-
 - `ps:journeys:external:push_cache` used to purge / fill backend instances local cache
   for the local cache key `journeys:external:{uid}`. Messages start with a 4
   byte unsigned big-endian integer representing the size of the first message part, followed
@@ -684,3 +633,7 @@ rather than external functionality.
 - `ps:interactive_prompts:meta:push_cache`: used to purge backend instances local cache
   for the local cache key `interactive_prompts:{uid}:meta`. The values are just strings
   representing the uid of the interactive prompt whose meta information should be purged
+
+- `ps:emotion_content_statistics:push_cache` used to purge backend instances local cache
+  for the local cache key `emotion_content_statistics`. The values are jsonified
+  purge cache messages, see [emotion_content](../../emotions/lib/emotion_content.py)

@@ -59,9 +59,6 @@ class Journey(BaseModel):
     introductory_journey_uid: Optional[str] = Field(
         description="If the journey is assigned to an introductory event, the uid of that event"
     )
-    daily_event_uid: Optional[str] = Field(
-        description="If the journey is assigned to a daily event, the uid of that event"
-    )
     sample: Optional[ContentFileRef] = Field(
         description="If the sample video for this journey is available, the corresponding content file"
     )
@@ -126,9 +123,6 @@ class JourneyFilter(BaseModel):
     )
     deleted_at: Optional[FilterItemModel[Optional[float]]] = Field(
         None, description="when the journey was deleted in seconds since the unix epoch"
-    )
-    daily_event_uid: Optional[FilterItemModel[Optional[str]]] = Field(
-        None, description="the uid of the daily event the journey belongs to"
     )
     has_sessions: Optional[FilterItemModel[bool]] = Field(
         None, description="whether the journey has sessions"
@@ -235,8 +229,6 @@ async def raw_read_journeys(
     journey_subcategories = Table("journey_subcategories")
     instructors = Table("instructors")
     instructor_pictures = image_files.as_("instructor_pictures")
-    daily_event_journeys = Table("daily_event_journeys")
-    daily_events = Table("daily_events")
     samples = content_files.as_("samples")
     videos = content_files.as_("videos")
     introductory_journeys = Table("introductory_journeys")
@@ -262,7 +254,6 @@ async def raw_read_journeys(
             interactive_prompts.prompt,
             journeys.created_at,
             journeys.deleted_at,
-            daily_events.uid,
             blurred_image_files.uid,
             darkened_image_files.uid,
             samples.uid,
@@ -285,15 +276,6 @@ async def raw_read_journeys(
         .on(journeys.interactive_prompt_id == interactive_prompts.id)
         .left_outer_join(instructor_pictures)
         .on(instructor_pictures.id == instructors.picture_image_file_id)
-        .left_outer_join(daily_events)
-        .on(
-            ExistsCriterion(
-                Query.from_(daily_event_journeys)
-                .select(1)
-                .where(daily_event_journeys.journey_id == journeys.id)
-                .where(daily_event_journeys.daily_event_id == daily_events.id)
-            )
-        )
         .left_outer_join(samples)
         .on(samples.id == journeys.sample_content_file_id)
         .left_outer_join(videos)
@@ -320,8 +302,6 @@ async def raw_read_journeys(
             return instructors.uid
         elif key == "prompt_style":
             return Function("json_extract", interactive_prompts.prompt, "style")
-        elif key == "daily_event_uid":
-            return daily_events.uid
         elif key == "blurred_background_image_file_uid":
             return blurred_image_files.uid
         elif key == "darkened_background_image_file_uid":
@@ -390,14 +370,21 @@ async def raw_read_journeys(
                 prompt=json.loads(row[13]),
                 created_at=row[14],
                 deleted_at=row[15],
-                daily_event_uid=row[16],
                 blurred_background_image=ImageFileRef(
-                    uid=row[17], jwt=await image_files_auth.create_jwt(itgs, row[17])
+                    uid=row[16], jwt=await image_files_auth.create_jwt(itgs, row[17])
                 ),
                 darkened_background_image=ImageFileRef(
-                    uid=row[18], jwt=await image_files_auth.create_jwt(itgs, row[18])
+                    uid=row[17], jwt=await image_files_auth.create_jwt(itgs, row[18])
                 ),
                 sample=(
+                    ContentFileRef(
+                        uid=row[18],
+                        jwt=await content_files_auth.create_jwt(itgs, row[18]),
+                    )
+                    if row[18] is not None
+                    else None
+                ),
+                video=(
                     ContentFileRef(
                         uid=row[19],
                         jwt=await content_files_auth.create_jwt(itgs, row[19]),
@@ -405,15 +392,7 @@ async def raw_read_journeys(
                     if row[19] is not None
                     else None
                 ),
-                video=(
-                    ContentFileRef(
-                        uid=row[20],
-                        jwt=await content_files_auth.create_jwt(itgs, row[20]),
-                    )
-                    if row[20] is not None
-                    else None
-                ),
-                introductory_journey_uid=row[21],
+                introductory_journey_uid=row[20],
             )
         )
     return items

@@ -4,10 +4,10 @@ import time
 from fastapi.responses import Response, StreamingResponse
 from typing import AsyncIterator, Dict, List, NoReturn, Optional, Union
 from content_files.models import ContentFileRef
-from daily_events.models.external_daily_event import (
-    ExternalDailyEventJourneyCategory,
-    ExternalDailyEventJourneyDescription,
-    ExternalDailyEventJourneyInstructor,
+from journeys.models.external_journey import (
+    ExternalJourneyCategory,
+    ExternalJourneyDescription,
+    ExternalJourneyInstructor,
 )
 from error_middleware import handle_error
 from journeys.models.external_journey import ExternalJourney
@@ -352,10 +352,10 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         duration_seconds=row[2],
         background_image=ImageFileRef(uid=row[0], jwt=""),
         audio_content=ContentFileRef(uid=row[1], jwt=""),
-        category=ExternalDailyEventJourneyCategory(external_name=row[3]),
+        category=ExternalJourneyCategory(external_name=row[3]),
         title=row[4],
-        instructor=ExternalDailyEventJourneyInstructor(name=row[5]),
-        description=ExternalDailyEventJourneyDescription(text=row[6]),
+        instructor=ExternalJourneyInstructor(name=row[5]),
+        description=ExternalJourneyDescription(text=row[6]),
         blurred_background_image=ImageFileRef(uid=row[7], jwt=""),
         darkened_background_image=ImageFileRef(uid=row[8], jwt=""),
         sample=ContentFileRef(uid=row[9], jwt="") if row[9] is not None else None,

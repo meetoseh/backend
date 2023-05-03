@@ -147,8 +147,7 @@ async def on_notification_time_updated(
     """Tracks that the given user changed their notification preference. This
     should only be called if the user really will receive notifications at the
     new preference, i.e., they have a user klaviyo profile, phone number, and
-    daily event notifications enabled (or this was true and the new preference
-    is "unset")
+    notifications enabled (or this was true and the new preference is "unset")
 
     Updates the following keys, which are described in docs/redis/keys.md
 

@@ -4,7 +4,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, constr
 from typing import Literal, Optional
 from auth import auth_admin
-from daily_events.lib.read_one_external import evict_external_daily_event
 from journeys.lib.read_one_external import evict_external_journey
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -75,22 +74,15 @@ async def update_instructor(
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
-        # we'll only purge journeys which have a daily event that's pretty recent,
-        # otherwise it's good enough to manually clear the cache
-        to_clean_daily_events = set()
         biggest_journey_id = 0
         now = time.time()
+        jobs = await itgs.jobs()
         while True:
             response = await cursor.execute(
                 """
                 SELECT
-                    journeys.id, journeys.uid, daily_events.uid
+                    journeys.id, journeys.uid
                 FROM journeys
-                JOIN daily_events ON EXISTS (
-                    SELECT 1 FROM daily_event_journeys
-                    WHERE daily_event_journeys.daily_event_id = daily_events.id
-                      AND daily_event_journeys.journey_id = journeys.id
-                )
                 WHERE
                     EXISTS (
                         SELECT 1 FROM instructors
@@ -99,30 +91,27 @@ async def update_instructor(
                     )
                     AND journeys.id > ?
                     AND journeys.deleted_at IS NULL
-                    AND daily_events.available_at IS NOT NULL
-                    AND daily_events.available_at BETWEEN ? AND ?
                 ORDER BY journeys.id ASC
                 LIMIT 100
                 """,
                 (
                     uid,
                     biggest_journey_id,
-                    now - 60 * 60 * 24 * 7,
-                    now + 60 * 60 * 24 * 7,
                 ),
             )
             if not response.results:
                 break
 
-            for _, journey_uid, daily_event_uid in response.results:
+            for _, journey_uid in response.results:
                 await evict_external_journey(itgs, uid=journey_uid)
-
-                to_clean_daily_events.add(daily_event_uid)
+                await jobs.enqueue(
+                    "runners.process_journey_video_sample", journey_uid=journey_uid
+                )
+                await jobs.enqueue(
+                    "runners.process_journey_video", journey_uid=journey_uid
+                )
 
             biggest_journey_id = response.results[-1][0]
-
-        for daily_event_uid in to_clean_daily_events:
-            await evict_external_daily_event(itgs, uid=daily_event_uid)
 
         return Response(
             status_code=200,

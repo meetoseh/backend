@@ -4,8 +4,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
-from daily_events.lib.read_one_external import evict_external_daily_event
 from journeys.lib.read_one_external import evict_external_journey
+from emotions.lib.emotion_content import purge_emotion_content_statistics_everywhere
 from auth import auth_admin
 from itgs import Itgs
 
@@ -52,55 +52,17 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
 
         response = await cursor.execute(
             """
-            SELECT
-                uid
-            FROM daily_events
-            WHERE
-                EXISTS (
-                    SELECT 1 FROM daily_event_journeys
-                    WHERE daily_event_journeys.daily_event_id = daily_events.id
-                      AND EXISTS (
-                        SELECT 1 FROM journeys
-                        WHERE journeys.id = daily_event_journeys.journey_id
-                          AND journeys.uid = ?
-                      )
-                )
-            """,
-            (uid,),
-        )
-        daily_event_uid: Optional[str] = (
-            response.results[0][0] if response.results else None
-        )
-
-        response = await cursor.execute(
-            """
             UPDATE journeys
             SET deleted_at = ?
             WHERE
                 uid = ?
                 AND deleted_at IS NULL
-                AND (? IS NULL OR EXISTS (
-                    SELECT 1 FROM daily_event_journeys
-                    WHERE
-                        EXISTS (
-                            SELECT 1 FROM daily_events
-                            WHERE daily_events.id = daily_event_journeys.daily_event_id
-                              AND daily_events.uid = ?
-                        )
-                        AND daily_event_journeys.journey_id = journeys.id
-                ))
-                AND (? IS NOT NULL OR NOT EXISTS (
-                    SELECT 1 FROM daily_event_journeys
-                    WHERE daily_event_journeys.journey_id = journeys.id
-                ))
             """,
-            (now, uid, daily_event_uid, daily_event_uid, daily_event_uid),
+            (now, uid),
         )
         if response.rows_affected is not None and response.rows_affected > 0:
-            if daily_event_uid is not None:
-                await evict_external_daily_event(itgs, uid=daily_event_uid)
-
             await evict_external_journey(itgs, uid=uid)
+            await purge_emotion_content_statistics_everywhere(itgs)
             return Response(
                 content=DeleteJourneyResponse(deleted_at=now).json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
@@ -112,7 +74,7 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
                 type="journey_not_found",
                 message=(
                     "The journey with that uid was not found, or it was changed during this delete, "
-                    "or it may have been deleted"
+                    "or it may already be soft-deleted"
                 ),
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},

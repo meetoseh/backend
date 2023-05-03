@@ -179,8 +179,6 @@ async def raw_read_introductory_journeys(
     journey_subcategories = Table("journey_subcategories")
     instructors = Table("instructors")
     instructor_pictures = image_files.as_("instructor_pictures")
-    daily_event_journeys = Table("daily_event_journeys")
-    daily_events = Table("daily_events")
     samples = content_files.as_("samples")
     videos = content_files.as_("videos")
     interactive_prompts = Table("interactive_prompts")
@@ -204,7 +202,6 @@ async def raw_read_introductory_journeys(
             interactive_prompts.prompt,
             journeys.created_at,
             journeys.deleted_at,
-            daily_events.uid,
             blurred_image_files.uid,
             samples.uid,
             videos.uid,
@@ -231,15 +228,6 @@ async def raw_read_introductory_journeys(
         .on(instructors.id == journeys.instructor_id)
         .left_outer_join(instructor_pictures)
         .on(instructor_pictures.id == instructors.picture_image_file_id)
-        .left_outer_join(daily_events)
-        .on(
-            ExistsCriterion(
-                Query.from_(daily_event_journeys)
-                .select(1)
-                .where(daily_event_journeys.journey_id == journeys.id)
-                .where(daily_event_journeys.daily_event_id == daily_events.id)
-            )
-        )
         .left_outer_join(samples)
         .on(samples.id == journeys.sample_content_file_id)
         .left_outer_join(videos)
@@ -275,8 +263,6 @@ async def raw_read_introductory_journeys(
             return instructors.uid
         elif key == "prompt_style":
             return Function("json_extract", interactive_prompts.prompt, "style")
-        elif key == "daily_event_uid":
-            return daily_events.uid
         elif key == "blurred_background_image_file_uid":
             return blurred_image_files.uid
         elif key == "darkened_background_image_file_uid":
@@ -336,12 +322,19 @@ async def raw_read_introductory_journeys(
                     prompt=json.loads(row[13]),
                     created_at=row[14],
                     deleted_at=row[15],
-                    daily_event_uid=row[16],
                     blurred_background_image=ImageFileRef(
-                        uid=row[17],
-                        jwt=await image_files_auth.create_jwt(itgs, row[17]),
+                        uid=row[16],
+                        jwt=await image_files_auth.create_jwt(itgs, row[16]),
                     ),
                     sample=(
+                        ContentFileRef(
+                            uid=row[17],
+                            jwt=await content_files_auth.create_jwt(itgs, row[17]),
+                        )
+                        if row[17] is not None
+                        else None
+                    ),
+                    video=(
                         ContentFileRef(
                             uid=row[18],
                             jwt=await content_files_auth.create_jwt(itgs, row[18]),
@@ -349,22 +342,14 @@ async def raw_read_introductory_journeys(
                         if row[18] is not None
                         else None
                     ),
-                    video=(
-                        ContentFileRef(
-                            uid=row[19],
-                            jwt=await content_files_auth.create_jwt(itgs, row[19]),
-                        )
-                        if row[19] is not None
-                        else None
-                    ),
                     darkened_background_image=ImageFileRef(
-                        uid=row[20],
-                        jwt=await image_files_auth.create_jwt(itgs, row[20]),
+                        uid=row[19],
+                        jwt=await image_files_auth.create_jwt(itgs, row[19]),
                     ),
                 ),
-                uid=row[21],
-                user_sub=row[22],
-                created_at=row[23],
+                uid=row[20],
+                user_sub=row[21],
+                created_at=row[22],
             )
         )
     return items

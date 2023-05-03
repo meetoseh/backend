@@ -43,7 +43,7 @@ class CreateJourneyRequest(BaseModel):
         description="The prompt style, text, and options to display to the user"
     )
     lobby_duration_seconds: int = Field(
-        20, description="The duration of the lobby in seconds.", ge=5, le=300
+        10, description="The duration of the lobby in seconds.", ge=5, le=300
     )
 
 
@@ -344,6 +344,7 @@ async def create_journey(
 
         await journeys.lib.stats.on_journey_created(itgs, created_at=now)
         jobs = await itgs.jobs()
+        await jobs.enqueue("runners.refresh_journey_emotions", journey_uid=uid)
         await jobs.enqueue("runners.process_journey_video_sample", journey_uid=uid)
         await jobs.enqueue("runners.process_journey_video", journey_uid=uid)
         return Response(

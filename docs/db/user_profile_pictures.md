@@ -21,6 +21,9 @@ current profile picture via a unique index.
     with an identity provider, and that identity provider included a profile
     claim with the given url. We downloaded that url
   - `{"src": "upload", "uploaded_at": 0}`: The user uploaded this image
+  - `{"src": "admin", "admin_user_sub": "string or null", "uploaded_at": 0}`: The profile
+    was replaced, either in a job or by a specific admin user, but not directly due to
+    the users actions.
 
 - `created_at (real not null)`: When this record was created. Note that this is
   not a particularly meaningful value compared to the more relevant timestamps

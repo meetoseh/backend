@@ -1,4 +1,4 @@
-from typing import Callable, Coroutine, List, Never, Optional
+from typing import Callable, Coroutine, List, NoReturn as Never, Optional
 from error_middleware import handle_error
 from itgs import Itgs
 from emotions.routes.read import Emotion

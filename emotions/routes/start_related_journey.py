@@ -11,6 +11,7 @@ from auth import auth_any
 from journeys.auth import create_jwt as create_journey_jwt
 from image_files.auth import create_jwt as create_image_file_jwt
 import emotions.lib.emotion_users as emotion_users
+from journeys.lib.notifs import on_entering_lobby
 import random
 
 router = APIRouter()
@@ -228,6 +229,13 @@ async def start_related_journey(
             )
             for uid in picture_uids
         ]
+
+        await on_entering_lobby(
+            itgs,
+            user_sub=auth_result.result.sub,
+            journey_uid=journey_uid,
+            action=f"entering a lobby for *{args.emotion}*",
+        )
 
         return StreamingResponse(
             content=_buffered_yield(

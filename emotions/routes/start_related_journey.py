@@ -234,7 +234,7 @@ async def start_related_journey(
             itgs,
             user_sub=auth_result.result.sub,
             journey_uid=journey_uid,
-            action=f"entering a lobby for *{args.emotion}*",
+            action=f"entering a lobby for {args.emotion}",
         )
 
         return StreamingResponse(

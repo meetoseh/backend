@@ -112,6 +112,16 @@ async def get_journey_uid(itgs: Itgs, uid: Optional[str]) -> Optional[str]:
         """
     )
     if not response.results:
-        None
+        await handle_contextless_error(
+            extra_info="no undeleted introductory journeys found, fetching an arbitrary undeleted journey instead"
+        )
+        response = await cursor.execute(
+            "SELECT uid FROM journeys WHERE deleted_at IS NULL LIMIT 1"
+        )
+        if not response.results:
+            await handle_contextless_error(
+                extra_info="no undeleted journeys found, returning None for intro journey"
+            )
+            return None
 
     return secrets.choice(response.results)[0]

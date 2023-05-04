@@ -207,7 +207,13 @@ async def start_related_journey(
         if not response.results:
             return ERROR_EMOTION_NOT_FOUND
 
-        row = random.choice(response.results)
+        rows = response.results
+        if any(row[1] == 0 for row in rows):
+            # There are some journeys that have not been taken at all. We want to
+            # prioritize those.
+            rows = [row for row in rows if row[1] == 0]
+
+        row = random.choice(rows)
         journey_uid: str = row[0]
         journey_jwt = await create_journey_jwt(itgs, journey_uid)
         journey = await read_one_external(

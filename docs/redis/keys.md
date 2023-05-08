@@ -320,6 +320,11 @@ the keys that we use in redis
   image file uids representing the profile images of a small (~5) number of
   people who have recently selected the given emotion.
 
+- `inapp_notification_users:{user_sub}:{inapp_notification_uid}` goes to the string
+  uid of the `inapp_notification_users` row we've recently created for the given user
+  and inapp notification. This is used to prevent certain front-end bugs (i.e.,
+  slamming the start endpoint) from causing excessive damage.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

@@ -7,7 +7,7 @@ from typing import Optional
 import unittest
 from itgs import Itgs
 import asyncio
-from users.me.routes.read_streak import read_streak_from_db
+from users.me.routes.read_streak import read_streak_from_db, read_days_of_week_from_db
 import os
 import time
 import secrets
@@ -385,6 +385,127 @@ if os.environ["ENVIRONMENT"] != "test":
                         itgs, user_sub=user_sub, now=now + 1
                     )
                     self.assertEqual(streak, 3)
+
+            asyncio.run(_inner())
+
+    class TestDaysOfWeekPracticed(unittest.TestCase):
+        def test_new_user(self):
+            async def _inner():
+                async with Itgs() as itgs, temp_user(itgs) as user_sub:
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=time.time()
+                    )
+                    self.assertEqual(streak, [])
+
+            asyncio.run(_inner())
+
+        def test_with_monday(self):
+            async def _inner():
+                now = 1682953200  # 2023-05-01 8am pst
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
+                    itgs
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt):
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=now
+                    )
+                    self.assertEqual(streak, [])
+
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        join_at=now,
+                        leave_at=now + 1,
+                    )
+
+                    for i in range(7):
+                        streak = await read_days_of_week_from_db(
+                            itgs, user_sub=user_sub, now=now + i * 86400
+                        )
+                        self.assertEqual(streak, ["Monday"])
+
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=now + 7 * 86400
+                    )
+                    self.assertEqual(streak, [])
+
+            asyncio.run(_inner())
+
+        def test_with_tuesday(self):
+            async def _inner():
+                now = 1683039600  # 2023-05-02 8am pst
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
+                    itgs
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt):
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=now
+                    )
+                    self.assertEqual(streak, [])
+
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        join_at=now,
+                        leave_at=now + 1,
+                    )
+                    for i in range(6):
+                        streak = await read_days_of_week_from_db(
+                            itgs, user_sub=user_sub, now=now + i * 86400
+                        )
+                        self.assertEqual(streak, ["Tuesday"])
+
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=now + 6 * 86400
+                    )
+                    self.assertEqual(streak, [])
+
+            asyncio.run(_inner())
+
+        def test_with_wednesday_sunday(self):
+            async def _inner():
+                wed = 1683126000  # 2023-05-03 8am pst
+                sun = wed + 86400 * 4
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
+                    itgs
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt):
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=wed
+                    )
+                    self.assertEqual(streak, [])
+
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        join_at=wed,
+                        leave_at=wed + 1,
+                    )
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=wed
+                    )
+                    self.assertEqual(streak, ["Wednesday"])
+
+                    await create_event(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        join_at=sun,
+                        leave_at=sun + 1,
+                    )
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=wed
+                    )
+                    self.assertEqual(streak, ["Wednesday"])
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=sun
+                    )
+                    self.assertEqual(streak, ["Wednesday", "Sunday"])
+
+                    streak = await read_days_of_week_from_db(
+                        itgs, user_sub=user_sub, now=sun + 86400
+                    )
+                    self.assertEqual(streak, [])
 
             asyncio.run(_inner())
 

@@ -35,6 +35,9 @@ class ReadStreakResponse(BaseModel):
         ge=1,
         le=7,
     )
+    checked_at: int = Field(
+        description="When this data was retrieved in seconds since the epoch - mostly for debugging"
+    )
 
 
 router = APIRouter()
@@ -75,6 +78,7 @@ async def read_streak(authorization: Optional[str] = Header(None)):
                     streak=streak,
                     days_of_week=days_of_week,
                     goal_days_per_week=goal_days_per_week,
+                    checked_at=int(now),
                 )
                 .json()
                 .encode("utf-8")
@@ -243,7 +247,13 @@ if __name__ == "__main__":
         now = time.time()
         async with Itgs() as itgs:
             streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+            days_of_week = await read_days_of_week_from_db(
+                itgs, user_sub=user_sub, now=now
+            )
+            goal_days_per_week = await read_goal_days_per_week(itgs, user_sub=user_sub)
 
         print(f"{user_sub=} has a streak of {streak} days")
+        print(f"{user_sub=} has practiced on {days_of_week} this week")
+        print(f"{user_sub=} has a goal of {goal_days_per_week} days per week")
 
     asyncio.run(main())

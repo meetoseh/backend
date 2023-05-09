@@ -27,8 +27,10 @@ def unix_timestamp_to_unix_date(unix_time: float, *, tz: pytz.BaseTzInfo) -> int
     Returns:
         int: The unix date
     """
-    naive_datetime = datetime.datetime.utcfromtimestamp(unix_time)
-    localized_datetime = tz.fromutc(naive_datetime.astimezone(tz))
+    utc_datetime = datetime.datetime.utcfromtimestamp(unix_time).replace(
+        tzinfo=pytz.utc
+    )
+    localized_datetime = utc_datetime.astimezone(tz)
     localized_date = localized_datetime.date()
     localized_unix_date = date_to_unix_date(localized_date)
     utc_midnight_on_localized_date = unix_date_to_timestamp(
@@ -73,7 +75,9 @@ def unix_date_to_date(unix_date: int) -> datetime.date:
     Returns:
         datetime.date: The date
     """
-    midnight_utc = datetime.datetime.utcfromtimestamp(unix_date * 86400)
+    midnight_utc = datetime.datetime.utcfromtimestamp(unix_date * 86400).replace(
+        tzinfo=pytz.utc
+    )
     return midnight_utc.date()
 
 

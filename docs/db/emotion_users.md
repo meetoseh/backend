@@ -16,6 +16,21 @@ that was started.
 - `journey_id (integer null references journeys(id) on delete set null)`:
   The journey that the user took as a result of selecting the emotion, if
   the journey is still available, otherwise null.
+- `status (text not null)`: A json object describing how far the user got
+  within the journey. A record is created as soon as the user selects
+  an emotion, but before they've necessarily joined the journey. The user
+  still has the opportunity to pick another emotion or decide to leave the
+  website. Possible states:
+  - `{"type":"selected"}`: The user has selected the emotion, but hasn't
+    gone to the class or replaced the emotion with a different choice
+  - `{"type":"joined", "joined_at": 0}`: The user actually joined the class,
+    and `joined_at` is the number of seconds since the unix epoch when the
+    user joined the class
+  - `{"type":"replaced", "replaced_at": 0, "replaced_with": "oseh_eu_xyz"}`:
+    The user selected a different emotion. `replaced_at` is the number of
+    seconds since the unix epoch when the user changed their mind, and
+    `replaced_with` is the uid of the new `emotion_users` record that
+    their new choice corresponds to.
 - `created_at (real not null)`: When the user selected the emotion, in seconds
   since the epoch
 
@@ -28,6 +43,7 @@ CREATE TABLE emotion_users (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     emotion_id INTEGER NOT NULL REFERENCES emotions(id) ON DELETE CASCADE,
     journey_id INTEGER NULL REFERENCES journeys(id) ON DELETE SET NULL,
+    status TEXT NOT NULL,
     created_at REAL NOT NULL
 );
 

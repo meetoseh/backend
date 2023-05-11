@@ -1,6 +1,6 @@
 import json
 import secrets
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 from error_middleware import handle_contextless_error
 from itgs import Itgs
 from dataclasses import dataclass
@@ -61,9 +61,20 @@ async def get_emotion_choice_information(itgs: Itgs, *, word: str) -> EmotionCho
     )
 
 
+@dataclass
+class OnChooseWordResult:
+    emotion_user_uid: str
+    """The row of the newly creation emotion/user record"""
+
+
 async def on_choose_word(
-    itgs: Itgs, *, word: str, user_sub: str, journey_uid: str
-) -> None:
+    itgs: Itgs,
+    *,
+    word: str,
+    user_sub: str,
+    journey_uid: str,
+    replaced_emotion_user_uid: Optional[str] = None,
+) -> OnChooseWordResult:
     """Should be called whenever a user selects a particular word, in order
     to update our external statistics.
 
@@ -85,24 +96,114 @@ async def on_choose_word(
     cursor = conn.cursor()
 
     emotion_user_uid = f"oseh_eu_{secrets.token_urlsafe(16)}"
+
+    now = time.time()
+    queries: List[Tuple[str, List[Any]]] = [
+        (
+            """
+            INSERT INTO emotion_users (
+                uid, user_id, emotion_id, journey_id, status, created_at
+            )
+            SELECT
+                ?, users.id, emotions.id, journeys.id, ?, ?
+            FROM users, emotions, journeys
+            WHERE
+                users.sub = ?
+                AND emotions.word = ?
+                AND journeys.uid = ?
+            """,
+            (
+                emotion_user_uid,
+                json.dumps({"type": "selected"}),
+                now,
+                user_sub,
+                word,
+                journey_uid,
+            ),
+        )
+    ]
+
+    if replaced_emotion_user_uid is not None:
+        queries.append(
+            (
+                """
+                UPDATE emotion_users
+                SET status=?
+                WHERE
+                    uid = ?
+                    AND json_extract(status, '$.type') = 'selected'
+                    AND EXISTS (
+                        SELECT 1 FROM users
+                        WHERE 
+                            users.id = emotion_users.user_Id
+                            AND users.sub = ?
+                    )
+                """,
+                (
+                    json.dumps(
+                        {
+                            "type": "replaced",
+                            "replaced_at": now,
+                            "replaced_with": emotion_user_uid,
+                        }
+                    ),
+                    replaced_emotion_user_uid,
+                    user_sub,
+                ),
+            )
+        )
+
+    response = await cursor.executemany3(queries)
+    if response[0].rows_affected is None or response[0].rows_affected < 1:
+        await handle_contextless_error(
+            extra_info=f"failed to insert into emotion_users {user_sub=}, {word=}, {journey_uid=}"
+        )
+    if replaced_emotion_user_uid is not None and (
+        response[1].rows_affected is None or response[1].rows_affected < 1
+    ):
+        await handle_contextless_error(
+            extra_info=f"failed to update emotion_users {replaced_emotion_user_uid=}, {user_sub=}"
+        )
+    return OnChooseWordResult(emotion_user_uid=emotion_user_uid)
+
+
+async def on_started_emotion_user_journey(
+    itgs: Itgs, *, emotion_user_uid: str, user_sub: str
+) -> None:
+    """Tracks that the user with the given sub has actually started the journey
+    association with the emotion/user relationship with the given uid.
+
+    Args:
+        itgs (Itgs): the integrations to (re)use
+        emotion_user_uid (str): the uid of the emotion/user relationship
+        user_sub (str): the sub of the user
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor()
+
     response = await cursor.execute(
         """
-        INSERT INTO emotion_users (
-            uid, user_id, emotion_id, journey_id, created_at
-        )
-        SELECT
-            ?, users.id, emotions.id, journeys.id, ?
-        FROM users, emotions, journeys
+        UPDATE emotion_users
+        SET status = ?
         WHERE
-            users.sub = ?
-            AND emotions.word = ?
-            AND journeys.uid = ?
+            uid = ?
+            AND json_extract(status, '$.type') = 'selected'
+            AND EXISTS (
+                SELECT 1 FROM users
+                WHERE
+                    users.id = emotion_users.user_id
+                    AND users.sub = ?
+            )
         """,
-        (emotion_user_uid, time.time(), user_sub, word, journey_uid),
+        (
+            json.dumps({"type": "joined", "joined_at": time.time()}),
+            emotion_user_uid,
+            user_sub,
+        ),
     )
     if response.rows_affected is None or response.rows_affected < 1:
         await handle_contextless_error(
-            extra_info=f"failed to insert into emotion_users {user_sub=}, {word=}, {journey_uid=}"
+            extra_info=f"failed to update emotion_users to joined; {emotion_user_uid=}, {user_sub=}"
         )
 
 

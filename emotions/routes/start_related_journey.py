@@ -11,7 +11,6 @@ from auth import auth_any
 from journeys.auth import create_jwt as create_journey_jwt
 from image_files.auth import create_jwt as create_image_file_jwt
 import emotions.lib.emotion_users as emotion_users
-from journeys.lib.notifs import on_entering_lobby
 import random
 
 router = APIRouter()
@@ -19,11 +18,25 @@ router = APIRouter()
 
 class StartRelatedJourneyRequest(BaseModel):
     emotion: str = Field(description="The emotion word to find a journey for")
+    replaced_emotion_user_uid: Optional[str] = Field(
+        description=(
+            "If this reuqest is because the user changed their mind before "
+            "entering the class, the uid of the returned emotion/user "
+            "relationship that is being replaced by this request."
+        )
+    )
 
 
 class StartRelatedJourneyResponse(BaseModel):
     journey: ExternalJourney = Field(
         description="The journey that the user can now join"
+    )
+    emotion_user_uid: str = Field(
+        description=(
+            "The uid of the emotion/user relationship that was created, for "
+            "correctly tracking the users history if the user doens't actually "
+            "join the journey"
+        )
     )
     num_votes: int = Field(
         description="How many votes there are for the selected emotion"
@@ -71,6 +84,7 @@ async def _buffered_yield(inner: AsyncIterator[bytes]):
 
 async def _yield_response_from_nested(
     journey: Response,
+    emotion_user_uid: str,
     num_votes: int,
     num_total_votes: int,
     voter_pictures: List[ImageFileRef],
@@ -85,7 +99,9 @@ async def _yield_response_from_nested(
     else:
         yield journey.body
 
-    yield b',"num_votes":'
+    yield b',"emotion_user_uid":"'
+    yield emotion_user_uid.encode("ascii")
+    yield b'","num_votes":'
     yield str(num_votes).encode("ascii")
     yield b',"num_total_votes":'
     yield str(num_total_votes).encode("ascii")
@@ -119,6 +135,10 @@ async def start_related_journey(
 
     This also provides some inline information about how many votes there are for
     the selected emotion, which can be shown while waiting for the journey to load.
+    Since this should be done eagerly, in order to track when the user actually starts
+    this journey, use `started_related_journey`. Similarly, if the user decides to
+    take a different journey, call this again with `replaced_emotion_user_uid` to
+    track that the user changed their mind.
 
     Requires standard authorization.
     """
@@ -143,6 +163,10 @@ async def start_related_journey(
                     WHERE
                         users.sub = ?
                         AND interactive_prompt_sessions.user_id = users.id
+                        AND EXISTS (
+                            SELECT 1 FROM interactive_prompt_events
+                            WHERE interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
+                        )
                         AND (
                             interactive_prompt_sessions.interactive_prompt_id = journeys.interactive_prompt_id
                             OR EXISTS (
@@ -173,6 +197,10 @@ async def start_related_journey(
             WHERE
                 users.sub = ?
                 AND interactive_prompt_sessions.user_id = users.id
+                AND EXISTS (
+                    SELECT 1 FROM interactive_prompt_events
+                    WHERE interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
+                )
                 AND (
                     interactive_prompt_sessions.interactive_prompt_id = journeys.interactive_prompt_id
                     OR EXISTS (
@@ -222,11 +250,12 @@ async def start_related_journey(
         if journey is None:
             return ERROR_JOURNEY_NOT_FOUND
 
-        await emotion_users.on_choose_word(
+        on_choose_word_result = await emotion_users.on_choose_word(
             itgs,
             word=args.emotion,
             user_sub=auth_result.result.sub,
             journey_uid=journey_uid,
+            replaced_emotion_user_uid=args.replaced_emotion_user_uid,
         )
         info = await emotion_users.get_emotion_choice_information(
             itgs, word=args.emotion
@@ -239,17 +268,11 @@ async def start_related_journey(
             for uid in picture_uids
         ]
 
-        await on_entering_lobby(
-            itgs,
-            user_sub=auth_result.result.sub,
-            journey_uid=journey_uid,
-            action=f"entering a lobby for {args.emotion}",
-        )
-
         return StreamingResponse(
             content=_buffered_yield(
                 _yield_response_from_nested(
                     journey=journey,
+                    emotion_user_uid=on_choose_word_result.emotion_user_uid,
                     num_votes=info.votes_for_word,
                     num_total_votes=info.votes_total,
                     voter_pictures=pictures,

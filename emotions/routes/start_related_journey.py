@@ -223,7 +223,10 @@ async def start_related_journey(
             return ERROR_JOURNEY_NOT_FOUND
 
         await emotion_users.on_choose_word(
-            itgs, word=args.emotion, user_sub=auth_result.result.sub
+            itgs,
+            word=args.emotion,
+            user_sub=auth_result.result.sub,
+            journey_uid=journey_uid,
         )
         info = await emotion_users.get_emotion_choice_information(
             itgs, word=args.emotion

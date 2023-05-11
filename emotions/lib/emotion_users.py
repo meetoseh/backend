@@ -1,5 +1,7 @@
 import json
+import secrets
 from typing import List, Optional
+from error_middleware import handle_contextless_error
 from itgs import Itgs
 from dataclasses import dataclass
 import time
@@ -59,7 +61,9 @@ async def get_emotion_choice_information(itgs: Itgs, *, word: str) -> EmotionCho
     )
 
 
-async def on_choose_word(itgs: Itgs, *, word: str, user_sub: str) -> None:
+async def on_choose_word(
+    itgs: Itgs, *, word: str, user_sub: str, journey_uid: str
+) -> None:
     """Should be called whenever a user selects a particular word, in order
     to update our external statistics.
 
@@ -76,6 +80,30 @@ async def on_choose_word(itgs: Itgs, *, word: str, user_sub: str) -> None:
         await pipe.hincrby(key, word.encode("utf-8"), 1)
         await pipe.hincrby(key, b"__total", 1)
         await pipe.execute()
+
+    conn = await itgs.conn()
+    cursor = conn.cursor()
+
+    emotion_user_uid = f"oseh_eu_{secrets.token_urlsafe(16)}"
+    response = await cursor.execute(
+        """
+        INSERT INTO emotion_users (
+            uid, user_id, emotion_id, journey_id, created_at
+        )
+        SELECT
+            ?, users.id, emotions.id, journeys.id, ?
+        FROM users, emotions, journeys
+        WHERE
+            users.sub = ?
+            AND emotions.word = ?
+            AND journeys.uid = ?
+        """,
+        (emotion_user_uid, time.time(), user_sub, word, journey_uid),
+    )
+    if response.rows_affected is None or response.rows_affected < 1:
+        await handle_contextless_error(
+            extra_info=f"failed to insert into emotion_users {user_sub=}, {word=}, {journey_uid=}"
+        )
 
 
 async def get_emotion_pictures(itgs: Itgs, *, word: str) -> List[str]:

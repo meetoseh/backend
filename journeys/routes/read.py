@@ -23,6 +23,9 @@ from journeys.subcategories.routes.read import JourneySubcategory
 from journeys.routes.create import Prompt
 
 
+SpecialCategory = Literal["ai"]
+
+
 class Journey(BaseModel):
     uid: str = Field(
         description="The primary stable external identifier for the new journey"
@@ -64,6 +67,9 @@ class Journey(BaseModel):
     )
     video: Optional[ContentFileRef] = Field(
         description="If the full video for this journey is available, the corresponding content file"
+    )
+    special_category: Optional[SpecialCategory] = Field(
+        description="If the journey has a special category, the special category, otherwise null"
     )
 
 
@@ -135,6 +141,9 @@ class JourneyFilter(BaseModel):
     )
     video_content_file_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the video content file"
+    )
+    special_category: Optional[FilterTextItemModel] = Field(
+        None, description="the special category of the journey"
     )
 
 
@@ -259,6 +268,7 @@ async def raw_read_journeys(
             samples.uid,
             videos.uid,
             introductory_journeys.uid,
+            journeys.special_category,
         )
         .join(content_files)
         .on(content_files.id == journeys.audio_content_file_id)
@@ -286,7 +296,14 @@ async def raw_read_journeys(
     qargs = []
 
     def pseudocolumn(key: str) -> Term:
-        if key in ("uid", "title", "description", "created_at", "deleted_at"):
+        if key in (
+            "uid",
+            "title",
+            "description",
+            "created_at",
+            "deleted_at",
+            "special_category",
+        ):
             return journeys.field(key)
         elif key == "audio_content_file_uid":
             return content_files.uid
@@ -393,6 +410,7 @@ async def raw_read_journeys(
                     else None
                 ),
                 introductory_journey_uid=row[20],
+                special_category=row[21],
             )
         )
     return items
@@ -416,4 +434,5 @@ def item_pseudocolumns(item: Journey) -> dict:
         "instructor_uid": item.instructor.uid,
         "description": item.description,
         "prompt_style": item.prompt.style,
+        "special_category": item.special_category,
     }

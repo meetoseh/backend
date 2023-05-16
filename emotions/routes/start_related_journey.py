@@ -184,6 +184,7 @@ async def start_related_journey(
                         AND emotions.word = ?
                 )
                 AND journeys.deleted_at IS NULL
+                AND journeys.special_category IS NULL
                 AND NOT EXISTS (
                     SELECT 1 FROM course_journeys
                     WHERE course_journeys.journey_id = journeys.id
@@ -217,6 +218,7 @@ async def start_related_journey(
                         AND emotions.word = ?
                 )
                 AND journeys.deleted_at IS NULL
+                AND journeys.special_category IS NULL
                 AND NOT EXISTS (
                     SELECT 1 FROM course_journeys
                     WHERE course_journeys.journey_id = journeys.id

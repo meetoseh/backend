@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 from pydantic import BaseModel, Field
 from .standard_text_operator import StandardTextOperator
 from pypika import Parameter
@@ -14,7 +15,7 @@ class FilterTextItem:
     operator: StandardTextOperator
     """The operator to use when comparing the value to the pseudocolumn"""
 
-    value: str
+    value: Optional[str]
     """The value to compare the pseudocolumn to"""
 
     def applied_to(self, term: Term, qargs: list) -> Criterion:
@@ -102,7 +103,7 @@ class FilterTextItemModel(BaseModel):
         description="The operator to use when comparing the value to the pseudocolumn",
     )
 
-    value: str = Field(
+    value: Optional[str] = Field(
         title="Value",
         description="The value to compare the pseudocolumn to",
     )

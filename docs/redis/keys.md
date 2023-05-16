@@ -291,12 +291,13 @@ the keys that we use in redis
   can get expensive. For these APIs, like Pexels or DALL-E, we apply a ratelimit on ourself
   to ensure we don't call it too often. API names are:
 
-  - `pexels`: for pexels.com
+  - `pexels`: for searching or downloading from pexels.com
   - `dall-e`: for openai's DALL-E
     These go to values which, if set, are the `time.time()` we last used that api. They
     are set to expire around when we can use the api immediately.
   - `whisper-1`: for openai's whisper-1 transcription model
   - `chatgpt`: for openai's chat completion model chat-gpt-3.5
+  - `ccmixter`: for searching or downloading from ccmixter.org
 
 - `jobs:repopulate_emotions:lock`: A basic lock to ensure we only have one job to repopulate
   the emotions table at a time. Goes to the string `1` while the lock is held.

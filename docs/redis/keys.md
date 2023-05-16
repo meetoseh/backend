@@ -326,6 +326,11 @@ the keys that we use in redis
   and inapp notification. This is used to prevent certain front-end bugs (i.e.,
   slamming the start endpoint) from causing excessive damage.
 
+- `reddit:refresh_token`: the refresh token to use to authorize with reddit
+
+- `reddit:lock`: A lock that prevents us having multiple praw instances trying to use
+  reddit at once, which will cause issues with the refresh token.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

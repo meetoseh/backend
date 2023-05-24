@@ -62,6 +62,26 @@ particular inapp notification.
   when they would like to get reminders. This uses an interactive prompt, so
   there are no actions available here.
 
+- AI Journey (`oseh_ian_ncpainTP_XZJpWQ9ZIdGQA`) asks the user if they want to
+  try an ai-generated journey. If they select yes, they go through the journey
+  flow (interactive prompt, then class, then post screen), but the post screen
+  is swapped out to ask them if they liked it. Actions:
+
+  - `yes`: the user wanted to start the journey
+  - `no`: the user pressed no and didn't start the journey
+  - `x`: the user closed the prompt, which is another way of saying no
+  - `start_prompt`: the user is presented the interactive prompt. extra
+    contains basic information on which journey;
+    `{"uid": "string", "title": "string"}`
+  - `start_audio`: the user got to the audio part of the journey
+  - `stop_audio_early`: the user clicked the x to stop the audio early.
+    extra is formatted as `{"current_time": 0}`
+  - `stop_audio_normally`: the user got to the end of the audio
+  - `thumbs_up`: the user indicated they liked the journey
+  - `thumbs_down`: the user indicated they didn't like the journey
+  - `continue`: the user hit the continue on the post screen to continue on
+    to the normal experience
+
 ## Schema
 
 ```sql

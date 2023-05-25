@@ -31,6 +31,8 @@ to avoid this issue, but at the time of writing the complexity doesn't seem wort
   visitor by either inserting a new visitor user record or inserting a new visitor
   utm record. This is used to dramatically simplify and speed up concurrency
   guarrantees. This is not incremented when just changing `last_seen_at` on a `visitor_user`.
+  This is not incremented when adding/altering visitor_interests, which don't need
+  strong concurrency guarrantees.
 - `source (text not null)`: One of the following:
   - `browser`: Came from the user using the frontend-web client
   - `ios`: Came from the user using the ios client

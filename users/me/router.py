@@ -16,6 +16,7 @@ import users.me.routes.update_name
 import users.me.routes.update_notification_time
 import users.me.routes.update_timezone
 import users.me.routes.upload_profile_picture
+import users.me.interests.router
 
 router = APIRouter()
 
@@ -36,3 +37,5 @@ router.include_router(users.me.routes.update_name.router)
 router.include_router(users.me.routes.update_notification_time.router)
 router.include_router(users.me.routes.update_timezone.router)
 router.include_router(users.me.routes.upload_profile_picture.router)
+
+router.include_router(users.me.interests.router.router, prefix="/interests")

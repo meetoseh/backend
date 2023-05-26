@@ -20,7 +20,6 @@ authorization header via the sub claim.
 - `phone_number (text null)`: the phone number of the user. NOT A VALID IDENTIFIER.
 - `phone_number_verified (boolean null)`: if we or an identity provider has confirmed
   that the user owns the phone number.
-  `custom:pn_verified`
 - `given_name (text null)`: the given name of the user. we don't get this from apple,
   so it's null for apple users unless they specify it
 - `family_name (text null)`: the family name of the user

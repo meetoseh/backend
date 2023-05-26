@@ -109,7 +109,7 @@ async def read_user_attribution_info(
             ).json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
-                "Cache-Control": "private, max-age=86400, stale-while-revalidate=86400, stale-if-error=86400",
+                "Cache-Control": "private, max-age=600, stale-while-revalidate=600, stale-if-error=86400",
             },
         )
 

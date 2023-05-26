@@ -18,6 +18,14 @@ new versions will be backwards compatible
 
    Identified with: `oseh_jf-otp_fKWQzTG-JnA`
 
+2. "How did that feel?"
+   Responses:
+
+   1. A thumbs up icon, indicating "yes"
+   2. A thumbs down icon, indicating "no"
+
+   Identified with: `oseh_jf-otp_gwJjdMC4820`
+
 ## Fields
 
 - `id (integer primary key)`: The internal row identifier

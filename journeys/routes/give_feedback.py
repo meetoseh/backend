@@ -39,7 +39,13 @@ FEEDBACKS_BY_VERSION = {
         version_number=1,
         num_responses=2,
         allows_freeform=False,
-    )
+    ),
+    "oseh_jf-otp_gwJjdMC4820": FeedbackVersion(
+        version="oseh_jf-otp_gwJjdMC4820",
+        version_number=2,
+        num_responses=2,
+        allows_freeform=False,
+    ),
 }
 
 router = APIRouter()

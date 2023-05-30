@@ -1,6 +1,6 @@
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, Case
+from pypika.terms import Term, Case, ExistsCriterion
 from pypika.functions import Coalesce, Max
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 from fastapi import APIRouter, Header
@@ -67,6 +67,13 @@ class UserFilter(BaseModel):
     )
     primary_interest: Optional[FilterTextItemModel] = Field(
         None, description="the users primary interest"
+    )
+    utm: Optional[FilterTextItemModel] = Field(
+        None,
+        description=(
+            "if specified, the canonical query representation of at least one utm the user "
+            "has clicked on before signing up must match to be included in the result"
+        ),
     )
     created_at: Optional[FilterItemModel[float]] = Field(
         None, description="the time at which the user was created"
@@ -256,8 +263,27 @@ async def raw_read_users(
             return interests.slug
         raise ValueError(f"unknown key {key}")
 
+    def utm_term(filter: FilterTextItem, qargs: list) -> Term:
+        utms = Table("utms").as_("utm_term_utms")
+        visitor_utms = Table("visitor_utms").as_("utm_term_visitor_utms")
+        visitor_users = Table("visitor_users").as_("utm_term_visitor_users")
+        return ExistsCriterion(
+            Query.from_(utms)
+            .join(visitor_utms)
+            .on(visitor_utms.utm_id == utms.id)
+            .join(visitor_users)
+            .on(visitor_users.visitor_id == visitor_utms.visitor_id)
+            .select(1)
+            .where(visitor_users.user_id == users.id)
+            .where(visitor_utms.clicked_at <= users.created_at)
+            .where(filter.applied_to(utms.canonical_query_param, qargs))
+        )
+
     for key, filter in filters_to_apply:
-        query = query.where(filter.applied_to(pseudocolumn(key), qargs))
+        if key == "utm":
+            query = query.where(utm_term(filter, qargs))
+        else:
+            query = query.where(filter.applied_to(pseudocolumn(key), qargs))
 
     query = query.where(sort_criterion(sort, pseudocolumn, qargs))
 

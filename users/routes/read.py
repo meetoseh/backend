@@ -65,6 +65,9 @@ class UserFilter(BaseModel):
     revenue_cat_id: Optional[FilterTextItemModel] = Field(
         None, description="the revenue cat id of the user"
     )
+    primary_interest: Optional[FilterTextItemModel] = Field(
+        None, description="the users primary interest"
+    )
     created_at: Optional[FilterItemModel[float]] = Field(
         None, description="the time at which the user was created"
     )
@@ -160,7 +163,7 @@ base_keys: Set[str] = frozenset(
         "given_name",
         "family_name",
         "admin",
-        "revennue_cat_id",
+        "revenue_cat_id",
         "created_at",
     )
 )
@@ -177,6 +180,8 @@ async def raw_read_users(
     user_profile_pictures = Table("user_profile_pictures")
     visitor_users = Table("visitor_users")
     image_files = Table("image_files")
+    user_interests = Table("user_interests")
+    interests = Table("interests")
 
     last_seen_ats = Table("last_seen_ats")
 
@@ -217,6 +222,16 @@ async def raw_read_users(
     )
     qargs = []
 
+    joined_interests = False
+    if any(k == "primary_interest" for (k, _) in filters_to_apply):
+        joined_interests = True
+        query = query.left_outer_join(user_interests).on(
+            (user_interests.user_id == users.id) & (user_interests.is_primary == 1)
+        )
+        query = query.left_outer_join(interests).on(
+            interests.id == user_interests.interest_id
+        )
+
     def pseudocolumn(key: str) -> Term:
         if key in base_keys:
             return users.field(key)
@@ -236,6 +251,9 @@ async def raw_read_users(
                 .when(users.field("family_name").isnotnull(), users.family_name)
                 .else_(Term.wrap_constant(None))
             )
+        elif key == "primary_interest":
+            assert joined_interests
+            return interests.slug
         raise ValueError(f"unknown key {key}")
 
     for key, filter in filters_to_apply:

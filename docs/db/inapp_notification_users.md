@@ -9,7 +9,7 @@ Each record indicates that the given user saw the corresponding inapp notificati
   [uid prefix](../uid_prefixes.md) `ianu`
 - `inapp_notification_id (integer not null references inapp_notifications(id) on delete cascade)`:
   the notification the user saw
-- `user_id (integer not null references useres(id) on delete cascade)`: the user who saw the
+- `user_id (integer not null references users(id) on delete cascade)`: the user who saw the
   notification
 - `platform (text not null)`: one of: `web`, `ios`, `android`
 - `created_at (real not null)`: When the user saw the notification / when this record was created,

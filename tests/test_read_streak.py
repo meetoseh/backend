@@ -169,7 +169,7 @@ async def temp_journey(
         )
 
 
-async def create_event(
+async def create_prompt_event(
     itgs: Itgs, *, user_sub: str, prompt_uid: str, join_at: float, leave_at: float
 ):
     session_uid: str = f"oseh_ips_{secrets.token_urlsafe(16)}"
@@ -225,6 +225,67 @@ async def create_event(
     )
 
 
+async def create_user_journey(
+    itgs: Itgs, *, user_sub: str, journey_uid: str, created_at: float
+) -> str:
+    """Stores in the simple fashion that the user with the given sub took the
+    journey with the given uid.
+
+    Returns the journey_user_uid created
+    """
+    journey_user_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+
+    response = await cursor.execute(
+        """
+        INSERT INTO user_journeys (
+            uid, user_id, journey_id, created_at
+        )
+        SELECT
+            ?, users.id, journeys.id, ?
+        FROM users, journeys
+        WHERE
+            users.sub = ?
+            AND journeys.uid = ?
+        """,
+        (journey_user_uid, created_at, user_sub, journey_uid),
+    )
+    assert response.rows_affected == 1
+    return journey_user_uid
+
+
+async def simulate_user_in_journey(
+    itgs: Itgs,
+    *,
+    user_sub: str,
+    journey_uid: str,
+    prompt_uid: str,
+    join_at: float,
+    leave_at: float,
+):
+    """Combines create_prompt_event and create_user_journey as they normally would
+    be called together. Prior to user_journeys being created, queries would go through
+    interactive_prompts in a rather complicated fashion, but now the user_journeys
+    table is sufficient to determine user streaks. Furthermore, streaks should not
+    rely on prompt events anymore as they are less reliable for future potential flows,
+    like users opting out of prompts altogether.
+    """
+    await create_prompt_event(
+        itgs,
+        user_sub=user_sub,
+        prompt_uid=prompt_uid,
+        join_at=join_at,
+        leave_at=leave_at,
+    )
+    await create_user_journey(
+        itgs,
+        user_sub=user_sub,
+        journey_uid=journey_uid,
+        created_at=join_at,
+    )
+
+
 if os.environ["ENVIRONMENT"] != "test":
 
     class Test(unittest.TestCase):
@@ -248,10 +309,10 @@ if os.environ["ENVIRONMENT"] != "test":
                     streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 0)
 
-                    await create_event(
+                    await create_prompt_event(
                         itgs,
                         user_sub=user_sub,
-                        prompt_uid=prompt,
+                        prompt=prompt,
                         join_at=one_week_ago,
                         leave_at=one_week_ago + 1,
                     )
@@ -264,17 +325,59 @@ if os.environ["ENVIRONMENT"] != "test":
             async def _inner():
                 async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
                     itgs
-                ) as prompt, temp_journey(itgs, prompt_uid=prompt):
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     now = time.time()
                     streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 0)
 
-                    await create_event(
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        journey_uid=journey.journey_uid,
+                        join_at=now,
+                        leave_at=now + 1,
+                    )
+                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    self.assertEqual(streak, 1)
+
+            asyncio.run(_inner())
+
+        def test_user_with_prompt_events_without_user_journey(self):
+            async def _inner():
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
+                    itgs
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
+                    now = time.time()
+                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    self.assertEqual(streak, 0)
+
+                    await create_prompt_event(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt,
                         join_at=now,
                         leave_at=now + 1,
+                    )
+                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    self.assertEqual(streak, 0)
+
+            asyncio.run(_inner())
+
+        def test_user_with_user_journey_no_prompt(self):
+            async def _inner():
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
+                    itgs
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
+                    now = time.time()
+                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    self.assertEqual(streak, 0)
+
+                    await create_user_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        created_at=now,
                     )
                     streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
                     self.assertEqual(streak, 1)
@@ -290,20 +393,21 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs, created_at=yesterday
                 ) as prompt1, temp_journey(
                     itgs, prompt_uid=prompt1, created_at=yesterday
-                ), temp_prompt(
+                ) as journey1, temp_prompt(
                     itgs, created_at=now
                 ) as prompt2, temp_journey(
                     itgs, prompt_uid=prompt2, created_at=now
-                ):
+                ) as journey2:
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, now=now + 1
                     )
                     self.assertEqual(streak, 0)
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt1,
+                        journey_uid=journey1.journey_uid,
                         join_at=yesterday,
                         leave_at=yesterday + 1,
                     )
@@ -312,10 +416,11 @@ if os.environ["ENVIRONMENT"] != "test":
                     )
                     self.assertEqual(streak, 0)
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt2,
+                        journey_uid=journey2.journey_uid,
                         join_at=now,
                         leave_at=now + 1,
                     )
@@ -336,24 +441,25 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs, created_at=two_days_ago
                 ) as prompt1, temp_journey(
                     itgs, prompt_uid=prompt1, created_at=two_days_ago
-                ), temp_prompt(
+                ) as journey1, temp_prompt(
                     itgs, created_at=yesterday
                 ) as prompt2, temp_journey(
                     itgs, prompt_uid=prompt2, created_at=yesterday
-                ), temp_prompt(
+                ) as journey2, temp_prompt(
                     itgs, created_at=now
                 ) as prompt3, temp_journey(
                     itgs, prompt_uid=prompt3, created_at=now
-                ):
+                ) as journey3:
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, now=now + 1
                     )
                     self.assertEqual(streak, 0)
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt1,
+                        journey_uid=journey1.journey_uid,
                         join_at=two_days_ago,
                         leave_at=two_days_ago + 1,
                     )
@@ -362,10 +468,11 @@ if os.environ["ENVIRONMENT"] != "test":
                     )
                     self.assertEqual(streak, 0)
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt3,
+                        journey_uid=journey3.journey_uid,
                         join_at=now,
                         leave_at=now + 1,
                     )
@@ -374,10 +481,11 @@ if os.environ["ENVIRONMENT"] != "test":
                     )
                     self.assertEqual(streak, 1)
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt2,
+                        journey_uid=journey2.journey_uid,
                         join_at=yesterday,
                         leave_at=yesterday + 1,
                     )
@@ -404,16 +512,17 @@ if os.environ["ENVIRONMENT"] != "test":
                 now = 1682953200  # 2023-05-01 8am pst
                 async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
                     itgs
-                ) as prompt, temp_journey(itgs, prompt_uid=prompt):
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     streak = await read_days_of_week_from_db(
                         itgs, user_sub=user_sub, now=now
                     )
                     self.assertEqual(streak, [])
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt,
+                        journey_uid=journey.journey_uid,
                         join_at=now,
                         leave_at=now + 1,
                     )
@@ -436,16 +545,17 @@ if os.environ["ENVIRONMENT"] != "test":
                 now = 1683039600  # 2023-05-02 8am pst
                 async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
                     itgs
-                ) as prompt, temp_journey(itgs, prompt_uid=prompt):
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     streak = await read_days_of_week_from_db(
                         itgs, user_sub=user_sub, now=now
                     )
                     self.assertEqual(streak, [])
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt,
+                        journey_uid=journey.journey_uid,
                         join_at=now,
                         leave_at=now + 1,
                     )
@@ -468,16 +578,17 @@ if os.environ["ENVIRONMENT"] != "test":
                 sun = wed + 86400 * 4
                 async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
                     itgs
-                ) as prompt, temp_journey(itgs, prompt_uid=prompt):
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     streak = await read_days_of_week_from_db(
                         itgs, user_sub=user_sub, now=wed
                     )
                     self.assertEqual(streak, [])
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt,
+                        journey_uid=journey.journey_uid,
                         join_at=wed,
                         leave_at=wed + 1,
                     )
@@ -486,10 +597,11 @@ if os.environ["ENVIRONMENT"] != "test":
                     )
                     self.assertEqual(streak, ["Wednesday"])
 
-                    await create_event(
+                    await simulate_user_in_journey(
                         itgs,
                         user_sub=user_sub,
                         prompt_uid=prompt,
+                        journey_uid=journey.journey_uid,
                         join_at=sun,
                         leave_at=sun + 1,
                     )

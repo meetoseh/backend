@@ -1,3 +1,5 @@
+import secrets
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -49,5 +51,32 @@ async def started_ai_journey(
             journey_uid=journey_auth_result.result.journey_uid,
             action=f"entering an ai journey lobby",
         )
+
+        conn = await itgs.conn()
+        cursor = conn.cursor("none")
+        user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
+        response = await cursor.execute(
+            """
+            INSERT INTO user_journeys (
+                uid, user_id, journey_id, created_at
+            )
+            SELECT
+                ?, users.id, journeys.id, ?
+            FROM users, journeys
+            WHERE
+                users.sub = ?
+                AND journeys.uid = ?
+            """,
+            (
+                user_journey_uid,
+                time.time(),
+                auth_result.result.sub,
+                journey_auth_result.result.journey_uid,
+            ),
+        )
+        if response.rows_affected is None or response.rows_affected < 1:
+            await handle_contextless_error(
+                extra_info=f"failed to store ai journey user_journey row: {auth_result.result.sub=}, {journey_auth_result.result.journey_uid=}"
+            )
 
         return Response(status_code=204)

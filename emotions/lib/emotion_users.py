@@ -181,29 +181,58 @@ async def on_started_emotion_user_journey(
     conn = await itgs.conn()
     cursor = conn.cursor()
 
-    response = await cursor.execute(
-        """
-        UPDATE emotion_users
-        SET status = ?
-        WHERE
-            uid = ?
-            AND json_extract(status, '$.type') = 'selected'
-            AND EXISTS (
-                SELECT 1 FROM users
-                WHERE
-                    users.id = emotion_users.user_id
-                    AND users.sub = ?
-            )
-        """,
+    user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
+    now = time.time()
+
+    response = await cursor.executemany3(
         (
-            json.dumps({"type": "joined", "joined_at": time.time()}),
-            emotion_user_uid,
-            user_sub,
+            """
+            UPDATE emotion_users
+            SET status = ?
+            WHERE
+                uid = ?
+                AND json_extract(status, '$.type') = 'selected'
+                AND EXISTS (
+                    SELECT 1 FROM users
+                    WHERE
+                        users.id = emotion_users.user_id
+                        AND users.sub = ?
+                )
+            """,
+            (
+                json.dumps({"type": "joined", "joined_at": now}),
+                emotion_user_uid,
+                user_sub,
+            ),
+        ),
+        (
+            """
+            INSERT INTO user_journeys (
+                uid, user_id, journey_id, created_at
+            )
+            SELECT
+                ?, users.id, emotion_users.journey_id, ?
+            FROM emotion_users, users
+            WHERE
+                emotion_users.uid = ?
+                AND users.id = emotion_users.user_id
+                AND users.sub = ?
+            """,
+            (
+                user_journey_uid,
+                now,
+                emotion_user_uid,
+                user_sub,
+            ),
         ),
     )
-    if response.rows_affected is None or response.rows_affected < 1:
+    if response[0].rows_affected is None or response[0].rows_affected < 1:
         await handle_contextless_error(
             extra_info=f"failed to update emotion_users to joined; {emotion_user_uid=}, {user_sub=}"
+        )
+    if response[1].rows_affected is None or response[1].rows_affected < 1:
+        await handle_contextless_error(
+            extra_info=f"failed to insert into user_journeys; {emotion_user_uid=}, {user_sub=}"
         )
 
 

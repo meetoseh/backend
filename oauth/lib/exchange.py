@@ -179,17 +179,8 @@ async def create_tokens_for_user(
         """
         SELECT
             EXISTS (
-                SELECT 1 FROM interactive_prompt_sessions
-                WHERE 
-                    interactive_prompt_sessions.user_id = users.id
-                    AND EXISTS (
-                        SELECT 1 FROM interactive_prompt_events
-                        WHERE interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
-                    )
-                    AND EXISTS (
-                        SELECT 1 FROM journeys
-                        WHERE journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
-                    )
+                SELECT 1 FROM user_journeys
+                WHERE user_journeys.user_id = users.id
             ) AS b1,
             phone_number,
             phone_number_verified

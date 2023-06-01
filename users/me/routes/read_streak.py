@@ -161,13 +161,11 @@ async def read_days_of_week_from_db(
         query += (
             """
             EXISTS (
-                SELECT 1 FROM interactive_prompt_sessions, interactive_prompt_events
+                SELECT 1 FROM user_journeys
                 WHERE
-                    interactive_prompt_sessions.id = interactive_prompt_events.interactive_prompt_session_id
-                    AND interactive_prompt_sessions.user_id = users.id
-                    AND interactive_prompt_events.created_at >= ? - 86400
-                    AND interactive_prompt_events.created_at < ?
-                    AND interactive_prompt_events.evtype = 'join'
+                    user_journeys.user_id = users.id
+                    AND user_journeys.created_at >= ? - 86400
+                    AND user_journeys.created_at < ?
             )
         """
             + f" AS b{day}"
@@ -218,14 +216,12 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
             FROM events
             WHERE
                 EXISTS (
-                    SELECT 1 FROM interactive_prompt_sessions, interactive_prompt_events, users
+                    SELECT 1 FROM user_journeys, users
                     WHERE
-                        interactive_prompt_sessions.id = interactive_prompt_events.interactive_prompt_session_id
-                        AND interactive_prompt_sessions.user_id = users.id
+                        user_journeys.user_id = users.id
                         AND users.sub = ?
-                        AND interactive_prompt_events.created_at >= events.end_of_day_at - 86400
-                        AND interactive_prompt_events.created_at < events.end_of_day_at
-                        AND interactive_prompt_events.evtype = 'join'
+                        AND user_journeys.created_at >= events.end_of_day_at - 86400
+                        AND user_journeys.created_at < events.end_of_day_at
                 )
         )
         SELECT COUNT(*) FROM events

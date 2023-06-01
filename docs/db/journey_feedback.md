@@ -6,7 +6,11 @@ a version option.
 
 The client specifies the version, so to hide how many versions we have/had,
 the client indicates the version with a uid. This also ensures that adding
-new versions will be backwards compatible
+new versions will be backwards compatible.
+
+Note that this feedback has been largely replaced with favorites/liking,
+which has a fixed question as the behavior is very specific. See
+[user_likes](./user_likes.md)
 
 ## Versions
 

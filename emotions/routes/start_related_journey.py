@@ -159,22 +159,11 @@ async def start_related_journey(
             FROM journeys
             WHERE
                 NOT EXISTS (
-                    SELECT 1 FROM interactive_prompt_sessions, users
-                    WHERE
-                        users.sub = ?
-                        AND interactive_prompt_sessions.user_id = users.id
-                        AND EXISTS (
-                            SELECT 1 FROM interactive_prompt_events
-                            WHERE interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
-                        )
-                        AND (
-                            interactive_prompt_sessions.interactive_prompt_id = journeys.interactive_prompt_id
-                            OR EXISTS (
-                                SELECT 1 FROM interactive_prompt_old_journeys
-                                WHERE interactive_prompt_old_journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
-                                    AND interactive_prompt_old_journeys.journey_id = journeys.id
-                            )
-                        )
+                    SELECT 1 FROM user_journeys, users
+                    WHERE 
+                        user_journeys.journey_id = journeys.id
+                        AND user_journeys.user_id = users.id
+                        AND users.sub = ?
                 )
                 AND EXISTS (
                     SELECT 1 FROM journey_emotions, emotions
@@ -194,22 +183,11 @@ async def start_related_journey(
                 journeys.uid AS journey_uid,
                 COUNT(*) AS num_times_taken,
                 journeys.created_at AS journey_created_at
-            FROM journeys, interactive_prompt_sessions, users
+            FROM journeys, journey_users, users
             WHERE
                 users.sub = ?
-                AND interactive_prompt_sessions.user_id = users.id
-                AND EXISTS (
-                    SELECT 1 FROM interactive_prompt_events
-                    WHERE interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
-                )
-                AND (
-                    interactive_prompt_sessions.interactive_prompt_id = journeys.interactive_prompt_id
-                    OR EXISTS (
-                        SELECT 1 FROM interactive_prompt_old_journeys
-                        WHERE interactive_prompt_old_journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
-                        AND interactive_prompt_old_journeys.journey_id = journeys.id
-                    )
-                )
+                AND journey_users.journey_id = journeys.id
+                AND journey_users.user_id = users.id
                 AND EXISTS (
                     SELECT 1 FROM journey_emotions, emotions
                     WHERE

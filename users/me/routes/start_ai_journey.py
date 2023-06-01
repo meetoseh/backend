@@ -72,20 +72,11 @@ async def start_ai_journey(authorization: Optional[str] = Header(None)):
                     WHERE course_journeys.journey_id = journeys.id
                 )
                 AND NOT EXISTS (
-                    SELECT 1 FROM interactive_prompt_events, interactive_prompt_sessions, users
+                    SELECT 1 FROM user_journeys, users
                     WHERE
-                        interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
-                        AND interactive_prompt_sessions.user_id = users.id
+                        user_journeys.user_id = users.id
+                        AND user_journeys.journey_id = journeys.id
                         AND users.sub = ?
-                        AND (
-                            journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
-                            OR EXISTS (
-                                SELECT 1 FROM interactive_prompt_old_journeys
-                                WHERE
-                                    interactive_prompt_old_journeys.interactive_prompt_id = interactive_prompt_sessions.interactive_prompt_id
-                                    AND interactive_prompt_old_journeys.journey_id = journeys.id
-                            )
-                        )
                 )
             ORDER BY journeys.created_at DESC, journeys.uid ASC
             LIMIT 1

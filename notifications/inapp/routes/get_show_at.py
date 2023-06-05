@@ -75,15 +75,14 @@ async def get_inapp_notification_show_at(
             """
             SELECT
                 inapp_notifications.minimum_repeat_interval,
-                inapp_notification_users.created_at
+                inapp_notification_users.created_at,
+                inapp_notifications.user_max_created_at,
+                users.created_at
             FROM inapp_notifications
+            JOIN users ON users.sub = ?
             LEFT OUTER JOIN inapp_notification_users ON (
                 inapp_notifications.id = inapp_notification_users.inapp_notification_id
-                AND EXISTS (
-                    SELECT 1 FROM users
-                    WHERE users.id = inapp_notification_users.user_id
-                      AND users.sub = ?
-                )
+                AND users.id = inapp_notification_users.user_id
                 AND NOT EXISTS (
                     SELECT 1 FROM inapp_notification_users AS ianu
                     WHERE ianu.inapp_notification_id = inapp_notifications.id
@@ -114,21 +113,26 @@ async def get_inapp_notification_show_at(
 
         minimum_repeat_interval: Optional[float] = response.results[0][0]
         last_shown_at: Optional[float] = response.results[0][1]
+        user_max_created_at: Optional[float] = response.results[0][2]
+        user_created_at: float = response.results[0][3]
 
         now = time.time()
-        show_now = last_shown_at is None or (
-            minimum_repeat_interval is not None
-            and last_shown_at + minimum_repeat_interval < now
-        )
-        check_again_at = (
-            None
-            if minimum_repeat_interval is None
-            else (
-                now + minimum_repeat_interval
-                if show_now
-                else last_shown_at + minimum_repeat_interval
-            )
-        )
+        show_now: bool = True
+        check_again_at: Optional[float] = None
+        if minimum_repeat_interval is None:
+            show_now = show_now and last_shown_at is None
+        elif last_shown_at is None:
+            check_again_at = now + minimum_repeat_interval
+        elif last_shown_at + minimum_repeat_interval < now:
+            check_again_at = now + minimum_repeat_interval
+        else:
+            show_now = False
+            check_again_at = last_shown_at + minimum_repeat_interval
+
+        if user_max_created_at is not None and user_created_at > user_max_created_at:
+            show_now = False
+            check_again_at = None
+
         return Response(
             content=GetInappNotificationShowAtResponse(
                 show_now=show_now, next_show_at=check_again_at

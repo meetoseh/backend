@@ -183,11 +183,11 @@ async def start_related_journey(
                 journeys.uid AS journey_uid,
                 COUNT(*) AS num_times_taken,
                 journeys.created_at AS journey_created_at
-            FROM journeys, journey_users, users
+            FROM journeys, user_journeys, users
             WHERE
                 users.sub = ?
-                AND journey_users.journey_id = journeys.id
-                AND journey_users.user_id = users.id
+                AND user_journeys.journey_id = journeys.id
+                AND user_journeys.user_id = users.id
                 AND EXISTS (
                     SELECT 1 FROM journey_emotions, emotions
                     WHERE

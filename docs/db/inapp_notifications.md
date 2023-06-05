@@ -25,6 +25,9 @@ particular inapp notification.
   frontend the notification should not be displayed.
 - `minimum_repeat_interval (real null)`: If this notification can be repeated,
   the minimum amount of time in fractional seconds between repeats.
+- `user_max_created_at (real null)`: If specified, users which were created before
+  this time (in seconds since the epoch) should not ever see this inapp notification.
+  This is an easy way to support feature announcements.
 - `created_at (real not null)`: When this row was added
 
 ## Active Screens
@@ -82,6 +85,11 @@ particular inapp notification.
   - `continue`: the user hit the continue on the post screen to continue on
     to the normal experience
 
+- Favorites Announcement (`oseh_ian_rLkvxKAwvgI2Vpcvu0bjsg`) lets users know
+  about the new favorites feature. Actions:
+
+  - `next`: the user hit the next button to dismiss the notification
+
 ## Schema
 
 ```sql
@@ -92,6 +100,7 @@ CREATE TABLE inapp_notifications (
     description TEXT NOT NULL,
     active BOOLEAN NOT NULL,
     minimum_repeat_interval REAL NULL,
+    user_max_created_at REAL NULL,
     created_at REAL NOT NULL
 );
 ```

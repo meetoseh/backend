@@ -22,12 +22,12 @@ from journeys.models.minimal_journey import MinimalJourney, MinimalJourneyInstru
 USER_HISTORY_SORT_OPTIONS = [
     SortItem[Literal["uid"], str],
     SortItem[Literal["last_taken_at"], float],
-    SortItem[Literal["liked_at"], Optional[float]],
+    SortItem[Literal["liked_at"], float],
 ]
 UserHistorySortOption = Union[
     SortItemModel[Literal["uid"], str],
     SortItemModel[Literal["last_taken_at"], float],
-    SortItemModel[Literal["liked_at"], Optional[float]],
+    SortItemModel[Literal["liked_at"], float],
 ]
 
 
@@ -186,10 +186,7 @@ async def raw_read_user_history(
         .left_outer_join(instructor_pictures)
         .on(instructor_pictures.id == instructors.picture_image_file_id)
         .left_outer_join(user_likes)
-        .on(
-            (user_likes.user_id == user_journeys.user_id)
-            & (user_likes.journey_id == journeys.id)
-        )
+        .on((user_likes.user_id == users.id) & (user_likes.journey_id == journeys.id))
         .where(journeys.deleted_at.isnull())
     )
     qargs = [user_sub, user_sub]

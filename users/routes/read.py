@@ -233,7 +233,9 @@ async def raw_read_users(
     if any(k == "primary_interest" for (k, _) in filters_to_apply):
         joined_interests = True
         query = query.left_outer_join(user_interests).on(
-            (user_interests.user_id == users.id) & (user_interests.is_primary == 1)
+            (user_interests.user_id == users.id)
+            & (user_interests.is_primary == 1)
+            & (user_interests.deleted_at.isnull())
         )
         query = query.left_outer_join(interests).on(
             interests.id == user_interests.interest_id

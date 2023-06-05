@@ -141,15 +141,16 @@ async def up(itgs: Itgs):
                             total_failures += 1
 
         if total_failures > 0:
-            key = f"s3_files/backup/database/timely/0056_user_history-errors-{int(time.time())}.txt"
-            with open(backup_file, "rb") as f:
-                await files.upload(
-                    f,
-                    bucket=files.default_bucket,
-                    key=key,
-                    sync=True,
-                )
+            with temp_file(".bak") as backup_file:
+                key = f"s3_files/backup/database/timely/0056_user_history-errors-{int(time.time())}.txt"
+                with open(backup_file, "rb") as f:
+                    await files.upload(
+                        f,
+                        bucket=files.default_bucket,
+                        key=key,
+                        sync=True,
+                    )
 
-            await handle_contextless_error(
-                extra_info=f"failed to insert {total_failures} rows into user_journeys during migration; more info at {key}",
-            )
+                await handle_contextless_error(
+                    extra_info=f"failed to insert {total_failures} rows into user_journeys during migration; more info at {key}",
+                )

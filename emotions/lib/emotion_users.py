@@ -186,7 +186,8 @@ async def on_started_emotion_user_journey(
 
     response = await cursor.executemany3(
         (
-            """
+            (
+                """
             UPDATE emotion_users
             SET status = ?
             WHERE
@@ -199,14 +200,14 @@ async def on_started_emotion_user_journey(
                         AND users.sub = ?
                 )
             """,
-            (
-                json.dumps({"type": "joined", "joined_at": now}),
-                emotion_user_uid,
-                user_sub,
+                (
+                    json.dumps({"type": "joined", "joined_at": now}),
+                    emotion_user_uid,
+                    user_sub,
+                ),
             ),
-        ),
-        (
-            """
+            (
+                """
             INSERT INTO user_journeys (
                 uid, user_id, journey_id, created_at
             )
@@ -218,13 +219,14 @@ async def on_started_emotion_user_journey(
                 AND users.id = emotion_users.user_id
                 AND users.sub = ?
             """,
-            (
-                user_journey_uid,
-                now,
-                emotion_user_uid,
-                user_sub,
+                (
+                    user_journey_uid,
+                    now,
+                    emotion_user_uid,
+                    user_sub,
+                ),
             ),
-        ),
+        )
     )
     if response[0].rows_affected is None or response[0].rows_affected < 1:
         await handle_contextless_error(

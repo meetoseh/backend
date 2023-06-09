@@ -80,6 +80,8 @@ async def retrieve_daily_emotions(
                 to_exclude = list(args.recently_seen[exclusion_ends_at])
                 random.shuffle(to_exclude)
                 for emotion in to_exclude:
+                    if emotion in ("calm", "relaxed", "sleep"):
+                        continue
                     if emotion in lookup:
                         del lookup[emotion]
                     if len(lookup) <= args.num_emotions:

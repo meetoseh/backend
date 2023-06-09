@@ -187,6 +187,26 @@ async def start_next_journey_in_course(
             )
             return FAILED_TO_START_RESPONSE
 
+        user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
+        response = await cursor.execute(
+            """
+            INSERT INTO user_journeys (
+                uid, user_id, journey_id, created_at
+            )
+            SELECT
+                ?, users.id, journeys.id, ?
+            FROM users, journeys
+            WHERE
+                users.sub = ?
+                AND journeys.uid = ?
+            """,
+            (user_journey_uid, now, auth_result.result.sub, journey_uid),
+        )
+        if response.rows_affected is None or response.rows_affected < 1:
+            await handle_contextless_error(
+                extra_info="while starting next journey in course, failed to store user_journeys record"
+            )
+
         await on_entering_lobby(
             itgs,
             user_sub=auth_result.result.sub,

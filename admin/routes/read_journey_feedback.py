@@ -35,6 +35,15 @@ class User(BaseModel):
 class Feedback(BaseModel):
     user: User = Field(description="The user who gave the feedback")
     liked: bool = Field(description="Whether the user liked the journey")
+    strength: int = Field(
+        description=(
+            "The strength of the feedback. For yes/no questions this is always 1. "
+            "For the 2-point scale, this is 1 or 2. For example, a two point scale "
+            "question would be: 'Complete the sentence: I want to see...' with the "
+            "options being 'Much more like this', 'More like this', 'Less like this', "
+            "'Much less like this'. The strengths would be 2, 1, 1, 2 respectively."
+        )
+    )
     created_at: float = Field(
         description="The time the feedback was created in seconds since the epoch"
     )
@@ -259,7 +268,8 @@ async def read_feedback_from_db_and_write_to_file(
                 users.email,
                 users.created_at,
                 journey_feedback.response,
-                journey_feedback.created_at
+                journey_feedback.created_at,
+                journey_feedback.version
             FROM journey_feedback
             JOIN users ON users.id = journey_feedback.user_id
             JOIN journeys ON journeys.id = journey_feedback.journey_id
@@ -301,8 +311,9 @@ async def read_feedback_from_db_and_write_to_file(
             row_user_family_name: Optional[str] = row[5]
             row_user_email: Optional[str] = row[6]
             row_user_created_at: float = row[7]
-            row_journey_feedback_response: bool = int(row[8]) == 1
+            row_journey_feedback_response: int = int(row[8])
             row_journey_feedback_created_at: float = row[9]
+            row_journey_feedback_version: int = row[10]
 
             if current_journey_id != row_journey_id:
                 if current_journey_id is not None:
@@ -341,7 +352,19 @@ async def read_feedback_from_db_and_write_to_file(
             out.write(b',"created_at":')
             out.write(str(row_user_created_at).encode("ascii"))
             out.write(b'},"liked":')
-            out.write(b"true" if row_journey_feedback_response else b"false")
+            if row_journey_feedback_version in (1, 2):
+                out.write(b"true" if row_journey_feedback_response == 1 else b"false")
+                out.write(b',"strength":1')
+            else:
+                out.write(
+                    b"true" if row_journey_feedback_response in (1, 2) else b"false"
+                )
+                out.write(b',"strength":')
+                out.write(
+                    str(1 if row_journey_feedback_response in (2, 3) else 2).encode(
+                        "ascii"
+                    )
+                )
             out.write(b',"created_at":')
             out.write(str(row_journey_feedback_created_at).encode("ascii"))
             out.write(b"}")

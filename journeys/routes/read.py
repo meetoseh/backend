@@ -253,11 +253,13 @@ async def raw_read_journeys(
             journey_subcategories.uid,
             journey_subcategories.internal_name,
             journey_subcategories.external_name,
+            journey_subcategories.bias,
             instructors.uid,
             instructors.name,
             instructor_pictures.uid,
             instructors.created_at,
             instructors.deleted_at,
+            instructors.bias,
             journeys.title,
             journeys.description,
             interactive_prompts.prompt,
@@ -366,51 +368,52 @@ async def raw_read_journeys(
                     uid=row[2], jwt=await image_files_auth.create_jwt(itgs, row[2])
                 ),
                 subcategory=JourneySubcategory(
-                    uid=row[3], internal_name=row[4], external_name=row[5]
+                    uid=row[3], internal_name=row[4], external_name=row[5], bias=row[6]
                 ),
                 instructor=Instructor(
-                    uid=row[6],
-                    name=row[7],
+                    uid=row[7],
+                    name=row[8],
                     picture=(
                         ImageFileRef(
-                            uid=row[8],
-                            jwt=await image_files_auth.create_jwt(itgs, row[8]),
+                            uid=row[9],
+                            jwt=await image_files_auth.create_jwt(itgs, row[9]),
                         )
-                        if row[8] is not None
+                        if row[9] is not None
                         else None
                     ),
-                    created_at=row[9],
-                    deleted_at=row[10],
+                    created_at=row[10],
+                    deleted_at=row[11],
+                    bias=row[12],
                 ),
-                title=row[11],
-                description=row[12],
-                prompt=json.loads(row[13]),
-                created_at=row[14],
-                deleted_at=row[15],
+                title=row[13],
+                description=row[14],
+                prompt=json.loads(row[15]),
+                created_at=row[16],
+                deleted_at=row[17],
                 blurred_background_image=ImageFileRef(
-                    uid=row[16], jwt=await image_files_auth.create_jwt(itgs, row[17])
+                    uid=row[18], jwt=await image_files_auth.create_jwt(itgs, row[18])
                 ),
                 darkened_background_image=ImageFileRef(
-                    uid=row[17], jwt=await image_files_auth.create_jwt(itgs, row[18])
+                    uid=row[19], jwt=await image_files_auth.create_jwt(itgs, row[19])
                 ),
                 sample=(
                     ContentFileRef(
-                        uid=row[18],
-                        jwt=await content_files_auth.create_jwt(itgs, row[18]),
+                        uid=row[20],
+                        jwt=await content_files_auth.create_jwt(itgs, row[20]),
                     )
-                    if row[18] is not None
+                    if row[20] is not None
                     else None
                 ),
                 video=(
                     ContentFileRef(
-                        uid=row[19],
-                        jwt=await content_files_auth.create_jwt(itgs, row[19]),
+                        uid=row[21],
+                        jwt=await content_files_auth.create_jwt(itgs, row[21]),
                     )
-                    if row[19] is not None
+                    if row[21] is not None
                     else None
                 ),
-                introductory_journey_uid=row[20],
-                special_category=row[21],
+                introductory_journey_uid=row[22],
+                special_category=row[23],
             )
         )
     return items

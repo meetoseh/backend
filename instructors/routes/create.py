@@ -17,11 +17,19 @@ class CreateInstructorRequest(BaseModel):
     name: constr(strip_whitespace=True, min_length=1) = Field(
         description="The display name for the instructor"
     )
+    bias: float = Field(
+        description=(
+            "A non-negative number generally less than 1 that influences "
+            "content selection towards this instructor."
+        ),
+        ge=0,
+    )
 
 
 class CreateInstructorResponse(BaseModel):
     uid: str = Field(description="The unique identifier for the instructor")
     name: str = Field(description="The display name for the instructor")
+    bias: float = Field(description="The bias for the instructor")
     created_at: float = Field(
         description=(
             "The timestamp of when the instructor was created, specified in "
@@ -59,17 +67,17 @@ async def create_instructor(
         await cursor.execute(
             """
             INSERT INTO instructors (
-                uid, name, created_at
+                uid, name, bias, created_at
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?)
             """,
-            (uid, args.name, now),
+            (uid, args.name, args.bias, now),
         )
 
         await instructors.lib.stats.on_instructor_created(itgs, created_at=now)
         return Response(
             content=CreateInstructorResponse(
-                uid=uid, name=args.name, created_at=now
+                uid=uid, name=args.name, bias=args.bias, created_at=now
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,

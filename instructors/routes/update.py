@@ -16,13 +16,39 @@ class UpdateInstructorRequest(BaseModel):
     name: constr(strip_whitespace=True, min_length=1) = Field(
         description="The new display name for the instructor"
     )
+    bias: float = Field(
+        description=(
+            "A non-negative number generally less than 1 that influences "
+            "content selection towards this instructor."
+        ),
+        ge=0,
+    )
 
 
 class UpdateInstructorResponse(BaseModel):
     name: str = Field(description="The new display name for the instructor")
+    bias: float = Field(description="the new bias for the instructor")
 
 
 ERROR_404_TYPES = Literal["instructor_not_found"]
+INSTRUCTOR_NOT_FOUND_RESPONSE = Response(
+    status_code=404,
+    content=StandardErrorResponse[ERROR_404_TYPES](
+        type="instructor_not_found",
+        message="The instructor was not found or is deleted",
+    ).json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+)
+
+ERROR_503_TYPES = Literal["raced"]
+RACED_RESPONSE = Response(
+    status_code=503,
+    content=StandardErrorResponse[ERROR_503_TYPES](
+        type="raced",
+        message="The instructor was updated by another request. Please try again.",
+    ).json(),
+    headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
+)
 
 
 @router.put(
@@ -57,25 +83,42 @@ async def update_instructor(
 
         response = await cursor.execute(
             """
-            UPDATE instructors
-            SET name = ?
-            WHERE uid = ? AND deleted_at IS NULL
+            SELECT
+                name, bias
+            FROM instructors
+            WHERE
+                uid = ? AND deleted_at IS NULL
             """,
-            (args.name, uid),
+            (uid,),
+        )
+        if not response.results:
+            return INSTRUCTOR_NOT_FOUND_RESPONSE
+
+        old_name: str = response.results[0][0]
+        old_bias: float = response.results[0][1]
+
+        response = await cursor.execute(
+            """
+            UPDATE instructors
+            SET name = ?, bias = ?
+            WHERE uid = ? AND deleted_at IS NULL AND name=? AND bias=?
+            """,
+            (args.name, args.bias, uid, old_name, old_bias),
         )
 
         if response.rows_affected is None or response.rows_affected < 1:
-            return Response(
-                status_code=404,
-                content=StandardErrorResponse[ERROR_404_TYPES](
-                    type="instructor_not_found",
-                    message="The instructor was not found or is deleted",
-                ).json(),
-                headers={"Content-Type": "application/json; charset=utf-8"},
-            )
+            return RACED_RESPONSE
+
+        success_response = Response(
+            status_code=200,
+            content=UpdateInstructorResponse(name=args.name, bias=args.bias).json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+        )
+
+        if old_name == args.name:
+            return success_response
 
         biggest_journey_id = 0
-        now = time.time()
         jobs = await itgs.jobs()
         while True:
             response = await cursor.execute(
@@ -113,8 +156,4 @@ async def update_instructor(
 
             biggest_journey_id = response.results[-1][0]
 
-        return Response(
-            status_code=200,
-            content=UpdateInstructorResponse(name=args.name).json(),
-            headers={"Content-Type": "application/json; charset=utf-8"},
-        )
+        return success_response

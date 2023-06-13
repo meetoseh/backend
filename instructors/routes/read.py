@@ -23,6 +23,7 @@ class Instructor(BaseModel):
         description="The primary stable external identifier for this instructor"
     )
     name: str = Field(description="The display name for this instructor")
+    bias: float = Field(description="The content selection bias for this instructor")
     picture: Optional[ImageFileRef] = Field(
         description="The profile picture for this instructor"
     )
@@ -43,12 +44,14 @@ class Instructor(BaseModel):
 INSTRUCTOR_SORT_OPTIONS = [
     SortItem[Literal["uid"], str],
     SortItem[Literal["name"], str],
+    SortItem[Literal["bias"], float],
     SortItem[Literal["created_at"], float],
     SortItem[Literal["deleted_at"], float],
 ]
 InstructorSortOption = Union[
     SortItemModel[Literal["uid"], str],
     SortItemModel[Literal["name"], str],
+    SortItemModel[Literal["bias"], float],
     SortItemModel[Literal["created_at"], float],
     SortItemModel[Literal["deleted_at"], float],
 ]
@@ -60,6 +63,9 @@ class InstructorFilter(BaseModel):
     )
     name: Optional[FilterTextItemModel] = Field(
         None, description="the name of the instructor"
+    )
+    bias: Optional[FilterItemModel[float]] = Field(
+        None, description="the bias of the instructor"
     )
     created_at: Optional[FilterItemModel[float]] = Field(
         None,
@@ -169,6 +175,7 @@ async def raw_read_instructors(
         .select(
             instructors.uid,
             instructors.name,
+            instructors.bias,
             image_files.uid,
             instructors.created_at,
             instructors.deleted_at,
@@ -179,7 +186,7 @@ async def raw_read_instructors(
     qargs = []
 
     def pseudocolumn(key: str) -> Term:
-        if key in ("uid", "name", "created_at", "deleted_at"):
+        if key in ("uid", "name", "created_at", "deleted_at", "bias"):
             return instructors.field(key)
         raise ValueError(f"unknown key {key}")
 
@@ -199,7 +206,7 @@ async def raw_read_instructors(
     response = await cursor.execute(query.get_sql(), qargs)
     items: List[Instructor] = []
     for row in response.results or []:
-        image_file_uid: Optional[str] = row[2]
+        image_file_uid: Optional[str] = row[3]
         image_file_ref: Optional[ImageFileRef] = None
         if image_file_uid is not None:
             image_file_jwt = await img_file_auth.create_jwt(itgs, image_file_uid)
@@ -209,9 +216,10 @@ async def raw_read_instructors(
             Instructor(
                 uid=row[0],
                 name=row[1],
+                bias=row[2],
                 picture=image_file_ref,
-                created_at=row[3],
-                deleted_at=row[4],
+                created_at=row[4],
+                deleted_at=row[5],
             )
         )
     return items

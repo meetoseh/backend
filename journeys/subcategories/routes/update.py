@@ -29,6 +29,14 @@ class UpdateJourneySubcategoryRequest(BaseModel):
         )
     )
 
+    bias: float = Field(
+        description=(
+            "A non-negative number generally less than 1 that influences "
+            "content selection towards this journey subcategory."
+        ),
+        ge=0,
+    )
+
 
 class UpdateJourneySubcategoryResponse(BaseModel):
     internal_name: str = Field(
@@ -37,6 +45,7 @@ class UpdateJourneySubcategoryResponse(BaseModel):
     external_name: str = Field(
         description="The new external name of the journey subcategory"
     )
+    bias: float = Field(description="The new bias of the journey subcategory")
 
 
 ERROR_404_TYPES = Literal["journey_subcategory_not_found"]
@@ -77,11 +86,11 @@ async def update_journey_subcategory(
         response = await cursor.execute(
             """
             UPDATE journey_subcategories
-            SET internal_name = ?, external_name = ?
+            SET internal_name = ?, external_name = ?, bias = ?
             WHERE
                 uid = ?
             """,
-            (args.internal_name, args.external_name, uid),
+            (args.internal_name, args.external_name, args.bias, uid),
         )
         if response.rows_affected is None or response.rows_affected < 1:
             return Response(
@@ -139,6 +148,7 @@ async def update_journey_subcategory(
             content=UpdateJourneySubcategoryResponse(
                 internal_name=args.internal_name,
                 external_name=args.external_name,
+                bias=args.bias,
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,

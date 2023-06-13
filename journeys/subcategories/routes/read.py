@@ -24,17 +24,25 @@ class JourneySubcategory(BaseModel):
     external_name: str = Field(
         description="The external name of the journey subcategory"
     )
+    bias: float = Field(
+        description=(
+            "A non-negative number that is generally less than 1 that biases "
+            "content towards this category. A higher number is more influential"
+        )
+    )
 
 
 JOURNEY_SUBCATEGORY_SORT_OPTIONS = [
     SortItem[Literal["uid"], str],
     SortItem[Literal["internal_name"], str],
     SortItem[Literal["external_name"], str],
+    SortItem[Literal["bias"], float],
 ]
 JourneySubcategorySortOption = Union[
     SortItemModel[Literal["uid"], str],
     SortItemModel[Literal["internal_name"], str],
     SortItemModel[Literal["external_name"], str],
+    SortItemModel[Literal["bias"], float],
 ]
 
 
@@ -47,6 +55,9 @@ class JourneySubcategoryFilter(BaseModel):
     )
     external_name: Optional[FilterTextItemModel] = Field(
         None, description="the external name of the journey subcategory"
+    )
+    bias: Optional[FilterItemModel[float]] = Field(
+        None, description="the bias of the journey subcategory"
     )
 
 
@@ -143,11 +154,12 @@ async def raw_read_journey_subcategories(
         journey_subcategories.uid,
         journey_subcategories.internal_name,
         journey_subcategories.external_name,
+        journey_subcategories.bias,
     )
     qargs = []
 
     def pseudocolumn(key: str) -> Term:
-        if key in ("uid", "internal_name", "external_name"):
+        if key in ("uid", "internal_name", "external_name", "bias"):
             return journey_subcategories.field(key)
         raise ValueError(f"unknown key: {key}")
 
@@ -172,6 +184,7 @@ async def raw_read_journey_subcategories(
                 uid=row[0],
                 internal_name=row[1],
                 external_name=row[2],
+                bias=row[3],
             )
         )
     return items

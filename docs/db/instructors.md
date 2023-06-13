@@ -6,16 +6,19 @@ during the journey creation process and not inferred from the user.
 
 ## Fields
 
--   `id (integer primary key)`: the internal identifier for the row
--   `uid (text unique not null)`: the primary external identifier for the row. The
-    uid prefix is `i`: see [uid_prefixes](../uid_prefixes.md).
--   `name (text not null)`: the display name for the instructor, for journeys
--   `picture_image_file_id (integer null references image_files(id) on delete set null)`:
-    the id of the image file for the instructor's picture, if any
--   `created_at (real not null)`: when this record was created in seconds since the unix epoch
--   `deleted_at (real null)`: when this record was hidden from results in seconds since
-    the unix epoch. This is a non-destructive operation intended to remove old instructors
-    from the admin ui.
+- `id (integer primary key)`: the internal identifier for the row
+- `uid (text unique not null)`: the primary external identifier for the row. The
+  uid prefix is `i`: see [uid_prefixes](../uid_prefixes.md).
+- `name (text not null)`: the display name for the instructor, for journeys
+- `picture_image_file_id (integer null references image_files(id) on delete set null)`:
+  the id of the image file for the instructor's picture, if any
+- `bias (real not null default 0)`: A non-negative number generally less than 1 which
+  biases content suggestions towards this instructor. This is intended to improve
+  content selection for users who haven't rated any journeys yet.
+- `created_at (real not null)`: when this record was created in seconds since the unix epoch
+- `deleted_at (real null)`: when this record was hidden from results in seconds since
+  the unix epoch. This is a non-destructive operation intended to remove old instructors
+  from the admin ui.
 
 ## Schema
 
@@ -25,6 +28,7 @@ CREATE TABLE instructors(
     uid TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     picture_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL,
+    bias REAL NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
     deleted_at REAL NULL
 );

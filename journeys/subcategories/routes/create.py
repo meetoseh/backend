@@ -24,6 +24,14 @@ class CreateJourneySubcategoryRequest(BaseModel):
         )
     )
 
+    bias: float = Field(
+        description=(
+            "A non-negative number generally less than 1 that influences "
+            "content selection towards this journey subcategory."
+        ),
+        ge=0,
+    )
+
 
 class CreateJourneySubcategoryResponse(BaseModel):
     uid: str = Field(description="The uid of the journey subcategory")
@@ -33,6 +41,7 @@ class CreateJourneySubcategoryResponse(BaseModel):
     external_name: str = Field(
         description="The external name of the journey subcategory"
     )
+    bias: float = Field(description="The bias of the journey subcategory")
 
 
 router = APIRouter()
@@ -62,14 +71,15 @@ async def create_journey_subcategory(
         uid = f"oseh_jsc_{secrets.token_urlsafe(16)}"
 
         await cursor.execute(
-            "INSERT INTO journey_subcategories (uid, internal_name, external_name) VALUES (?, ?, ?)",
-            (uid, args.internal_name, args.external_name),
+            "INSERT INTO journey_subcategories (uid, internal_name, external_name, bias) VALUES (?, ?, ?, ?)",
+            (uid, args.internal_name, args.external_name, args.bias),
         )
         return Response(
             content=CreateJourneySubcategoryResponse(
                 uid=uid,
                 internal_name=args.internal_name,
                 external_name=args.external_name,
+                bias=args.bias,
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,

@@ -41,9 +41,7 @@ def adjust_score(
     """Adjusts a single score"""
     if unadjusted.score < 0:
         result = unadjusted.score * (times_seen_today + 1)
-    elif unadjusted.score < 2 and times_seen_today == 0:
-        result = 2
     else:
-        result = unadjusted.score * (2**-times_seen_today)
+        result = (unadjusted.score + 2) * (2**-times_seen_today)
 
     return AdjustedFeedbackScore(score=result)

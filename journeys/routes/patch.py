@@ -206,6 +206,8 @@ async def patch_journey(
                 darkened_image_files.uid,
                 interactive_prompts.duration_seconds,
                 interactive_prompts.uid,
+                instructors.bias,
+                journey_subcategories.bias,
             )
             .left_join(journeys)
             .on((journeys.uid == Parameter("?")) & journeys.deleted_at.isnull())
@@ -338,6 +340,8 @@ async def patch_journey(
         darkened_image_file_uid: Optional[str] = response.results[0][16]
         journey_lobby_duration_seconds: float = response.results[0][17]
         original_interactive_prompt_uid: Optional[str] = response.results[0][18]
+        instructor_bias: Optional[float] = response.results[0][19]
+        journey_subcategory_bias: Optional[float] = response.results[0][20]
 
         if not journey_exists:
             return Response(
@@ -402,6 +406,8 @@ async def patch_journey(
         assert journey_description is not None
         assert journey_prompt is not None
         assert original_interactive_prompt_uid is not None
+        assert instructor_bias is not None
+        assert journey_subcategory_bias is not None
 
         update_and_set_query: QueryBuilder = Query.update(journeys)
         from_query: QueryBuilder = Query.select(1)
@@ -683,10 +689,12 @@ async def patch_journey(
                     uid=journey_subcategory_uid,
                     internal_name=journey_subcategory_internal_name,
                     external_name=journey_subcategory_external_name,
+                    bias=journey_subcategory_bias,
                 ),
                 instructor=Instructor(
                     uid=instructor_uid,
                     name=instructor_name,
+                    bias=instructor_bias,
                     picture=(
                         ImageFileRef(
                             uid=instructor_picture_file_uid,

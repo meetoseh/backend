@@ -10,6 +10,7 @@ from itgs import Itgs
 from auth import auth_any
 from journeys.auth import create_jwt as create_journey_jwt
 from image_files.auth import create_jwt as create_image_file_jwt
+from personalization.lib.pipeline import select_journey
 import emotions.lib.emotion_users as emotion_users
 import random
 
@@ -147,82 +148,12 @@ async def start_related_journey(
         if not auth_result.success:
             return auth_result.error_response
 
-        conn = await itgs.conn()
-        cursor = conn.cursor("none")
-
-        response = await cursor.execute(
-            """
-            SELECT
-                journeys.uid AS journey_uid,
-                0 AS num_times_taken,
-                journeys.created_at AS journey_created_at
-            FROM journeys
-            WHERE
-                NOT EXISTS (
-                    SELECT 1 FROM user_journeys, users
-                    WHERE 
-                        user_journeys.journey_id = journeys.id
-                        AND user_journeys.user_id = users.id
-                        AND users.sub = ?
-                )
-                AND EXISTS (
-                    SELECT 1 FROM journey_emotions, emotions
-                    WHERE
-                        journey_emotions.journey_id = journeys.id
-                        AND journey_emotions.emotion_id = emotions.id
-                        AND emotions.word = ?
-                )
-                AND journeys.deleted_at IS NULL
-                AND journeys.special_category IS NULL
-                AND NOT EXISTS (
-                    SELECT 1 FROM course_journeys
-                    WHERE course_journeys.journey_id = journeys.id
-                )
-            UNION ALL
-            SELECT
-                journeys.uid AS journey_uid,
-                COUNT(*) AS num_times_taken,
-                journeys.created_at AS journey_created_at
-            FROM journeys, user_journeys, users
-            WHERE
-                users.sub = ?
-                AND user_journeys.journey_id = journeys.id
-                AND user_journeys.user_id = users.id
-                AND EXISTS (
-                    SELECT 1 FROM journey_emotions, emotions
-                    WHERE
-                        journey_emotions.journey_id = journeys.id
-                        AND journey_emotions.emotion_id = emotions.id
-                        AND emotions.word = ?
-                )
-                AND journeys.deleted_at IS NULL
-                AND journeys.special_category IS NULL
-                AND NOT EXISTS (
-                    SELECT 1 FROM course_journeys
-                    WHERE course_journeys.journey_id = journeys.id
-                )
-            GROUP BY journey_uid
-            ORDER BY num_times_taken ASC, journey_created_at DESC
-            LIMIT 5
-            """,
-            (
-                auth_result.result.sub,
-                args.emotion,
-                auth_result.result.sub,
-                args.emotion,
-            ),
+        journey_uid = await select_journey(
+            itgs, emotion=args.emotion, user_sub=auth_result.result.sub
         )
-        if not response.results:
+        if journey_uid is None:
             return ERROR_EMOTION_NOT_FOUND
 
-        rows = response.results
-        if any(row[1] == 0 for row in rows):
-            # There are some journeys that have not been taken at all. We want to
-            # prioritize those.
-            rows = [row for row in rows if row[1] == 0]
-
-        row = random.choice(rows)
-        journey_uid: str = row[0]
         journey_jwt = await create_journey_jwt(itgs, journey_uid)
         journey = await read_one_external(
             itgs, journey_uid=journey_uid, jwt=journey_jwt

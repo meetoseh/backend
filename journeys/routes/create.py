@@ -142,7 +142,9 @@ async def create_journey(
                 ins_picture_image_files.uid,
                 instructors.created_at,
                 blurred_image_files.uid,
-                darkened_image_files.uid
+                darkened_image_files.uid,
+                journey_subcategories.bias,
+                instructors.bias
             FROM dummy
             LEFT OUTER JOIN content_files ON (
                 EXISTS (
@@ -204,6 +206,8 @@ async def create_journey(
         instructor_created_at: Optional[float] = response.results[0][6]
         blurred_image_file_uid: Optional[str] = response.results[0][7]
         darkened_image_file_uid: Optional[str] = response.results[0][8]
+        subcategory_bias: Optional[float] = response.results[0][9]
+        instructor_bias: Optional[float] = response.results[0][10]
 
         if content_file_uid is None:
             return Response(
@@ -250,8 +254,10 @@ async def create_journey(
             )
 
         assert subcategory_external_name is not None
+        assert subcategory_bias is not None
         assert instructor_picture_image_file_uid is not None
         assert instructor_created_at is not None
+        assert instructor_bias is not None
 
         interactive_prompt_uid = f"oseh_ip_{secrets.token_urlsafe(16)}"
         uid = f"oseh_j_{secrets.token_urlsafe(16)}"
@@ -372,10 +378,12 @@ async def create_journey(
                     uid=args.journey_subcategory_uid,
                     internal_name=subcategory_internal_name,
                     external_name=subcategory_external_name,
+                    bias=subcategory_bias,
                 ),
                 instructor=Instructor(
                     uid=args.instructor_uid,
                     name=instructor_name,
+                    bias=instructor_bias,
                     picture=ImageFileRef(
                         uid=instructor_picture_image_file_uid,
                         jwt=await image_files.auth.create_jwt(

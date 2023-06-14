@@ -539,6 +539,14 @@ rather than external functionality.
   `holdover_any_click_signups`, `preexisting`, `last_click_signups`,
   `any_click_signups`
 
+### Personalization subspace
+
+These are regular keys used by the personalization module
+
+- `personalization:instructor_category_biases:{emotion}` goes to a special serialization
+  for `List[InstructorCategoryAndBias]` used in
+  [step 1](../../personalization/lib/s01_find_combinations.py)
+
 ## pubsub keys
 
 - `ps:job:{job_uid}`: used, if supported, when a job is able to report when it's completed

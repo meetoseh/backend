@@ -27,6 +27,8 @@ import visitors.router
 import vip_chat_requests.router
 import courses.router
 import emotions.router
+import personalization.router
+import personalization.register_background_tasks
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.lib.read_one_external
 import interactive_prompts.routes.profile_pictures
@@ -113,6 +115,11 @@ app.include_router(
 )
 app.include_router(courses.router.router, prefix="/api/1/courses", tags=["courses"])
 app.include_router(emotions.router.router, prefix="/api/1/emotions", tags=["emotions"])
+app.include_router(
+    personalization.router.router,
+    prefix="/api/1/personalization",
+    tags=["personalization"],
+)
 app.router.redirect_slashes = False
 
 
@@ -154,6 +161,9 @@ def register_background_tasks():
         asyncio.create_task(
             interactive_prompts.lib.read_interactive_prompt_meta.cache_push_loop()
         )
+    )
+    personalization.register_background_tasks.register_background_tasks(
+        background_tasks
     )
 
 

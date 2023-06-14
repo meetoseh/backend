@@ -296,3 +296,11 @@ the keys we store locally on backend instances via diskcache
 - `emotion_users:pictures:{word}` goes to a string containing jsonified lists of
   image file uids representing the profile images of a small (~5) number of
   people who have recently selected the given emotion.
+
+## Personalization
+
+This contains keys for the personalization subspace
+
+- `personalization:instructor_category_biases:{emotion}` goes to a special serialization
+  for `List[InstructorCategoryAndBias]` used in
+  [step 1](../../personalization/lib/s01_find_combinations.py)

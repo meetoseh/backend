@@ -36,10 +36,11 @@ class RetrieveDailyEmotionsRequest(BaseModel):
     )
 
     local_time: Optional[LocalTime] = Field(
+        None,
         description=(
             "The current local time; if specified, it will be considered "
             "when selecting the emotions to return"
-        )
+        ),
     )
 
     @validator("recently_seen")

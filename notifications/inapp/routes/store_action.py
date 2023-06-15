@@ -88,7 +88,7 @@ async def store_inapp_notification_action(
 
         if response.rows_affected is None or response.rows_affected < 1:
             await handle_contextless_error(
-                extra_info="Silently ignoring in-app notification action: insert checks failed"
+                extra_info=f"Silently ignoring in-app notification action: insert checks failed; {args.inapp_notification_user_uid}, {args.action_slug}"
             )
 
         return Response(status_code=204)

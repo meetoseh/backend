@@ -90,6 +90,11 @@ particular inapp notification.
 
   - `next`: the user hit the next button to dismiss the notification
 
+- Feedback Announcement (`oseh_ian_T7AwwYHKJlfFc33muX6Fdg`) lets users know
+  about the new feedback feature. Actions:
+
+  - `next`: the user hit the next button to dismiss the notification
+
 ## Schema
 
 ```sql

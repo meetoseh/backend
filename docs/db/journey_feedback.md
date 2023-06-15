@@ -30,13 +30,13 @@ which has a fixed question as the behavior is very specific. See
 
    Identified with: `oseh_jf-otp_gwJjdMC4820`
 
-3. "I want to see..."
+3. "How did that feel?"
    Responses:
 
-   1. "Much more like this"
-   2. "More like this"
-   3. "Less like this"
-   4. "Much less like this"
+   1. "Loved"
+   2. "Liked"
+   3. "Disliked"
+   4. "Hated"
 
    Identified with: `oseh_jf-otp_sKjKVHs8wbI`
 

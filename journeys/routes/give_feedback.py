@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, constr
-from typing import Optional, Literal
+from typing import List, Optional, Literal
 from auth import auth_any
 from journeys.auth import auth_any as auth_journey_any
 from models import (
@@ -32,6 +32,11 @@ class FeedbackVersion:
     allows_freeform: bool
     """Whether or not the user is allowed to provide freeform feedback"""
 
+    slack_messages: List[Optional[str]]
+    """The slack message to post for each response, or None to not post a message for
+    that response.
+    """
+
 
 FEEDBACKS_BY_VERSION = {
     "oseh_jf-otp_fKWQzTG-JnA": FeedbackVersion(
@@ -39,18 +44,21 @@ FEEDBACKS_BY_VERSION = {
         version_number=1,
         num_responses=2,
         allows_freeform=False,
+        slack_messages=["liked", "disliked"],
     ),
     "oseh_jf-otp_gwJjdMC4820": FeedbackVersion(
         version="oseh_jf-otp_gwJjdMC4820",
         version_number=2,
         num_responses=2,
         allows_freeform=False,
+        slack_messages=["liked", "disliked"],
     ),
     "oseh_jf-otp_sKjKVHs8wbI": FeedbackVersion(
         version="oseh_jf-otp_sKjKVHs8wbI",
         version_number=3,
         num_responses=4,
         allows_freeform=False,
+        slack_messages=["loved", "liked", "disliked", "hated"],
     ),
 }
 
@@ -187,6 +195,15 @@ async def give_feedback(
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "5",
                 },
+            )
+
+        if feedback_version.slack_messages[args.response - 1] is not None:
+            jobs = await itgs.jobs()
+            await jobs.enqueue(
+                "runners.notify_on_entering_lobby",
+                user_sub=std_auth_result.result.sub,
+                journey_uid=journey_auth_result.result.journey_uid,
+                action=f"providing feedback: {feedback_version.slack_messages[args.response - 1]}",
             )
 
         return Response(status_code=201)

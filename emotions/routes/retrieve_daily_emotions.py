@@ -14,6 +14,13 @@ import numpy as np
 router = APIRouter()
 
 
+class LocalTime(BaseModel):
+    hour_24: int = Field(
+        description="The hour of the day, in 24 hour format", ge=0, le=23
+    )
+    minute: int = Field(description="The minute of the hour", ge=0, le=59)
+
+
 class RetrieveDailyEmotionsRequest(BaseModel):
     recently_seen: List[List[str]] = Field(
         default_factory=list,
@@ -26,6 +33,13 @@ class RetrieveDailyEmotionsRequest(BaseModel):
 
     num_emotions: int = Field(
         description="The number of emotions to return", ge=1, le=12
+    )
+
+    local_time: Optional[LocalTime] = Field(
+        description=(
+            "The current local time; if specified, it will be considered "
+            "when selecting the emotions to return"
+        )
     )
 
     @validator("recently_seen")
@@ -104,6 +118,18 @@ async def retrieve_daily_emotions(
                     options, size=args.num_emotions, replace=False, p=weights
                 )
             )
+
+        if args.local_time is not None:
+            emotion_words = set(emotion.word for emotion in selected_emotions)
+            if (
+                args.local_time.hour_24 >= 18
+                and args.local_time.hour_24 <= 4
+                and "sleepy" in lookup
+                and "sleepy" not in emotion_words
+            ):
+                remove_idx = random.randint(0, len(selected_emotions) - 1)
+                emotion_words.remove(selected_emotions[remove_idx].word)
+                selected_emotions[remove_idx] = lookup["sleepy"].emotion
 
         return Response(
             content=RetrieveDailyEmotionsResponse(items=selected_emotions).json(),

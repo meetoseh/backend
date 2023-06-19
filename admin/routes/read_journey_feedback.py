@@ -161,7 +161,7 @@ async def read_feedback_for_date(
     """
     headers = {
         "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "private, max-age=60, stale-while-revalidate=86400, stale-if-error=86400",
+        "Cache-Control": "private, max-age=10",
     }
     if not force:
         cached = await read_feedback_from_cache(itgs, unix_date=unix_date)

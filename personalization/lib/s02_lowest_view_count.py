@@ -59,7 +59,7 @@ async def map_to_lowest_view_counts(
                 SELECT
                     journeys.id AS journey_id,
                     0 AS view_count
-                FROM journeys
+                FROM journeys, users
                 WHERE
                     journeys.deleted_at IS NULL
                     AND journeys.special_category IS NULL
@@ -75,13 +75,26 @@ async def map_to_lowest_view_counts(
                             AND journey_emotions.emotion_id = emotions.id
                             AND emotions.word = ?
                     )
+                    AND users.sub = ?
                     AND NOT EXISTS (
-                        SELECT 1 FROM user_journeys, users
+                        SELECT 1 FROM user_journeys
                         WHERE
                             user_journeys.journey_id = journeys.id
                             AND user_journeys.user_id = users.id
-                            AND users.sub = ?
                     )
+                    AND (journeys.variation_of_journey_id IS NOT NULL OR NOT EXISTS (
+                        SELECT 1 FROM user_journeys, journeys AS variations
+                        WHERE
+                            variations.variation_of_journey_id = journeys.id
+                            AND user_journeys.journey_id = variations.id
+                            AND user_journeys.user_id = users.id
+                    ))
+                    AND (journeys.variation_of_journey_id IS NULL OR NOT EXISTS (
+                        SELECT 1 FROM user_journeys
+                        WHERE
+                            user_journeys.journey_id = journeys.variation_of_journey_id
+                            AND user_journeys.user_id = users.id
+                    ))
                 UNION ALL
                 SELECT
                     journeys.id AS journey_id,
@@ -102,8 +115,17 @@ async def map_to_lowest_view_counts(
                             AND journey_emotions.emotion_id = emotions.id
                             AND emotions.word = ?
                     )
-                    AND user_journeys.journey_id = journeys.id
                     AND user_journeys.user_id = users.id
+                    AND (
+                        user_journeys.journey_id = journeys.id
+                        OR (journeys.variation_of_journey_id IS NULL AND EXISTS (
+                            SELECT 1 FROM journeys AS variations
+                            WHERE
+                                variations.variation_of_journey_id = journeys.id
+                                AND user_journeys.journey_id = variations.id
+                        ))
+                        OR user_journeys.journey_id = journeys.variation_of_journey_id
+                    )
                     AND users.sub = ?
                 GROUP BY journey_id
             )

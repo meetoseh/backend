@@ -33,6 +33,13 @@ from db.utils import ParenthisizeCriterion
 router = APIRouter()
 
 
+class WrappedString(BaseModel):
+    """Used to distinguish between I don't want to change this string and I want to set this
+    string to null"""
+
+    value: Optional[str] = Field(description="the value, or null to clear")
+
+
 class PatchJourneyRequest(BaseModel):
     journey_audio_content_uid: Optional[str] = Field(
         None,
@@ -78,6 +85,13 @@ class PatchJourneyRequest(BaseModel):
     lobby_duration_seconds: Optional[int] = Field(
         None,
         description="The duration of the lobby in seconds, may be null to keep the lobby duration as is.",
+    )
+    variation_of_journey_uid: Optional[WrappedString] = Field(
+        None,
+        description=(
+            "If set, the uid of the parent journey, may be null to leave unchanged, or a "
+            "wrapped null to clear the parent journey."
+        ),
     )
     archive_prompt_responses: Optional[bool] = Field(
         None,
@@ -147,6 +161,7 @@ async def patch_journey(
             and args.instructor_uid is None
             and args.title is None
             and args.description is None
+            and args.variation_of_journey_uid is None
         )
 
         if (
@@ -172,6 +187,7 @@ async def patch_journey(
         # transformed values
 
         journeys = Table("journeys")
+        parents = journeys.as_("journey_parents")
         journey_audio_contents = Table("journey_audio_contents")
         journey_background_images = Table("journey_background_images")
         journey_subcategories = Table("journey_subcategories")
@@ -209,6 +225,7 @@ async def patch_journey(
                 interactive_prompts.uid,
                 instructors.bias,
                 journey_subcategories.bias,
+                parents.uid,
             )
             .left_join(journeys)
             .on((journeys.uid == Parameter("?")) & journeys.deleted_at.isnull())
@@ -315,6 +332,18 @@ async def patch_journey(
             )
             qargs.append(args.instructor_uid)
 
+        if args.variation_of_journey_uid is None:
+            query = query.left_outer_join(parents).on(
+                journeys.variation_of_journey_id == parents.id
+            )
+        else:
+            query = query.left_outer_join(parents).on(
+                (parents.uid == Parameter("?"))
+                & parents.deleted_at.isnull()
+                & parents.variation_of_journey_id.isnull()
+            )
+            qargs.append(args.variation_of_journey_uid.value)
+
         response = await cursor.execute(query_prefix + query.get_sql(), qargs)
         assert len(response.results) == 1
 
@@ -343,6 +372,7 @@ async def patch_journey(
         original_interactive_prompt_uid: Optional[str] = response.results[0][18]
         instructor_bias: Optional[float] = response.results[0][19]
         journey_subcategory_bias: Optional[float] = response.results[0][20]
+        variation_of_journey_uid: Optional[str] = response.results[0][21]
 
         if not journey_exists:
             return Response(
@@ -393,6 +423,23 @@ async def patch_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="instructor_not_found",
                     message="The instructor with the specified uid was not found.",
+                ).json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=404,
+            )
+
+        if (
+            args.variation_of_journey_uid is not None
+            and variation_of_journey_uid is None
+            and args.variation_of_journey_uid.value is not None
+        ):
+            return Response(
+                content=StandardErrorResponse[ERROR_404_TYPES](
+                    type="variation_of_journey_not_found",
+                    message=(
+                        "The variation of journey with the specified uid was not found, is "
+                        "deleted, or is a variation itself."
+                    ),
                 ).json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
@@ -521,6 +568,25 @@ async def patch_journey(
                 journeys.description, Parameter("?")
             )
             set_qargs.append(args.description)
+
+        if args.variation_of_journey_uid is not None:
+            if args.variation_of_journey_uid.value is None:
+                update_and_set_query = update_and_set_query.set(
+                    journeys.variation_of_journey_id, Term.wrap_constant(None)
+                )
+            else:
+                update_and_set_query = update_and_set_query.set(
+                    journeys.variation_of_journey_id, parents.id
+                )
+                from_query = join_on(
+                    parents,
+                    (
+                        (parents.uid == Parameter("?"))
+                        & parents.deleted_at.isnull()
+                        & parents.variation_of_journey_id.isnull()
+                    ),
+                    [args.variation_of_journey_uid],
+                )
 
         from_query = from_query.where(journeys.uid == Parameter("?")).where(
             journeys.deleted_at.isnull()
@@ -717,6 +783,7 @@ async def patch_journey(
                 prompt=args.prompt if args.prompt is not None else journey_prompt,
                 created_at=journey_created_at,
                 lobby_duration_seconds=journey_lobby_duration_seconds,
+                variation_of_journey_uid=variation_of_journey_uid,
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,

@@ -71,6 +71,9 @@ class Journey(BaseModel):
     special_category: Optional[SpecialCategory] = Field(
         description="If the journey has a special category, the special category, otherwise null"
     )
+    variation_of_journey_uid: Optional[str] = Field(
+        description="If this journey is a variation on another journey, the uid of the original journey"
+    )
 
 
 JOURNEY_SORT_OPTIONS = [
@@ -144,6 +147,9 @@ class JourneyFilter(BaseModel):
     )
     special_category: Optional[FilterTextItemModel] = Field(
         None, description="the special category of the journey"
+    )
+    variation_of_journey_uid: Optional[FilterTextItemModel] = Field(
+        None, description="the uid of the journey this journey is a variation of"
     )
 
 
@@ -243,6 +249,7 @@ async def raw_read_journeys(
     introductory_journeys = Table("introductory_journeys")
     interactive_prompt_sessions = Table("interactive_prompt_sessions")
     interactive_prompts = Table("interactive_prompts")
+    variation_journeys = journeys.as_("variation_journeys")
 
     query: QueryBuilder = (
         Query.from_(journeys)
@@ -271,6 +278,7 @@ async def raw_read_journeys(
             videos.uid,
             introductory_journeys.uid,
             journeys.special_category,
+            variation_journeys.uid,
         )
         .join(content_files)
         .on(content_files.id == journeys.audio_content_file_id)
@@ -294,6 +302,8 @@ async def raw_read_journeys(
         .on(videos.id == journeys.video_content_file_id)
         .left_outer_join(introductory_journeys)
         .on(introductory_journeys.journey_id == journeys.id)
+        .left_outer_join(variation_journeys)
+        .on(variation_journeys.id == journeys.variation_of_journey_id)
     )
     qargs = []
 
@@ -340,6 +350,8 @@ async def raw_read_journeys(
                     == interactive_prompts.id
                 )
             )
+        elif key == "variation_of_journey_uid":
+            return variation_journeys.uid
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:
@@ -414,6 +426,7 @@ async def raw_read_journeys(
                 ),
                 introductory_journey_uid=row[22],
                 special_category=row[23],
+                variation_of_journey_uid=row[24],
             )
         )
     return items

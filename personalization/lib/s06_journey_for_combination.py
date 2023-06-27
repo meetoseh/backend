@@ -71,7 +71,7 @@ async def get_journeys_for_combination(
             SELECT
                 journeys.id AS journey_id,
                 0 AS views
-            FROM journeys, instructors, journey_subcategories
+            FROM journeys, instructors, journey_subcategories, users
             WHERE
                 journeys.instructor_id = instructors.id
                 AND journeys.journey_subcategory_id = journey_subcategories.id
@@ -90,21 +90,33 @@ async def get_journeys_for_combination(
                     SELECT 1 FROM course_journeys
                     WHERE course_journeys.journey_id = journeys.id
                 )
+                AND users.sub = ?
                 AND NOT EXISTS (
-                    SELECT 1 FROM user_journeys, users
+                    SELECT 1 FROM user_journeys
                     WHERE
                         user_journeys.journey_id = journeys.id
                         AND user_journeys.user_id = users.id
-                        AND users.sub = ?
                 )
+                AND (journeys.variation_of_journey_id IS NOT NULL OR NOT EXISTS (
+                    SELECT 1 FROM user_journeys, journeys AS variations
+                    WHERE
+                        variations.variation_of_journey_id = journeys.id
+                        AND user_journeys.journey_id = variations.id
+                        AND user_journeys.user_id = users.id
+                ))
+                AND (journeys.variation_of_journey_id IS NULL OR NOT EXISTS (
+                    SELECT 1 FROM user_journeys
+                    WHERE
+                        user_journeys.journey_id = journeys.variation_of_journey_id
+                        AND user_journeys.user_id = users.id
+                ))
             UNION ALL
             SELECT
                 journeys.id AS journey_id,
                 COUNT(*) AS views
             FROM journeys, user_journeys, users, instructors, journey_subcategories
             WHERE
-                journeys.id = user_journeys.journey_id
-                AND user_journeys.user_id = users.id
+                user_journeys.user_id = users.id
                 AND journeys.instructor_id = instructors.id
                 AND journeys.journey_subcategory_id = journey_subcategories.id
                 AND instructors.uid = ?
@@ -119,6 +131,16 @@ async def get_journeys_for_combination(
                 )
                 AND journeys.deleted_at is NULL
                 AND journeys.special_category IS NULL
+                AND (
+                    user_journeys.journey_id = journeys.id
+                    OR (journeys.variation_of_journey_id IS NULL AND EXISTS (
+                        SELECT 1 FROM journeys AS variations
+                        WHERE
+                            variations.variation_of_journey_id = journeys.id
+                            AND user_journeys.journey_id = variations.id
+                    ))
+                    OR user_journeys.journey_id = journeys.variation_of_journey_id
+                )
                 AND NOT EXISTS (
                     SELECT 1 FROM course_journeys
                     WHERE course_journeys.journey_id = journeys.id

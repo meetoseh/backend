@@ -9,6 +9,7 @@ from itgs import Itgs
 
 
 ERROR_404_TYPES = Literal["journey_not_found"]
+ERROR_409_TYPES = Literal["variation_of_is_deleted"]
 
 
 router = APIRouter()
@@ -21,6 +22,10 @@ router = APIRouter()
         "404": {
             "description": "That journey does not exist or is not soft-deleted",
             "model": StandardErrorResponse[ERROR_404_TYPES],
+        },
+        "409": {
+            "description": "That journey is a variation of a deleted journey; undelete the parent first",
+            "model": StandardErrorResponse[ERROR_409_TYPES],
         },
         **STANDARD_ERRORS_BY_CODE,
     },
@@ -44,7 +49,16 @@ async def undelete_journey(uid: str, authorization: Optional[str] = Header(None)
             SET deleted_at = NULL
             WHERE
                 uid = ?
-                AND deleted_at IS NULL
+                AND deleted_at IS NOT NULL
+                AND (
+                    journeys.variation_of_journey_id IS NULL
+                    OR EXISTS (
+                        SELECT 1 FROM journeys AS parents
+                        WHERE
+                            parents.id = journeys.variation_of_journey_id
+                            AND parents.deleted_at IS NULL
+                    )
+                )
             """,
             (uid,),
         )
@@ -52,6 +66,33 @@ async def undelete_journey(uid: str, authorization: Optional[str] = Header(None)
             await evict_external_journey(itgs, uid=uid)
             await purge_emotion_content_statistics_everywhere(itgs)
             return Response(status_code=200)
+
+        response = await cursor.execute(
+            """
+            SELECT
+                parents.uid
+            FROM journeys, journeys AS parents
+            WHERE
+                journeys.uid = ?
+                AND journeys.deleted_at IS NOT NULL
+                AND journeys.variation_of_journey_id = parents.id
+                AND parents.deleted_at IS NOT NULL
+            """,
+            (uid,),
+        )
+        if response.results:
+            assert len(response.results) == 1
+            return Response(
+                content=StandardErrorResponse[ERROR_409_TYPES](
+                    type="variation_of_is_deleted",
+                    message=(
+                        "This journey is a variation of a deleted journey; "
+                        "undelete the parent first: " + response.results[0][0]
+                    ),
+                ).json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=409,
+            )
 
         return Response(
             content=StandardErrorResponse[ERROR_404_TYPES](

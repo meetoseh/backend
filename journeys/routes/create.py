@@ -45,6 +45,12 @@ class CreateJourneyRequest(BaseModel):
     lobby_duration_seconds: int = Field(
         10, description="The duration of the lobby in seconds.", ge=5, le=300
     )
+    variation_of_journey_uid: Optional[str] = Field(
+        description=(
+            "If this journey is a variation on another journey, the uid of the "
+            "original journey. Must not be deleted or be a variation itself."
+        )
+    )
 
 
 class CreateJourneyResponse(BaseModel):
@@ -92,6 +98,12 @@ class CreateJourneyResponse(BaseModel):
             "the content file containing the full length video, otherwise null"
         )
     )
+    variation_of_journey_uid: Optional[str] = Field(
+        description=(
+            "If this journey is a variation on another journey, the uid of the "
+            "original journey."
+        )
+    )
 
 
 ERROR_404_TYPES = Literal[
@@ -99,7 +111,14 @@ ERROR_404_TYPES = Literal[
     "journey_background_image_not_found",
     "journey_subcategory_not_found",
     "instructor_not_found",
+    "variation_journey_not_found",
 ]
+
+ERROR_409_TYPES = Literal[
+    "variation_journey_deleted",
+    "variation_journey_is_variation",
+]
+
 
 ERROR_503_TYPES = Literal["raced"]
 
@@ -108,7 +127,17 @@ ERROR_503_TYPES = Literal["raced"]
     "/",
     status_code=201,
     response_model=CreateJourneyResponse,
-    responses=STANDARD_ERRORS_BY_CODE,
+    responses={
+        "404": {
+            "model": StandardErrorResponse[ERROR_404_TYPES],
+            "description": "A necessary subresource is missing",
+        },
+        "409": {
+            "model": StandardErrorResponse[ERROR_409_TYPES],
+            "description": "A necessary subresource is in an invalid state",
+        },
+        **STANDARD_ERRORS_BY_CODE,
+    },
 )
 async def create_journey(
     args: CreateJourneyRequest, authorization: Optional[str] = Header(None)
@@ -144,7 +173,10 @@ async def create_journey(
                 blurred_image_files.uid,
                 darkened_image_files.uid,
                 journey_subcategories.bias,
-                instructors.bias
+                instructors.bias,
+                variation_journeys.uid,
+                variation_journeys.variation_of_journey_id,
+                variation_journeys.deleted_at
             FROM dummy
             LEFT OUTER JOIN content_files ON (
                 EXISTS (
@@ -184,6 +216,9 @@ async def create_journey(
             LEFT OUTER JOIN image_files AS ins_picture_image_files ON (
                 ins_picture_image_files.id = instructors.picture_image_file_id
             )
+            LEFT OUTER JOIN journeys AS variation_journeys ON (
+                variation_journeys.uid = ?
+            )
             """,
             (
                 args.journey_audio_content_uid,
@@ -192,6 +227,7 @@ async def create_journey(
                 args.journey_background_image_uid,
                 args.journey_subcategory_uid,
                 args.instructor_uid,
+                args.variation_of_journey_uid,
             ),
         )
 
@@ -208,6 +244,9 @@ async def create_journey(
         darkened_image_file_uid: Optional[str] = response.results[0][8]
         subcategory_bias: Optional[float] = response.results[0][9]
         instructor_bias: Optional[float] = response.results[0][10]
+        variation_uid: Optional[str] = response.results[0][11]
+        variation_variation_id: Optional[int] = response.results[0][12]
+        variation_deleted_at: Optional[float] = response.results[0][13]
 
         if content_file_uid is None:
             return Response(
@@ -253,6 +292,36 @@ async def create_journey(
                 status_code=404,
             )
 
+        if variation_uid is None and args.variation_of_journey_uid is not None:
+            return Response(
+                content=StandardErrorResponse[ERROR_404_TYPES](
+                    type="variation_journey_not_found",
+                    message="The variation_of_journey does not exist",
+                ).json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=404,
+            )
+
+        if variation_uid is not None and variation_variation_id is not None:
+            return Response(
+                content=StandardErrorResponse[ERROR_409_TYPES](
+                    type="variation_journey_is_variation",
+                    message="The variation_of_journey is a variation itself",
+                ).json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=409,
+            )
+
+        if variation_uid is not None and variation_deleted_at is not None:
+            return Response(
+                content=StandardErrorResponse[ERROR_409_TYPES](
+                    type="variation_journey_deleted",
+                    message="The variation_of_journey is deleted",
+                ).json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=409,
+            )
+
         assert subcategory_external_name is not None
         assert subcategory_bias is not None
         assert instructor_picture_image_file_uid is not None
@@ -281,7 +350,7 @@ async def create_journey(
                     ),
                 ),
                 (
-                    """
+                    f"""
                     INSERT INTO journeys (
                         uid,
                         audio_content_file_id,
@@ -293,7 +362,8 @@ async def create_journey(
                         description,
                         journey_subcategory_id,
                         interactive_prompt_id,
-                        created_at
+                        created_at,
+                        variation_of_journey_id
                     )
                     SELECT
                         ?,
@@ -305,8 +375,9 @@ async def create_journey(
                         ?, ?,
                         journey_subcategories.id,
                         interactive_prompts.id, 
-                        ?
-                    FROM journey_audio_contents, journey_background_images, instructors, journey_subcategories, interactive_prompts
+                        ?,
+                        {'NULL' if args.variation_of_journey_uid is None else 'variation_journeys.id'}
+                    FROM journey_audio_contents, journey_background_images, instructors, journey_subcategories, interactive_prompts{'' if args.variation_of_journey_uid is None else ', journeys AS variation_journeys'}
                     WHERE
                         journey_audio_contents.uid = ?
                         AND journey_background_images.uid = ?
@@ -314,6 +385,7 @@ async def create_journey(
                         AND instructors.deleted_at IS NULL
                         AND journey_subcategories.uid = ?
                         AND interactive_prompts.uid = ?
+                        {'' if args.variation_of_journey_uid is None else 'AND variation_journeys.uid = ? AND variation_journeys.variation_of_journey_id IS NULL AND variation_journeys.deleted_at IS NULL'}
                     """,
                     (
                         uid,
@@ -325,12 +397,25 @@ async def create_journey(
                         args.instructor_uid,
                         args.journey_subcategory_uid,
                         interactive_prompt_uid,
+                        *(
+                            tuple()
+                            if args.variation_of_journey_uid is None
+                            else (args.variation_of_journey_uid,)
+                        ),
                     ),
                 ),
             )
         )
 
         if response[1].rows_affected is None or response[1].rows_affected < 1:
+            if response[0].rows_affected is not None and response[0].rows_affected > 0:
+                await cursor.execute(
+                    """
+                    DELETE FROM interactive_prompts
+                    WHERE uid = ?
+                    """,
+                    (interactive_prompt_uid,),
+                )
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="raced",
@@ -400,6 +485,7 @@ async def create_journey(
                 created_at=now,
                 sample=None,
                 video=None,
+                variation_of_journey_uid=args.variation_of_journey_uid,
             ).json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,

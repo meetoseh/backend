@@ -15,6 +15,9 @@ async def map_to_times_seen_today(
     This will automatically batch the request if combinations is sufficiently
     long.
 
+    This doesn't need to worry about variations, as they presumably have the
+    same instructor and category.
+
     Args:
         itgs (Itgs): the integrations to (re)use
         combinations (list[InstructorAndCategory]): the combinations to map

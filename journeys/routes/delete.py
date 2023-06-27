@@ -17,6 +17,7 @@ class DeleteJourneyResponse(BaseModel):
 
 
 ERROR_404_TYPES = Literal["journey_not_found"]
+ERROR_409_TYPES = Literal["undeleted_variations"]
 
 
 router = APIRouter()
@@ -30,6 +31,10 @@ router = APIRouter()
         "404": {
             "description": "That journey does not exist or is already soft-deleted",
             "model": StandardErrorResponse[ERROR_404_TYPES],
+        },
+        "409": {
+            "description": "That journey has undeleted variations",
+            "model": StandardErrorResponse[ERROR_409_TYPES],
         },
         **STANDARD_ERRORS_BY_CODE,
     },
@@ -57,6 +62,12 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
             WHERE
                 uid = ?
                 AND deleted_at IS NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM journeys AS variations
+                    WHERE
+                        variations.variation_of_journey_id = journeys.id
+                        AND variations.deleted_at IS NULL
+                )
             """,
             (now, uid),
         )
@@ -67,6 +78,32 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
                 content=DeleteJourneyResponse(deleted_at=now).json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=200,
+            )
+
+        response = await cursor.execute(
+            """
+            SELECT
+                variations.uid
+            FROM journeys, journeys AS variations
+            WHERE
+                journeys.uid = ?
+                AND variations.variation_of_journey_id = journeys.id
+                AND variations.deleted_at IS NULL
+            """,
+            (uid,),
+        )
+
+        if response.results:
+            return Response(
+                content=StandardErrorResponse[ERROR_409_TYPES](
+                    type="undeleted_variations",
+                    message=(
+                        "This journey has the following undeleted variations: "
+                        + ", ".join(r[0] for r in response.results)
+                    ),
+                ).json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=409,
             )
 
         return Response(

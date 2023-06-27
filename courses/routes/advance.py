@@ -22,6 +22,12 @@ class AdvanceCourseRequest(BaseModel):
     )
 
 
+class AdvanceCourseResponse(BaseModel):
+    new_next_journey_uid: Optional[str] = Field(
+        description="The UID of the next journey in the course after this operation, if there is one"
+    )
+
+
 ERROR_404_TYPES = Literal["not_found"]
 NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
@@ -53,7 +59,8 @@ JOURNEY_IS_NOT_NEXT_RESPONSE = Response(
 
 @router.post(
     "/advance",
-    status_code=204,
+    status_code=200,
+    response_model=AdvanceCourseResponse,
     responses={
         "404": {
             "description": "The course was not found or the user is not entitled to it",
@@ -117,7 +124,8 @@ async def advance_course(
                     )
                 ) AS is_next_journey,
                 courses.title,
-                courses.slug
+                courses.slug,
+                course_journeys.priority
             FROM courses, users, course_users, course_journeys, journeys
             WHERE
                 courses.uid = ?
@@ -143,6 +151,7 @@ async def advance_course(
         is_next_journey: bool = bool(best_row[1])
         course_title: str = best_row[2]
         course_slug: str = best_row[3]
+        course_journey_priority: int = best_row[4]
 
         entitlement = await users.lib.entitlements.get_entitlement(
             itgs, user_sub=auth_result.result.sub, identifier=entitlement_iden
@@ -186,6 +195,29 @@ async def advance_course(
         if response.rows_affected is None or response.rows_affected < 1:
             return JOURNEY_IS_NOT_NEXT_RESPONSE
 
+        response = await cursor.execute(
+            """
+            SELECT
+                journeys.uid
+            FROM course_journeys, journeys, courses
+            WHERE
+                course_journeys.course_id = courses.id
+                AND course_journeys.journey_id = journeys.id
+                AND courses.uid = ?
+                AND course_journeys.priority > ?
+            ORDER BY course_journeys.priority ASC
+            LIMIT 1
+            """,
+            (
+                args.course_uid,
+                course_journey_priority,
+            ),
+            read_consistency="none",
+        )
+        next_journey_uid: Optional[str] = None
+        if response.results:
+            next_journey_uid = response.results[0][0]
+
         await on_entering_lobby(
             itgs,
             user_sub=auth_result.result.sub,
@@ -193,4 +225,10 @@ async def advance_course(
             action=f"finishing the next class in {course_title} ({course_slug})",
         )
 
-        return Response(status_code=204)
+        return Response(
+            content=AdvanceCourseResponse(
+                new_next_journey_uid=next_journey_uid,
+            ).json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            status_code=200,
+        )

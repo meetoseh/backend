@@ -4,6 +4,7 @@ import users.me.routes.delete_account
 import users.me.routes.finish_checkout_stripe
 import users.me.routes.like_journey
 import users.me.routes.picture
+import users.me.routes.read_course_journeys
 import users.me.routes.read_entitlements
 import users.me.routes.read_history
 import users.me.routes.read_revenue_cat_id
@@ -27,6 +28,7 @@ router = APIRouter()
 router.include_router(users.me.routes.cancel_subscription.router)
 router.include_router(users.me.routes.delete_account.router)
 router.include_router(users.me.routes.picture.router)
+router.include_router(users.me.routes.read_course_journeys.router)
 router.include_router(users.me.routes.read_entitlements.router)
 router.include_router(users.me.routes.read_history.router)
 router.include_router(users.me.routes.read_revenue_cat_id.router)

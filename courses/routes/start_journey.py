@@ -1,7 +1,3 @@
-# user jwt + course uid -> external journey
-# side effect:
-#   sets the users progress in that course to the priority of the returned journey,
-#   meaning this is not idempotent
 import secrets
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -16,36 +12,30 @@ from models import (
     STANDARD_ERRORS_BY_CODE,
     AUTHORIZATION_UNKNOWN_TOKEN,
 )
-import users.lib.entitlements
+import users.lib.entitlements as entitlements
 from auth import auth_any
 from itgs import Itgs
 from journeys.auth import create_jwt as create_journey_jwt
 from response_utils import cleanup_response
 import time
 
-
 router = APIRouter()
 
 
-class StartNextJourneyInCourseRequest(BaseModel):
+class StartJourneyRequest(BaseModel):
+    journey_uid: str = Field(description="The UID of the journey you want to start")
     course_uid: str = Field(
-        description=(
-            "The uid of the course you want to start the next journey in. If the "
-            "user is not entitled to this course, regardless of "
-        )
+        description="The UID of the course that you own that includes the journey"
     )
 
 
-ERROR_404_TYPES = Literal["not_found"]
-NOT_FOUND_RESPONSE = Response(
+ERROR_404_TYPES = Literal["journey_not_found"]
+JOURNEY_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
-        type="not_found",
-        message=(
-            "You either have not started that course or have already finished it."
-        ),
+        type="journey_not_found",
+        message="That journey does not exist, or it is not in that course, or you do not own that course",
     ).json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
-    status_code=404,
 )
 
 ERROR_503_TYPES = Literal["journey_gone", "failed_to_start"]
@@ -74,28 +64,25 @@ FAILED_TO_START_RESPONSE = Response(
 
 
 @router.post(
-    "/start_next",
+    "/start_journey",
     response_model=ExternalJourney,
     responses={
         "404": {
-            "description": "The user has not started the course or has already finished it.",
+            "description": "The journey was not found",
             "model": StandardErrorResponse[ERROR_404_TYPES],
         },
         **STANDARD_ERRORS_BY_CODE,
     },
 )
-async def start_next_journey_in_course(
-    args: StartNextJourneyInCourseRequest, authorization: Optional[str] = Header(None)
+async def start_journey(
+    args: StartJourneyRequest, authorization: Optional[str] = Header(None)
 ):
-    """Returns the next journey in a course for the user. If the user has not
-    started the course or has already finished the course or the course does
-    not exist, returns a 404. Otherwise, if the user is not entitled to the course
-    returns a 403.
+    """Fetches a signed ref for the given journey, assuming that you own the course
+    that the journey is in. Note that this does not advance the course; it's
+    typically necessary for the client to consider if that would be appropriate
+    given the context they are doing this in.
 
-    This does not actually advance the users progress in the course. Do that by
-    calling advance_course_progress.
-
-    Requires standard authorization.
+    Requires standard authorization
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
@@ -103,49 +90,50 @@ async def start_next_journey_in_course(
             return auth_result.error_response
 
         conn = await itgs.conn()
-        cursor = conn.cursor("weak")
+        cursor = conn.cursor("none")
+
+        response = await cursor.execute(
+            "SELECT courses.title, courses.slug, courses.revenue_cat_entitlement FROM courses WHERE uid=?",
+            (args.course_uid,),
+        )
+        if not response.results:
+            return JOURNEY_NOT_FOUND_RESPONSE
+
+        course_title: str = response.results[0][0]
+        course_slug: str = response.results[0][1]
+        revenue_cat_entitlement: str = response.results[0][2]
+
+        entitlement_info = await entitlements.get_entitlement(
+            itgs, user_sub=auth_result.result.sub, identifier=revenue_cat_entitlement
+        )
+        if entitlement_info is None or not entitlement_info.is_active:
+            return JOURNEY_NOT_FOUND_RESPONSE
 
         response = await cursor.execute(
             """
             SELECT
-                courses.revenue_cat_entitlement,
-                courses.title,
-                courses.slug,
-                journeys.uid
-            FROM courses, users, course_users, course_journeys, journeys
+                1
+            FROM journeys
+            JOIN content_files AS audio_content_files ON audio_content_files.id = journeys.audio_content_file_id
+            LEFT OUTER JOIN content_files AS video_content_files ON video_content_files.id = journeys.video_content_file_id
             WHERE
-                courses.uid = ?
-                AND users.sub = ?
-                AND course_users.course_id = courses.id
-                AND course_users.user_id = users.id
-                AND course_journeys.course_id = courses.id
-                AND course_journeys.journey_id = journeys.id
-                AND (
-                    course_users.last_priority IS NULL
-                    OR course_users.last_priority < course_journeys.priority
+                journeys.uid = ?
+                AND EXISTS (
+                    SELECT 1 FROM course_journeys, courses
+                    WHERE
+                        course_journeys.course_id = courses.id
+                        AND courses.uid = ?
+                        AND course_journeys.journey_id = journeys.id
                 )
-            ORDER BY course_journeys.priority ASC
-            LIMIT 1
             """,
-            (args.course_uid, auth_result.result.sub),
+            (args.journey_uid, args.course_uid),
         )
         if not response.results:
-            return NOT_FOUND_RESPONSE
+            return JOURNEY_NOT_FOUND_RESPONSE
 
-        entitlement_iden: str = response.results[0][0]
-        course_title: str = response.results[0][1]
-        course_slug: str = response.results[0][2]
-        journey_uid: str = response.results[0][3]
-
-        entitlement = await users.lib.entitlements.get_entitlement(
-            itgs, user_sub=auth_result.result.sub, identifier=entitlement_iden
-        )
-        if entitlement is None or not entitlement.is_active:
-            return AUTHORIZATION_UNKNOWN_TOKEN
-
-        journey_jwt = await create_journey_jwt(itgs, journey_uid=journey_uid)
+        journey_jwt = await create_journey_jwt(itgs, journey_uid=args.journey_uid)
         journey_response = await read_one_external(
-            itgs, journey_uid=journey_uid, jwt=journey_jwt
+            itgs, journey_uid=args.journey_uid, jwt=journey_jwt
         )
         if journey_response is None:
             await handle_contextless_error(
@@ -177,7 +165,7 @@ async def start_next_journey_in_course(
                 now,
                 args.course_uid,
                 auth_result.result.sub,
-                journey_uid,
+                args.journey_uid,
             ),
         )
         if response.rows_affected is None or response.rows_affected < 1:
@@ -200,7 +188,7 @@ async def start_next_journey_in_course(
                 users.sub = ?
                 AND journeys.uid = ?
             """,
-            (user_journey_uid, now, auth_result.result.sub, journey_uid),
+            (user_journey_uid, now, auth_result.result.sub, args.journey_uid),
         )
         if response.rows_affected is None or response.rows_affected < 1:
             await handle_contextless_error(
@@ -210,8 +198,8 @@ async def start_next_journey_in_course(
         await on_entering_lobby(
             itgs,
             user_sub=auth_result.result.sub,
-            journey_uid=journey_uid,
-            action=f"considering taking the next class in {course_title} ({course_slug})",
+            journey_uid=args.journey_uid,
+            action=f"taking a class in {course_title} ({course_slug})",
         )
 
         return journey_response

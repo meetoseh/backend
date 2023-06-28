@@ -90,9 +90,13 @@ async def map_to_lowest_view_counts(
                             AND user_journeys.user_id = users.id
                     ))
                     AND (journeys.variation_of_journey_id IS NULL OR NOT EXISTS (
-                        SELECT 1 FROM user_journeys
+                        SELECT 1 FROM user_journeys, journeys AS inner_journeys
                         WHERE
-                            user_journeys.journey_id = journeys.variation_of_journey_id
+                            user_journeys.journey_id = inner_journeys.id
+                            AND (
+                                inner_journeys.id = journeys.variation_of_journey_id
+                                OR inner_journeys.variation_of_journey_id = journeys.variation_of_journey_id
+                            )
                             AND user_journeys.user_id = users.id
                     ))
                 UNION ALL
@@ -125,6 +129,12 @@ async def map_to_lowest_view_counts(
                                 AND user_journeys.journey_id = variations.id
                         ))
                         OR user_journeys.journey_id = journeys.variation_of_journey_id
+                        OR (journeys.variation_of_journey_id IS NOT NULL AND EXISTS (
+                            SELECT 1 FROM journeys AS other_variations
+                            WHERE 
+                                user_journeys.journey_id = other_variations.id
+                                AND other_variations.variation_of_journey_id = journeys.variation_of_journey_id
+                        ))
                     )
                     AND users.sub = ?
                 GROUP BY journey_id

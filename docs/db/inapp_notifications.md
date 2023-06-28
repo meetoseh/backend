@@ -95,6 +95,21 @@ particular inapp notification.
 
   - `next`: the user hit the next button to dismiss the notification
 
+- Extended Classes Pack (`oseh_ian_GqGxDHGQeZT9OsSEGEU90g`) offers a free
+  3-minute class, then the ability to purchase 5 more 3-minute classes for
+  $4.99. Actions:
+
+  - `try_class`: the user hit the button try the free 3-minute class; extra
+    is formatted as `{"emotion":"string","journey_uid":"string","journey_title":"string"}`
+  - `no_thanks`: the user did not try the 3-minute class. extra is formatted as
+    `{"emotion":"string"}`
+  - `start_audio`: the user got to the audio part of the journey
+  - `stop_audio_early`: the user clicked the x to stop the audio early.
+    extra is formatted as `{"current_time": 0}`
+  - `stop_audio_normally`: the user got to the end of the audio
+  - `x`: the user clicked the x to dismiss the prompt to buy the pack
+  - `buy_now`: the user clicked the buy now button to start a checkout session.
+
 ## Schema
 
 ```sql

@@ -28,6 +28,7 @@ import vip_chat_requests.router
 import courses.router
 import emotions.router
 import personalization.router
+import campaigns.router
 import personalization.register_background_tasks
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.lib.read_one_external
@@ -119,6 +120,9 @@ app.include_router(
     personalization.router.router,
     prefix="/api/1/personalization",
     tags=["personalization"],
+)
+app.include_router(
+    campaigns.router.router, prefix="/api/1/campaigns", tags=["campaigns"]
 )
 app.router.redirect_slashes = False
 

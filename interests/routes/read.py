@@ -15,36 +15,27 @@ from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from itgs import Itgs
 
 
-class Emotion(BaseModel):
-    word: str = Field(
-        description="The unique word that represents this emotion, e.g., lost, angry, sad"
-    )
-    antonym: str = Field(
-        description="The action that is taken to resolve this emotion, e.g., find yourself, calm down, cheer up"
+class Interest(BaseModel):
+    slug: str = Field(
+        description="The unique slug for the interest, e.g., anxiety, or isaiah-affirmations"
     )
 
 
-EMOTION_SORT_OPTIONS = [SortItem[Literal["word"], str]]
-EmotionSortOption = SortItemModel[Literal["word"], str]
+INTEREST_SORT_OPTIONS = [SortItem[Literal["slug"], str]]
+InterestSortOption = SortItemModel[Literal["slug"], str]
 
 
-class EmotionFilter(BaseModel):
-    word: Optional[FilterTextItemModel] = Field(
-        None, description="the emotion that a class could resolve"
-    )
-    antonym: Optional[FilterTextItemModel] = Field(
-        None, description="the action that resolves this emotion"
-    )
-    journey_uid: Optional[FilterTextItemModel] = Field(
-        None, description="a uid of a journey that resolves this emotion"
+class InterestFilter(BaseModel):
+    slug: Optional[FilterTextItemModel] = Field(
+        None, description="the slug of the interest"
     )
 
 
-class ReadEmotionRequest(BaseModel):
-    filters: EmotionFilter = Field(
-        default_factory=EmotionFilter, description="the filters to apply"
+class ReadInterestRequest(BaseModel):
+    filters: InterestFilter = Field(
+        default_factory=InterestFilter, description="the filters to apply"
     )
-    sort: Optional[List[EmotionSortOption]] = Field(
+    sort: Optional[List[InterestSortOption]] = Field(
         None, description="the order to sort by"
     )
     limit: int = Field(
@@ -52,11 +43,11 @@ class ReadEmotionRequest(BaseModel):
     )
 
 
-class ReadEmotionResponse(BaseModel):
-    items: List[Emotion] = Field(
+class ReadInterestResponse(BaseModel):
+    items: List[Interest] = Field(
         description="the items matching the filters in the given sort"
     )
-    next_page_sort: Optional[List[EmotionSortOption]] = Field(
+    next_page_sort: Optional[List[InterestSortOption]] = Field(
         description=(
             "if there is a next page or an earlier page, provides the necessary "
             "sort criteria to get it"
@@ -68,18 +59,17 @@ router = APIRouter()
 
 
 @router.post(
-    "/search", response_model=ReadEmotionResponse, responses=STANDARD_ERRORS_BY_CODE
+    "/search", response_model=ReadInterestResponse, responses=STANDARD_ERRORS_BY_CODE
 )
-async def read_emotions(
-    args: ReadEmotionRequest, authorization: Optional[str] = Header(None)
+async def read_interests(
+    args: ReadInterestRequest, authorization: Optional[str] = Header(None)
 ):
-    """Lists out emotions. This can also be used to fetch emotions which are on a
-    particular journey.
+    """Lists out interests.
 
     This requires standard authentication with an admin account.
     """
     sort = [srt.to_result() for srt in (args.sort or [])]
-    sort = cleanup_sort(EMOTION_SORT_OPTIONS, sort, ["word"])
+    sort = cleanup_sort(INTEREST_SORT_OPTIONS, sort, ["slug"])
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
         if not auth_result.success:
@@ -91,7 +81,7 @@ async def read_emotions(
                 if v is not None
             )
         )
-        items = await raw_read_emotions(itgs, filters_to_apply, sort, args.limit + 1)
+        items = await raw_read_interests(itgs, filters_to_apply, sort, args.limit + 1)
         next_page_sort: Optional[List[SortItem]] = None
         last_item: Optional[Dict[str, Any]] = None
         if len(items) > args.limit:
@@ -100,7 +90,7 @@ async def read_emotions(
         first_item: Optional[Dict[str, Any]] = None
         if items and any(s.after is not None for s in sort):
             rev_sort = reverse_sort(sort, "make_exclusive")
-            rev_items = await raw_read_emotions(itgs, filters_to_apply, rev_sort, 1)
+            rev_items = await raw_read_interests(itgs, filters_to_apply, rev_sort, 1)
             if rev_items:
                 first_item = item_pseudocolumns(items[0])
 
@@ -108,7 +98,7 @@ async def read_emotions(
             next_page_sort = get_next_page_sort(first_item, last_item, sort)
 
         return Response(
-            content=ReadEmotionResponse(
+            content=ReadInterestResponse(
                 items=items,
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
@@ -118,53 +108,25 @@ async def read_emotions(
         )
 
 
-async def raw_read_emotions(
+async def raw_read_interests(
     itgs: Itgs,
     filters_to_apply: List[Tuple[str, Union[FilterItem, FilterTextItem]]],
     sort: List[SortItem],
     limit: int,
 ):
     """performs exactly the specified sort without pagination logic"""
-    journey_uid_filter_idx = next(
-        (idx for idx, f in enumerate(filters_to_apply) if f[0] == "journey_uid"), None
-    )
-    if journey_uid_filter_idx is not None:
-        journey_uid_filter = filters_to_apply[journey_uid_filter_idx][1]
-        filters_to_apply = filters_to_apply[:journey_uid_filter_idx] + (
-            filters_to_apply[journey_uid_filter_idx + 1 :]
-        )
-    else:
-        journey_uid_filter = None
+    interests = Table("interests")
 
-    emotions = Table("emotions")
-    journeys = Table("journeys")
-    journey_emotions = Table("journey_emotions")
-
-    query: QueryBuilder = Query.from_(emotions).select(
-        emotions.word,
-        emotions.antonym,
-    )
+    query: QueryBuilder = Query.from_(interests).select(interests.slug)
     qargs = []
 
     def pseudocolumn(key: str) -> Term:
-        if key in ("word", "antonym"):
-            return emotions.field(key)
+        if key == "slug":
+            return interests.slug
         raise ValueError(f"unknown key {key}")
 
     for key, filter in filters_to_apply:
         query = query.where(filter.applied_to(pseudocolumn(key), qargs))
-
-    if journey_uid_filter is not None:
-        query = query.where(
-            ExistsCriterion(
-                Query.from_(journey_emotions)
-                .select(1)
-                .join(journeys)
-                .on(journeys.id == journey_emotions.journey_id)
-                .where(journey_emotions.emotion_id == emotions.id)
-                .where(journey_uid_filter.applied_to(journeys.uid, qargs))
-            )
-        )
 
     query = query.where(sort_criterion(sort, pseudocolumn, qargs))
 
@@ -177,13 +139,13 @@ async def raw_read_emotions(
     conn = await itgs.conn()
     cursor = conn.cursor("none")
     response = await cursor.execute(query.get_sql(), qargs)
-    items: List[Emotion] = []
+    items: List[Interest] = []
     for row in response.results or []:
-        items.append(Emotion(word=row[0], antonym=row[1]))
+        items.append(Interest(slug=row[0]))
     return items
 
 
-def item_pseudocolumns(item: Emotion) -> dict:
+def item_pseudocolumns(item: Interest) -> dict:
     """returns the dictified item such that the keys in the return dict match
     the keys of the sort options"""
     return item.dict()

@@ -35,9 +35,8 @@ particular inapp notification.
 - Phone Number (`oseh_ian_ENUob52K4t7HTs7idvR7Ig`): The regular phone number
   prompt, repeats at most once per week if they don't have a phone set. Actions:
 
-  - `continue`, `skip`, `verify_start`, `verify_fail`, `verify_success`, `verify_back`
-
-  The `continue` option `extra` is formatted as `{"pn": "string", "tz": "string"}`
+  - `continue`: `extra` is formatted as `{"pn": "string", "tz": "string"}`
+  - `skip`, `verify_start`, `verify_fail`, `verify_success`, `verify_back`
 
 - Onboarding Phone Number (`oseh_ian_bljOnb8Xkxt-aU9Fm7Qq9w`): Another phone
   number prompt that only occurs during onboarding and is intentionally
@@ -47,6 +46,8 @@ particular inapp notification.
 - Welcome to Oseh (`oseh_ian_7_3gJYejCkpQTunjRcw-Mg`) is a basic informational
   prompt. Actions:
 
+  - `customized`: not a real action, sent when the frontend swaps the copy based on
+    the users interest. has extra `{"interest": "string"}`
   - `next`
 
 - Post-Class Swap (`oseh_ian_jOA1ODKI03zEY3-jrmPH1Q`) swaps out the post-class
@@ -109,6 +110,11 @@ particular inapp notification.
   - `stop_audio_normally`: the user got to the end of the audio
   - `x`: the user clicked the x to dismiss the prompt to buy the pack
   - `buy_now`: the user clicked the buy now button to start a checkout session.
+
+- Isaiah Course (`oseh_ian_1DsXw1UM0_cQ_PRglgchcg`) directs the user to their
+  purchases page so they know where to access their Isaiah Course. Actions:
+
+  - `lets_go`: the user hit the lets go button to go to their purchases tab
 
 ## Schema
 

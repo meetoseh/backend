@@ -2,7 +2,6 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Literal, Optional
 from auth import auth_any
-from error_middleware import handle_contextless_error
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 

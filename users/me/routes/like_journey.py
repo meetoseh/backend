@@ -171,6 +171,6 @@ async def like_journey(
             return ALREADY_LIKED_RESPONSE
 
         await handle_contextless_error(
-            f"raced while liking journey {args.journey_uid} by {auth_result.result.sub}: no reason found for failure"
+            extra_info=f"raced while liking journey {args.journey_uid} by {auth_result.result.sub}: no reason found for failure"
         )
         return RACED_RESPONSE

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import List, Literal, Optional
 from auth import auth_id
+from error_middleware import handle_error
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from contextlib import asynccontextmanager
@@ -258,7 +259,6 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
 
             await cleanup_user_notifications(itgs, auth_result.result.sub)
             await cleanup_klaviyo(itgs, auth_result.result.sub)
-
             await cursor.execute(
                 "DELETE FROM users WHERE sub=?", (auth_result.result.sub,)
             )
@@ -376,10 +376,35 @@ async def cleanup_klaviyo(itgs: Itgs, sub: str) -> None:
     list_ids: List[str] = [row[3] for row in response.results if row[3] is not None]
 
     klaviyo = await itgs.klaviyo()
-    await klaviyo.suppress_email(email)
-    for list_id in list_ids:
-        await klaviyo.remove_from_list(profile_id=klaviyo_id, list_id=list_id)
-    await klaviyo.request_profile_deletion(klaviyo_id)
+    try:
+        await klaviyo.suppress_email(email)
+    except Exception as e:
+        await handle_error(
+            e,
+            extra_info=(
+                f"failed to cleanup klaviyo account while deleting profile (suppress email); {sub=}, {klaviyo_id=}, {email=}, {phone_number=}, {list_ids=}"
+            ),
+        )
+    try:
+        for list_id in list_ids:
+            await klaviyo.remove_from_list(profile_id=klaviyo_id, list_id=list_id)
+    except Exception as e:
+        await handle_error(
+            e,
+            extra_info=(
+                f"failed to cleanup klaviyo account while deleting profile (remove from lists); {sub=}, {klaviyo_id=}, {email=}, {phone_number=}, {list_ids=}"
+            ),
+        )
+
+    try:
+        await klaviyo.request_profile_deletion(klaviyo_id)
+    except Exception as e:
+        await handle_error(
+            e,
+            extra_info=(
+                f"failed to cleanup klaviyo account while deleting profile (request profile deletion); {sub=}, {klaviyo_id=}, {email=}, {phone_number=}, {list_ids=}"
+            ),
+        )
 
 
 @asynccontextmanager

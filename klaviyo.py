@@ -169,7 +169,7 @@ class Klaviyo:
             profile_id (str): The profile id to remove from the list
             list_id (str): The list id to remove the profile from
         """
-        body = {"data": {"type": "profile", "id": profile_id}}
+        body = {"data": [{"type": "profile", "id": profile_id}]}
         async with self.session.delete(
             f"https://a.klaviyo.com/api/lists/{list_id}/relationships/profiles/",
             json=body,

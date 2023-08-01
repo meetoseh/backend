@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 import aiohttp
 from loguru import logger
 
+from error_middleware import handle_error
+
 
 class Entitlement(BaseModel):
     """https://www.revenuecat.com/reference/subscribers"""
@@ -120,7 +122,13 @@ class RevenueCat:
             resp.raise_for_status()
             text = await resp.text()
 
-        return CustomerInfo.parse_raw(text, content_type="application/json")
+        try:
+            return CustomerInfo.parse_raw(text, content_type="application/json")
+        except Exception as e:
+            await handle_error(
+                e, extra_info=f"for {revenue_cat_id=} and response {text=}"
+            )
+            raise Exception("Error parsing response from RevenueCat")
 
     async def set_customer_attributes(
         self, *, revenue_cat_id: str, attributes: Dict[str, str]

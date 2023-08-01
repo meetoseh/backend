@@ -181,7 +181,10 @@ async def create_tokens_for_user(
                 WHERE user_journeys.user_id = users.id
             ) AS b1,
             phone_number,
-            phone_number_verified
+            phone_number_verified,
+            email,
+            given_name,
+            family_name
         FROM users WHERE sub = ?
         """,
         (user.user_sub, user.user_sub),
@@ -193,10 +196,22 @@ async def create_tokens_for_user(
         onboard = True
         phone_number = None
         phone_number_verified = False
+        email = None
+        given_name = None
+        family_name = None
+        name = None
     else:
         onboard: bool = not response.results[0][0]
         phone_number: Optional[str] = response.results[0][1]
         phone_number_verified: bool = bool(response.results[0][2])
+        email: str = response.results[0][3]
+        given_name: Optional[str] = response.results[0][4]
+        family_name: Optional[str] = response.results[0][5]
+        name = (
+            f"{given_name} {family_name}"
+            if given_name is not None and family_name is not None
+            else None
+        )
 
     now = int(time.time())
     id_token = jwt.encode(
@@ -207,10 +222,10 @@ async def create_tokens_for_user(
             "exp": now + 60 * 60,
             "iat": now - 1,
             "jti": secrets.token_urlsafe(16),
-            "name": interpreted_claims.name,
-            "given_name": interpreted_claims.given_name,
-            "family_name": interpreted_claims.family_name,
-            "email": interpreted_claims.email,
+            "name": name or interpreted_claims.name or "Anonymous",
+            "given_name": given_name or interpreted_claims.given_name or "Anonymous",
+            "family_name": family_name or interpreted_claims.family_name or "",
+            "email": email or interpreted_claims.email,
             "phone_number": (
                 interpreted_claims.phone_number
                 if (

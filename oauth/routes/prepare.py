@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 class OauthPrepareRequest(BaseModel):
-    provider: Literal["Google", "SignInWithApple"] = Field(
+    provider: Literal["Google", "SignInWithApple", "Direct"] = Field(
         description="Which provider to use for authentication"
     )
     refresh_token_desired: bool = Field(

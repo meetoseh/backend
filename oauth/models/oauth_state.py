@@ -5,7 +5,7 @@ from typing import Literal
 class OauthState(BaseModel):
     """The state stored under the `oauth:states:{state}` key in redis"""
 
-    provider: Literal["Google", "SignInWithApple"] = Field(
+    provider: Literal["Google", "SignInWithApple", "Direct"] = Field(
         description="Which provider was used"
     )
     refresh_token_desired: bool = Field(

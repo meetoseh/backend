@@ -44,7 +44,7 @@ async def callback(
                 status_code=302,
             )
 
-        if state_info.provider != "Google":
+        if state_info.provider not in ("Google", "Direct"):
             return RedirectResponse(
                 url=f"{state_info.redirect_uri}/?"
                 + urlencode(

@@ -27,7 +27,7 @@ class ProviderSettings:
     """Any additional parameters when forming the authorization URL"""
 
 
-PROVIDER_TO_SETTINGS: Dict[Literal["Google"], ProviderSettings] = {
+PROVIDER_TO_SETTINGS: Dict[Literal["Google", "Direct"], ProviderSettings] = {
     "Google": ProviderSettings(
         name="Google",
         authorization_endpoint="https://accounts.google.com/o/oauth2/v2/auth",
@@ -38,5 +38,14 @@ PROVIDER_TO_SETTINGS: Dict[Literal["Google"], ProviderSettings] = {
         bonus_params={
             "prompt": "select_account",
         },
+    ),
+    "Direct": ProviderSettings(
+        name="Direct",
+        authorization_endpoint=os.environ["ROOT_FRONTEND_URL"] + "/authorize",
+        token_endpoint=os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/token",
+        client_id=os.environ["OSEH_DIRECT_ACCOUNT_CLIENT_ID"],
+        client_secret=os.environ["OSEH_DIRECT_ACCOUNT_CLIENT_SECRET"],
+        scope="openid",
+        bonus_params={},
     ),
 }

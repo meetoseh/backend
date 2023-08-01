@@ -1,7 +1,10 @@
 # user_identities
 
 Describes an identity, which is a method for a user to login via an account from
-a given provider.
+a given provider. All methods a user can use to login go through this table, even
+those that came from the user signing up with an email/password. Email/password
+signup will result in a `Direct` provider. The ability to check the email/password
+is available in `direct_accounts`.
 
 ## Fields
 
@@ -10,7 +13,10 @@ a given provider.
   the uid prefix `ui`, see [uid_prefixes](../uid_prefixes.md)
 - `user_id (integer not null references users(id) on delete cascade)`: the user
   this is an identity for. Can be swapped safely. Not necessarily unique.
-- `provider (text not null)`: the provider, either 'Google' or 'SignInWithApple'
+- `provider (text not null)`: the provider, one of:
+  - Google
+  - SignInWithApple
+  - Direct (see `direct_accounts`)
 - `sub (text not null)`: the stable unique identifier by the provider; we provide
   the unique constraint on (provider, sub) in the very unlikely case two providers
   have a collision.

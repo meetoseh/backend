@@ -331,6 +331,42 @@ the keys that we use in redis
 - `reddit:lock`: A lock that prevents us having multiple praw instances trying to use
   reddit at once, which will cause issues with the refresh token.
 
+- `oauth:direct_account:code:{client_id}:{code}` goes to a text json object matching the following
+  examples format:
+
+  ```json
+  {
+    "redirect_uri": "string",
+    "sub": "string",
+    "email": "string",
+    "email_verified": true,
+    "expires_at": 0
+  }
+  ```
+
+  where the `code` is the randomly generated (as if by `secrets.token_urlsafe(16)`) code,
+  client id is the client id the code is valid for, redirect uri is the redirect uri the
+  code is valid for, the sub/email/email_verified at are the corresponding fields for
+  the resulting token if the code is used successfully, and expires_at is the latest time
+  in unix seconds since the epoch before the code should be considered expired, in case
+  for some reason key expiration is delayed (such as from a poorly done redis restore).
+
+  the code is always exactly 22 characters.
+
+- `oauth:direct_account:login_attempts` goes to a list where the values are the timestamps
+  at which a login attempt was attempted, in fractional seconds since the unix epoch. This
+  is pruned on insertion and is used for ratelimiting all login attempts using a strict
+  rolling window strategy. Prevents brute force attacks, though since it's a crude strategy
+  an attack will need manual intervention to void requests before hitting the backend to
+  allow others to login.
+
+- `oauth:direct_account:login_attempts:{email}` goes to a number which is the number of
+  login attempts by that email since the key was expired, and the key is set to expire
+  after 5 minutes. Prevents simple brute force attacks from blocking all logins.
+
+- `oauth:direct_account:seen_jits:{jti}` goes to '1' if that jti has been seen and '0'
+  otherwise. Expires 1m after the corresponding JWT expires.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,

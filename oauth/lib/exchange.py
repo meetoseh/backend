@@ -107,11 +107,9 @@ async def fetch_state(itgs: Itgs, state: str) -> Optional[OauthState]:
     """
     redis = await itgs.redis()
     state_key = f"oauth:states:{state}".encode("utf-8")
-    state_info_raw: Optional[bytes] = await redis.get(state_key)
+    state_info_raw: Optional[bytes] = await redis.getdel(state_key)
     if state_info_raw is None:
         return None
-
-    await redis.delete(state_key)
 
     return OauthState.parse_raw(state_info_raw)
 
@@ -290,6 +288,12 @@ async def interpret_provider_claims(
 
         given_name = given_name or implied_given_name
         family_name = family_name or implied_family_name
+
+    if given_name is None:
+        given_name = "Anonymous"
+
+    if family_name is None:
+        family_name = ""
 
     picture: Optional[str] = claims.get("picture")
     iat: int = int(claims.get("iat", time.time()))

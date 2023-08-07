@@ -116,6 +116,22 @@ particular inapp notification.
 
   - `lets_go`: the user hit the lets go button to go to their purchases tab
 
+- Request Notifications (`oseh_ian_k1hWlArw-lNX3v9_qxJahg`) asks the user
+  to enable notifications on their device. Actions:
+
+  - `open`: always added as the first action to provide additional context. extra
+    is formatted as `{"last_requested_locally": null, "platform": "ios"}` where
+    `last_requested_locally` either null or a float representing seconds since the
+    unix epoch, and platform is either `ios` or `android`.
+  - `open_native`: The user selected `allow notifications` and so we brought up the
+    native prompt, but they haven't yet selected ok.
+  - `close_native`: The user made their selection on the native prompt. extra is
+    formatted as `{"granted": true, "error": null}` where granted is true if we now have permission
+    and false otherwise. error is a string if we caught an error, though it may not
+    be particularly useful (except in identifying that there _was_ an error)
+  - `skip`: Within our prompt, instead of selecting allow notifications they pressed
+    skip, and thus we never opened the native prompt.
+
 ## Schema
 
 ```sql

@@ -297,6 +297,10 @@ the keys we store locally on backend instances via diskcache
   image file uids representing the profile images of a small (~5) number of
   people who have recently selected the given emotion.
 
+- `daily_push_tokens:{from_unix_date}:{to_unix_date}` goes to a string containing
+  the serialized daily push token stats for the given date range (incl -> excl).
+  see also: [read_daily_push_tokens](../../admin/notifs/routes/read_daily_push_tokens.py)
+
 ## Personalization
 
 This contains keys for the personalization subspace

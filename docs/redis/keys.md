@@ -4,6 +4,8 @@ the keys that we use in redis
 
 ## standard keys
 
+### miscellaneous
+
 - `jobs:hot` used for the hot queue for jobs in jobs.py
 - `jobs:hot:{category}` used for job retrieval exclusively by the `jobs` repository.
   Job categorization is done by the job runners, not other packages, to avoid
@@ -575,6 +577,16 @@ rather than external functionality.
   `holdover_any_click_signups`, `preexisting`, `last_click_signups`,
   `any_click_signups`
 
+- `stats:push_tokens:daily:{unix_date}` goes to a hash where the keys are strings
+  representing the event (see `push_token_stats`) and the values are the counts
+  for the given unix date. Keys: `created`, `reassigned`, `refreshed`,
+  `deleted_due_to_user_deletion`, `deleted_due_to_unrecognized_ticket`,
+  `deleted_due_to_unrecognized_receipt`, `deleted_due_to_token_limit`
+
+- `stats:push_tokens:daily:earliest` goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily push tokens information still in
+  redis
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -692,3 +704,8 @@ These are regular keys used by the personalization module
 - `ps:emotion_content_statistics:push_cache` used to purge backend instances local cache
   for the local cache key `emotion_content_statistics`. The values are jsonified
   purge cache messages, see [emotion_content](../../emotions/lib/emotion_content.py)
+
+- `ps:stats:push_tokens:daily` is used to optimistically send compressed daily push token
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.

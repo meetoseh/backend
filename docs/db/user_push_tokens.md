@@ -39,7 +39,7 @@ CREATE TABLE user_push_tokens (
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     last_seen_at REAL NOT NULL,
-    last_confirmed_at REAL NULL,
+    last_confirmed_at REAL NULL
 );
 
 /* Search, foreign key */

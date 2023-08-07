@@ -81,7 +81,8 @@ message attempt start)
 4. [ ] Number of deleted push tokens due to user account deletion per day
 5. [ ] Number of deleted push tokens due to DeviceNotRegistered tickets per day
 6. [ ] Number of deleted push tokens due to DeviceNotRegistered receipts per day
-7. [ ] Number of push tokens per day (should match 1 - 3 - 4 - 5)
+7. [ ] Number of deleted push tokens due to # attached tokens limit
+8. [ ] Number of push tokens per day (should match 1 - 4 - 5 - 6 - 7 rolling sum)
 
 ## Push Tickets
 

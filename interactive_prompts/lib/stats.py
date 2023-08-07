@@ -6,7 +6,7 @@ This is not an exhausitive list of callbacks: see also users/lib/stats.py
 """
 from typing import Optional
 from itgs import Itgs
-from users.lib.stats import set_if_lower, ensure_set_if_lower_script_exists
+from redis_helpers.set_if_lower import set_if_lower, ensure_set_if_lower_script_exists
 import unix_dates
 import pytz
 

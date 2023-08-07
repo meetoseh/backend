@@ -13,6 +13,7 @@ import admin.routes.read_total_journeys
 import admin.routes.read_total_user_notification_settings
 import admin.routes.read_total_users
 import admin.routes.read_utm_conversion_stats
+import admin.notifs.router
 
 router = APIRouter()
 router.include_router(admin.routes.read_daily_active_users.router)
@@ -29,3 +30,5 @@ router.include_router(admin.routes.read_total_journeys.router)
 router.include_router(admin.routes.read_total_user_notification_settings.router)
 router.include_router(admin.routes.read_total_users.router)
 router.include_router(admin.routes.read_utm_conversion_stats.router)
+
+router.include_router(admin.notifs.router.router, prefix="/notifs")

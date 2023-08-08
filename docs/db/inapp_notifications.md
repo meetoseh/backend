@@ -111,10 +111,14 @@ particular inapp notification.
   - `x`: the user clicked the x to dismiss the prompt to buy the pack
   - `buy_now`: the user clicked the buy now button to start a checkout session.
 
-- Isaiah Course (`oseh_ian_1DsXw1UM0_cQ_PRglgchcg`) directs the user to their
-  purchases page so they know where to access their Isaiah Course. Actions:
+- Isaiah's Resilient Spirit Course (`oseh_ian_1DsXw1UM0_cQ_PRglgchcg`) directs the user to their
+  purchases page so they know where to access their Isaiah Course. This
+  notification is specifically for resilient spirit. Actions:
 
   - `lets_go`: the user hit the lets go button to go to their purchases tab
+
+- Isaiah's Elevate Within Course (`oseh_ian_OFStGm3QKzII9onuP3CaCg`) - Isaiah's elevate within
+  course. Same actions as the resilient spirit.
 
 - Request Notifications (`oseh_ian_k1hWlArw-lNX3v9_qxJahg`) asks the user
   to enable notifications on their device. Actions:

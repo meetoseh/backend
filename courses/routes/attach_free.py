@@ -18,7 +18,9 @@ from visitors.lib.get_or_create_visitor import (
 )
 
 
-FREE_COURSE_SLUGS: FrozenSet[str] = frozenset(("resilient-spirit-07202023",))
+FREE_COURSE_SLUGS: FrozenSet[str] = frozenset(
+    ("resilient-spirit-07202023", "elevate-within-080882023")
+)
 """The course slugs which, if a user requests, we will grant them the
 entitlement for and then attach the course. We should probably move this
 to the database once we have an admin section for courses, with a timerange

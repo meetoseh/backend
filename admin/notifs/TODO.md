@@ -71,18 +71,18 @@ message attempt start)
 
 ## Push Tokens
 
-1. [ ] Number of completely new push tokens by day
+1. [x] Number of completely new push tokens by day
    - Client sent us a push token we didn't have
-2. [ ] Number of reassigned push tokens by day
+2. [x] Number of reassigned push tokens by day
    - Client sent us a push token we already had, but for a new account
-3. [ ] Number of push tokens refreshed by day
+3. [x] Number of push tokens refreshed by day
    - Client sent us a push token we already had & was already assigned to
      that person
-4. [ ] Number of deleted push tokens due to user account deletion per day
+4. [x] Number of deleted push tokens due to user account deletion per day
 5. [ ] Number of deleted push tokens due to DeviceNotRegistered tickets per day
 6. [ ] Number of deleted push tokens due to DeviceNotRegistered receipts per day
-7. [ ] Number of deleted push tokens due to # attached tokens limit
-8. [ ] Number of push tokens per day (should match 1 - 4 - 5 - 6 - 7 rolling sum)
+7. [x] Number of deleted push tokens due to # attached tokens limit
+8. [x] Number of push tokens per day (should match 1 - 4 - 5 - 6 - 7 rolling sum)
 
 ## Push Tickets
 

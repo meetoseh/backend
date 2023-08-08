@@ -8,6 +8,7 @@ from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from contextlib import asynccontextmanager
 from starlette.concurrency import run_in_threadpool
+import notifications.push.lib.token_stats
 import users.lib.entitlements
 import stripe
 import time
@@ -257,6 +258,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                                 api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
                             )
 
+            await cleanup_user_push_tokens(itgs, auth_result.result.sub)
             await cleanup_user_notifications(itgs, auth_result.result.sub)
             await cleanup_klaviyo(itgs, auth_result.result.sub)
             await cursor.execute(
@@ -284,6 +286,37 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                 )
 
             return Response(status_code=204)
+
+
+async def cleanup_user_push_tokens(itgs: Itgs, sub: str) -> None:
+    """Cleans up any push tokens the user has, in particular this updates
+    our statistics for push tokens.
+
+    Args:
+        itgs (Itgs): The integrations to (re)use
+        sub (str): The sub of the user whose push tokens will be cleaned up
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor()
+    response = await cursor.execute(
+        """
+        DELETE FROM user_push_tokens
+        WHERE
+            EXISTS (
+                SELECT 1 FROM users
+                WHERE users.id = user_push_tokens.user_id
+                  AND users.sub = ?
+            )
+        """,
+        (sub,),
+    )
+    if response.rows_affected is not None and response.rows_affected > 0:
+        await notifications.push.lib.token_stats.increment_event(
+            itgs,
+            event="deleted_due_to_user_deletion",
+            now=time.time(),
+            amount=response.rows_affected,
+        )
 
 
 async def cleanup_user_notifications(itgs: Itgs, sub: str) -> None:

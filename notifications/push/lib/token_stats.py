@@ -39,7 +39,7 @@ PUSH_TOKEN_STATS_EVENTS = frozenset(
 
 
 async def increment_event(
-    itgs: Itgs, *, event: PushTokenStatsEvent, now: float
+    itgs: Itgs, *, event: PushTokenStatsEvent, now: float, amount: int = 1
 ) -> None:
     """Increments the count for the given event at the given time by one. This
     handles preparing the event, transaction handling, and retries.
@@ -48,6 +48,7 @@ async def increment_event(
         itgs (Itgs): the integrations to (re)use
         event (PushTokenStatsEvent): the event to increment
         now (float): the time to increment the event at
+        amount (int, optional): the amount to increment by. Defaults to 1.
     """
     redis = await itgs.redis()
 
@@ -57,7 +58,7 @@ async def increment_event(
     async def func():
         async with redis.pipeline() as pipe:
             pipe.multi()
-            await attempt_increment_event(redis, event=event, now=now)
+            await attempt_increment_event(redis, event=event, now=now, amount=amount)
             await pipe.execute()
 
     await run_with_prep(prep, func)

@@ -259,6 +259,10 @@ async def attach_free(
                         WHERE
                             courses.slug = ?
                             AND users.sub = ?
+                            AND NOT EXISTS (
+                                SELECT 1 FROM course_users AS cu
+                                WHERE cu.course_id = courses.id AND cu.user_id = users.id
+                            )
                         """,
                         (
                             course_user_uid,

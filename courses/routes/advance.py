@@ -218,13 +218,6 @@ async def advance_course(
         if response.results:
             next_journey_uid = response.results[0][0]
 
-        await on_entering_lobby(
-            itgs,
-            user_sub=auth_result.result.sub,
-            journey_uid=args.journey_uid,
-            action=f"finishing the next class in {course_title} ({course_slug})",
-        )
-
         return Response(
             content=AdvanceCourseResponse(
                 new_next_journey_uid=next_journey_uid,

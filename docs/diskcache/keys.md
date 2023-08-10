@@ -301,6 +301,14 @@ the keys we store locally on backend instances via diskcache
   the serialized daily push token stats for the given date range (incl -> excl).
   see also: [read_daily_push_tokens](../../admin/notifs/routes/read_daily_push_tokens.py)
 
+- `daily_push_tickets:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily push ticket stats for the given date range (incl -> excl)
+  see also: [read_daily_push_tickets](../../admin/notifs/routes/read_daily_push_tickets.py)
+
+- `daily_push_receipts:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily push receipt stats for the given date range (incl -> excl)
+  see also: [read_daily_push_receipts](../../admin/notifs/routes/read_daily_push_receipts.py)
+
 ## Personalization
 
 This contains keys for the personalization subspace

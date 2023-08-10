@@ -369,6 +369,116 @@ the keys that we use in redis
 - `oauth:direct_account:seen_jits:{jti}` goes to '1' if that jti has been seen and '0'
   otherwise. Expires 1m after the corresponding JWT expires.
 
+- `push:send_job:lock` is a basic redis lock key used to ensure only one send job is
+  running at a time, in case it takes more than a minute to complete.
+
+- `push:message_attempts:to_send` goes to a list (inserted on the right, removed from the
+  left) where each item is a json object in the following form:
+
+  ```json
+  {
+    "aud": "send",
+    "uid": "string",
+    "initially_queued_at": 0,
+    "retry": 0,
+    "last_queued_at": 0,
+    "push_token": "ExponentPushToken[xxxxxxx]",
+    "contents": {
+      "title": "string",
+      "body": "string",
+      "channel_id": "string"
+    },
+    "failure_job": {
+      "name": "runners.push.default_failure",
+      "kwargs": {}
+    },
+    "success_job": {
+      "name": "runners.push.default_success",
+      "kwargs": {}
+    }
+  }
+  ```
+
+  where:
+
+  - `uid` is a unique identifier assigned to this push message attempt, with prefix `pma`
+  - `initially_queued_at` is when this message attempt first entered the send queue in
+    seconds since the epoch.
+  - `retry` is how many attempts to send this message have previously failed for transitory
+    reasons
+  - `last_queued_at` is when this message attempt most recently joined the to send queue,
+    which differs from the initial time if the message attempt is being retried
+  - `push_token` is the expo push token to send the message to
+  - `contents` contains the message to send with `to` omitted. Learn more about the format of this
+    [here](https://docs.expo.dev/push-notifications/sending-notifications/#message-request-format)
+  - `failure_job` is the job to run if there is a failure converting this
+    message attempt to a push ticket or later when checking the push receipt.
+    The job is always provided two additional keyword arguments: `data_raw`
+    which is the jsonified, utf-8 encoded, gzipped, then urlsafe base64 encoded attempt
+    and failure information. [Details](../../jobs/lib/push/message_attempt_info.py)
+  - `success_job` is the job to run after we receive a successful push receipt for
+    this message attempt. Provided `data_raw` which is the jsonified, utf-8 encoded,
+    gzipped, then urlsafe base64 encoded attempt and success information.
+    [Details](../../jobs/lib/push/message_attempt_info.py)
+
+- `push:message_attempts:purgatory` has the same structure as to_send, but contains messages
+  that we are working on currently.
+
+- `push:ticket_hot_to_cold:lock` is a basic redis lock key used to ensure only one
+  cold-to-hot job is running at a time.
+
+- `push:push_tickets:cold` goes to a sorted set (scores are
+  `initially_queued_at`, values are json objects in the same for as the hot
+  list) containing push tickets which should be checked for push receipts soon.
+  Tickets should stay in this list for at least 15 minutes (checking
+  `last_queued_at`) before being moved to the hot set, and they contain the same
+  format as the hot set.
+
+- `push:push_tickets:hot` goes to a list (inserted on the right, removed from the left) containing
+  push tickets whose push receipt should be checked. More information is available in the `jobs`
+  repo, but the general structure of items is a json object with the following format:
+
+  ```json
+  {
+    "aud": "check",
+    "uid": "string",
+    "attempt_initially_queued_at": 0,
+    "initially_queued_at": 0,
+    "retry": 0,
+    "last_queued_at": 0,
+    "push_ticket": {
+      "status": "ok",
+      "id": "string"
+    },
+    "push_ticket_created_at": 0,
+    "push_token": "ExponentPushToken[xxxxxxxx]",
+    "contents": {
+      "title": "string",
+      "body": "string",
+      "channel_id": "string"
+    },
+    "failure_job": {
+      "name": "runners.push.default_failure",
+      "kwargs": {}
+    },
+    "success_job": {
+      "name": "runners.push.default_success",
+      "kwargs": {}
+    }
+  }
+  ```
+
+  where most fields are the same as in the send queue, except `initially_queued_at` refers
+  to when it joined the cold set the first time now, and `attempt_initially_queued_at` refers
+  to when the attempt first joined the send queue (the old `initially_queued_at`). Further,
+  the push ticket is available with status `ok` and an `id`
+
+- `push:push_tickets:purgatory` has the same structure as `hot`, but contains messages that we
+  are working on currently.
+
+- `push:check_job:lock` is a basic redis lock key used to ensure only one push receipt check
+  job is running at a time
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -579,13 +689,75 @@ rather than external functionality.
 
 - `stats:push_tokens:daily:{unix_date}` goes to a hash where the keys are strings
   representing the event (see `push_token_stats`) and the values are the counts
-  for the given unix date. Keys: `created`, `reassigned`, `refreshed`,
+  for the given unix date. Keys: `created`, `reassigned`, `refreshed`,token
   `deleted_due_to_user_deletion`, `deleted_due_to_unrecognized_ticket`,
   `deleted_due_to_unrecognized_receipt`, `deleted_due_to_token_limit`
 
 - `stats:push_tokens:daily:earliest` goes to a string representing the earliest date,
   as a unix date number, for which there may be daily push tokens information still in
   redis
+
+- `stats:push_tickets:send_job` goes to a hash where the keys are:
+
+  - `last_started_at`: the last time the job started
+  - `last_finished_at`: the last time the job finished normally
+  - `last_running_time`: how long the job took to complete the last time it completed normally
+  - `last_num_messages_attempted`: how many messages were attempted in the last send job
+  - `last_num_succeeded`: how many messages succeeded on the last send job
+  - `last_num_failed_permanently`: how many messages failed with a non-retryable error on the last send job
+  - `last_num_failed_transiently`: how many messages failed with a retryable error on the last send job
+
+- `stats:push_tickets:daily:{unix_date}` goes to a hash where the keys are
+  strings representing the event (see `push_ticket_stats`) and the values are
+  the counts for the given unix date. Keys: `queued`, `retried`,
+  `succeeded`, `abandoned`, `failed_due_to_device_not_registered`,
+  `failed_due_to_client_error_429`, `failed_due_to_client_error_other`,
+  `failed_due_to_server_error`, `failed_due_to_internal_error`,
+  `failed_due_to_network_error`
+
+- `stats:push_tickets:daily:earliest`: goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily push tickets information still in
+  redis. Note that we cannot rotate these stats until a full day has passed since the
+  last message was queued since the ticket/receipt data is backstamped to the initial
+  queue time. This means that charts will end at midnight yesterday, with yesterday
+  and today still in redis.
+
+- `stats:push_receipts:cold_to_hot_job` goes to a hash where the keys are
+
+  - `last_started_at`: the last time the job started
+  - `last_finished_at`: the last time the job finished normally
+  - `last_running_time`: how long the job took to complete the last time it completed normally
+  - `last_num_moved`: how many messages were moved from the cold set to the hot set
+    the last time the job finished normally
+
+- `stats:push_receipts:check_job` goes to a hash where the keys are
+
+  - `last_started_at`: the last time the job started
+  - `last_finished_at`: the last time the job finished normally
+  - `last_running_time`: how long the job took to complete the last time it completed normally
+  - `last_num_checked`: how many tickets we attempted to check on the last time it completed normally
+  - `last_num_succeeded`: how many tickets, of those checked, were successfully sent to the notification
+    provider
+  - `last_num_failed_permanently`: how many tickets, of those checked, resulted in an error ticket
+  - `last_num_failed_transiently`: how many tickets, of those checked, are either incomplete or we
+    got a transient error connecting to the Expo Push API (429, server error, network error, etc)
+
+- `stats:push_receipts:daily:{unix_date}` goes to a hash where the keys are
+  strings representing the event (see `push_receipt_stats`) and the values are
+  the counts for the given unix date. Keys: `succeeded`, `retried`, `abandoned`,
+  `failed_due_to_device_not_registered`, `failed_due_to_message_too_big`,
+  `failed_due_to_message_rate_exceeded`, `failed_due_to_mismatched_sender_id`,
+  `failed_due_to_invalid_credentials`, `failed_due_to_not_ready_yet`,
+  `failed_due_to_client_error_429`, `failed_due_to_client_error_other`,
+  `failed_due_to_server_error`, `failed_due_to_internal_error`,
+  `failed_due_to_network_error`
+
+- `stats:push_receipts:daily:earliest`: goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily push receipts information still in
+  redis. Note that we cannot rotate these stats until a full day has passed since the
+  last message was queued since the receipt data is backstamped to the initial
+  queue time. This means that charts will end at midnight yesterday, with yesterday
+  and today still in redis.
 
 ### Personalization subspace
 
@@ -706,6 +878,16 @@ These are regular keys used by the personalization module
   purge cache messages, see [emotion_content](../../emotions/lib/emotion_content.py)
 
 - `ps:stats:push_tokens:daily` is used to optimistically send compressed daily push token
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:push_tickets:daily` is used to optimistically send compressed daily push ticket
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:push_receipts:daily` is used to optimistically send compressed daily push receipt
   statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
   in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.

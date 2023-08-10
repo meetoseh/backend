@@ -95,3 +95,4 @@ something (in this case, identify a row)
 - `ul` - [user_likes](db/user_likes.md)
 - `da` - [direct_accounts](db/direct_accounts.md)
 - `upt` - [user_push_tokens](db/user_push_tokens.md)
+- `pma` - push message attempt, used for push messages within redis

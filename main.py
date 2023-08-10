@@ -37,6 +37,8 @@ import interactive_prompts.routes.profile_pictures
 import interactive_prompts.lib.read_one_external
 import interactive_prompts.lib.read_interactive_prompt_meta
 import admin.notifs.routes.read_daily_push_tokens
+import admin.notifs.routes.read_daily_push_tickets
+import admin.notifs.routes.read_daily_push_receipts
 import asyncio
 from loguru import logger
 
@@ -177,6 +179,16 @@ def register_background_tasks():
     background_tasks.add(
         asyncio.create_task(
             admin.notifs.routes.read_daily_push_tokens.handle_reading_daily_push_tokens_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.notifs.routes.read_daily_push_tickets.handle_reading_daily_push_tickets_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.notifs.routes.read_daily_push_receipts.handle_reading_daily_push_receipts_from_other_instances()
         )
     )
 

@@ -39,6 +39,7 @@ import interactive_prompts.lib.read_interactive_prompt_meta
 import admin.notifs.routes.read_daily_push_tokens
 import admin.notifs.routes.read_daily_push_tickets
 import admin.notifs.routes.read_daily_push_receipts
+import admin.sms.routes.read_daily_sms_sends
 import asyncio
 from loguru import logger
 
@@ -189,6 +190,11 @@ def register_background_tasks():
     background_tasks.add(
         asyncio.create_task(
             admin.notifs.routes.read_daily_push_receipts.handle_reading_daily_push_receipts_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.sms.routes.read_daily_sms_sends.handle_reading_daily_sms_sends_from_other_instances()
         )
     )
 

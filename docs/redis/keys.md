@@ -479,6 +479,116 @@ the keys that we use in redis
 - `push:check_job:lock` is a basic redis lock key used to ensure only one push receipt check
   job is running at a time
 
+- `sms:to_send` goes to a list (inserted on the right, removed from the left)
+  where each item is a json object in the following form:
+
+  ```json
+  {
+    "aud": "send",
+    "uid": "string",
+    "initially_queued_at": 0,
+    "retry": 0,
+    "last_queued_at": 0,
+    "phone_number": "string",
+    "body": "string",
+    "failure_job": {
+      "name": "runners.sms.default_failure",
+      "kwargs": {}
+    },
+    "success_job": {
+      "name": "runners.sms.default_success",
+      "kwargs": {}
+    }
+  }
+  ```
+
+  where:
+
+  - `uid` is a unique identifier assigned to this sms, with prefix `sms`
+  - `initially_queued_at` is when this sms first enetered the to send queue
+  - `retry` is how many attempts to send this sms have previously failed for transitory
+    reasons
+  - `last_queued_at` is when this message attempt most recently joined the to send queue,
+    which differs from the initial time if the message attempt is being retried
+  - `phone_number` is the E.164 phone number to text
+  - `body` is the message to text
+  - `failure_job` is the job to run if there is a failure converting this
+    message attempt to a push ticket or later when checking the push receipt.
+    The job is always provided two additional keyword arguments: `data_raw`
+    which is the jsonified, utf-8 encoded, gzipped, then urlsafe base64 encoded attempt
+    and failure information. [Details](../../../jobs/lib/sms/sms_info.py)
+  - `success_job` is the job to run after we receive a successful status for
+    this sms. Provided `data_raw` which is the jsonified, utf-8 encoded,
+    gzipped, then urlsafe base64 encoded attempt and success information.
+    [Details](../../../jobs/lib/sms/sms_info.py)
+
+- `sms:pending` goes to a redis sorted set where the values are message resource sids
+  and the scores are the next time the failure callback should be called. Atomically,
+  we guarrantee that if and only if a sid is a value in `sms:pending`, there is also
+  `sms:pending:{sid}`
+
+- `sms:pending:{sid}` goes to a redis string containing a json object in the following
+  format:
+
+  ```json
+  {
+    "aud": "pending",
+    "uid": "string",
+    "send_initially_queued_at": 0,
+    "message_resource_created_at": 0,
+    "message_resource_last_updated_at": 0,
+    "message_resource": {
+      "sid": "string",
+      "status": "queued",
+      "error_code": null,
+      "date_updated": 0
+    },
+    "failure_job_last_called_at": null,
+    "num_failures": 0,
+    "num_changes": 0,
+    "phone_number": "string",
+    "body": "string",
+    "failure_job": {
+      "name": "runners.sms.default_failure",
+      "kwargs": {}
+    },
+    "success_job": {
+      "name": "runners.sms.default_success",
+      "kwargs": {}
+    }
+  }
+  ```
+
+  where:
+
+  - `aud` is always `pending`
+  - `uid` is the uid we assigned with uid prefix `sms`
+  - `send_initially_queued_at` is when the sms was first added to the to send queue
+  - `message_resource_created_at` is when the message resource was created on twilio,
+    which is the same time this was added to the pending set
+  - `message_resource_last_updated_at` is the last time we learned about an update to
+    this message resource
+  - `message_resource` contains a subset of the fields from Twilio's MessageResource, with
+    dates transcoded to seconds since the unix epoch. Only the 4 indicated fields are kept.
+  - `failure_job_last_called_at` when the recovery job runs, it atomically checks and
+    increases this value when deciding what failure jobs to queue. Null if the failure job
+    hasn't been run before
+  - `num_failures` starts at zero; when the recovery job runs, it atomically increases this value if it's
+    going to queue a failure job.
+  - `num_changes` starts at zero and is incremented whenever the redis key is updated, used
+    as a concurrency tool. Avoids the unlikely case of a collision on the timestamp fields,
+    and the more likely case of clock drift causing the timestamps to not reflect the true order
+    of events
+
+- `sms:send_job:lock` is a basic redis lock key used to ensure only one sms send job is running
+  at a time
+
+- `twilio:lock` is a basic redis lock key used to ensure only one job is trying to connect
+  to twilio at a time
+
+- `sms:send_purgatory` goes to a list (inserted on the right, removed from the left) just
+  like `sms:to_send` containing only sms sends that are in progress
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -759,6 +869,38 @@ rather than external functionality.
   queue time. This means that charts will end at midnight yesterday, with yesterday
   and today still in redis.
 
+- `stats:sms_send:daily:{unix_date}` goes to a hash where the keys are strings representing
+  the event (see `sms_send_stats`) and the values the counts for the given unix date, not broken
+  down by additional information (see the next key for the breakdown). Keys: `queued`, `retried`,
+  `succeeded_pending`, `succeeded_immediate`, `abandoned`, `failed_due_to_application_error_ratelimit`,
+  `failed_due_to_application_error_other`, `failed_due_to_client_error_429`, `failed_due_to_client_error_other`,
+  `failed_due_to_server_error`, `failed_due_to_internal_error`, `failed_due_to_network_error`
+- `stats:sms_send:daily:{unix_date}:extra:{event}` goes to a hash where the keys depend on the event
+  and the values are counts for the given unix date, such that the sum of the values within a particular
+  event match the events total. The events with an extra breakdown are:
+  - `succeeded_pending` and `succeeded_immediate` are broken down by the `MessageStatus`, e.g.,
+    `queued`, `accepted`, etc. [All values](https://www.twilio.com/docs/sms/api/message-resource#message-status-values)
+  - `failed_due_to_application_error_ratelimit` and `failed_due_to_application_error_other` are
+    broken down by the `ErrorCode`, e.g., `10001`. [All values](https://www.twilio.com/docs/api/errors)
+  - `failed_due_to_client_error_other` and `failed_due_to_server_error` are broken down by the HTTP status
+    code returned (e.g., `400` or `500` respectively)
+- `stats:sms_send:daily:earliest` goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily sms send information still in
+  redis
+
+- `stats:sms_send:send_job` goes to a hash where the keys are, for the last time the job completed
+  normally (except for `started_at`, which is the last time the job started):
+
+  - `started_at`: the time the job started in seconds since the unix epoch
+  - `finished_at`: the time the job finished in seconds since the unix epoch
+  - `running_time`: how long the job took to complete in seconds
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+  - `attempted`: how many message resources we tried to create on twilio
+  - `pending`: how many message resources were created and are in a pending status
+  - `succeeded`: how many message resources reached a successful possibly-terminal state immediately (a strange scenario)
+  - `failed_permanently`: how many failed in a non-retryable way (e.g., 400 response)
+  - `failed_transiently`: how many failed in a retryable way (e.g., 429 response)
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -888,6 +1030,11 @@ These are regular keys used by the personalization module
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.
 
 - `ps:stats:push_receipts:daily` is used to optimistically send compressed daily push receipt
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:sms_sends:daily` is used to optimistically send compressed daily sms send
   statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
   in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.

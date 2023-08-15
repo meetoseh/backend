@@ -96,3 +96,4 @@ something (in this case, identify a row)
 - `da` - [direct_accounts](db/direct_accounts.md)
 - `upt` - [user_push_tokens](db/user_push_tokens.md)
 - `pma` - push message attempt, used for push messages within redis
+- `sms` - sms, used for sms attempts within redis (e.g., `sms:to_send`)

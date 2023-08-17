@@ -35,9 +35,9 @@ class MessageResourceEvent(BaseModel):
 
     @classmethod
     def from_webhook(cls, data: dict, request_at: float) -> "MessageResourceEvent":
-        assert isinstance(data.get("MessageSid", str))
-        assert isinstance(data.get("MessageStatus", str))
-        assert isinstance(data.get("ErrorCode", (str, type(None), int)))
+        assert isinstance(data.get("MessageSid"), str)
+        assert isinstance(data.get("MessageStatus"), str)
+        assert isinstance(data.get("ErrorCode"), (str, type(None), int))
         return MessageResourceEvent(
             sid=data["MessageSid"],
             status=data["MessageStatus"],

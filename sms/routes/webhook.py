@@ -11,6 +11,7 @@ import time
 import os
 import urllib.parse
 import base64
+from starlette.datastructures import URL
 
 router = APIRouter()
 
@@ -109,9 +110,18 @@ async def sms_webhook(request: Request):
             )
             return Response(status_code=400)
 
+        base_url = URL(os.environ["ROOT_BACKEND_URL"])
+        real_url = (
+            URL(str(request.url))
+            .replace(
+                scheme=base_url.scheme, hostname=base_url.hostname, port=base_url.port
+            )
+            .components.geturl()
+        )
+
         api_key = os.environ["OSEH_TWILIO_AUTH_TOKEN"]
         digest = hmac.new(api_key.encode("utf-8"), digestmod="SHA1")
-        digest.update(str(request.url).encode("utf-8"))
+        digest.update(real_url.encode("utf-8"))
 
         for key in sorted(interpreted_body.keys()):
             digest.update(key.encode("utf-8"))
@@ -124,7 +134,7 @@ async def sms_webhook(request: Request):
                 extra_info=(
                     f"signature does not match:\n"
                     f"- body: {body.decode('utf-8')}\n"
-                    f"- url: {request.url}\n"
+                    f"- url: {real_url}\n"
                     f"- signature: {signature_b64}\n"
                     f"- expected signature: {base64.b64encode(expected_signature).decode('utf-8')}\n"
                 )

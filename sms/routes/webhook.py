@@ -69,6 +69,7 @@ async def sms_webhook(request: Request):
         try:
             signature: bytes = base64.b64decode(signature_b64)
         except:
+            await handle_contextless_error(extra_info="signature not b64")
             await webhook_stats.increment_event(
                 itgs, event="signature_invalid", now=request_at
             )
@@ -89,6 +90,7 @@ async def sms_webhook(request: Request):
 
         body = body_raw.getvalue()
         if len(body) == 0:
+            await handle_contextless_error(extra_info="body empty")
             await webhook_stats.increment_event(
                 itgs, event="signature_invalid", now=request_at
             )
@@ -119,6 +121,7 @@ async def sms_webhook(request: Request):
         expected_signature = digest.digest()
 
         if not hmac.compare_digest(expected_signature, signature):
+            await handle_contextless_error(extra_info="signature does not match")
             await webhook_stats.increment_event(
                 itgs, event="signature_invalid", now=request_at
             )

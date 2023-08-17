@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from fastapi.requests import Request
 from fastapi.responses import Response
 import hmac
-from error_middleware import handle_error
+from error_middleware import handle_contextless_error, handle_error
 from itgs import Itgs
 from sms.lib.events import MessageResourceEvent, push_message_resource_event
 import sms.lib.webhook_stats as webhook_stats
@@ -32,6 +32,9 @@ async def sms_webhook(request: Request):
             return Response(status_code=401)
 
         if request.headers.get("content-type") != "application/x-www-form-urlencoded":
+            await handle_contextless_error(
+                extra_info=f"bad content type from twilio: {request.headers.get('content-type')=}"
+            )
             await webhook_stats.increment_event(
                 itgs, event="body_parse_error", now=request_at
             )
@@ -65,12 +68,6 @@ async def sms_webhook(request: Request):
                 itgs, event="signature_invalid", now=request_at
             )
             return Response(status_code=403)
-
-        # FOR TESTING
-        slack = await itgs.slack()
-        await slack.send_web_error_message(
-            f"sms webhook received:\n\n{body=}\n\n{signature_b64=}"
-        )
 
         try:
             interpreted_body = urllib.parse.parse_qs(body.decode("utf-8"))

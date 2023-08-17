@@ -51,19 +51,20 @@ async def sms_webhook(request: Request):
             )
             return Response(status_code=400)
 
-        hint_parts = [p.strip() for p in content_type_parts[1].split("=", 2)]
+        if len(content_type_parts) == 2:
+            hint_parts = [p.strip() for p in content_type_parts[1].split("=", 2)]
 
-        if len(hint_parts) != 2 or hint_parts[0] != "charset":
-            await webhook_stats.increment_event(
-                itgs, event="body_parse_error", now=request_at
-            )
-            return Response(status_code=400)
+            if len(hint_parts) != 2 or hint_parts[0] != "charset":
+                await webhook_stats.increment_event(
+                    itgs, event="body_parse_error", now=request_at
+                )
+                return Response(status_code=400)
 
-        if hint_parts[1] != "utf-8":
-            await webhook_stats.increment_event(
-                itgs, event="body_parse_error", now=request_at
-            )
-            return Response(status_code=400)
+            if hint_parts[1] != "utf-8":
+                await webhook_stats.increment_event(
+                    itgs, event="body_parse_error", now=request_at
+                )
+                return Response(status_code=400)
 
         signature_b64: str = request.headers["x-twilio-signature"]
         try:

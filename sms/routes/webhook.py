@@ -110,6 +110,8 @@ async def sms_webhook(request: Request):
             )
             return Response(status_code=400)
 
+        interpreted_body = {k: v[0] for k, v in interpreted_body.items()}
+
         base_url = URL(os.environ["ROOT_BACKEND_URL"])
         real_url = (
             URL(str(request.url))
@@ -125,20 +127,11 @@ async def sms_webhook(request: Request):
 
         for key in sorted(interpreted_body.keys()):
             digest.update(key.encode("utf-8"))
-            digest.update(interpreted_body[key][0].encode("utf-8"))
+            digest.update(interpreted_body[key].encode("utf-8"))
 
         expected_signature = digest.digest()
 
         if not hmac.compare_digest(expected_signature, signature):
-            await handle_contextless_error(
-                extra_info=(
-                    f"signature does not match:\n"
-                    f"- body: {body.decode('utf-8')}\n"
-                    f"- url: {real_url}\n"
-                    f"- signature: {signature_b64}\n"
-                    f"- expected signature: {base64.b64encode(expected_signature).decode('utf-8')}\n"
-                )
-            )
             await webhook_stats.increment_event(
                 itgs, event="signature_invalid", now=request_at
             )

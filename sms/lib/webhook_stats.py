@@ -21,6 +21,7 @@ SMSWebhookStatsEvent = Literal[
     "signature_invalid",
     "body_read_error",
     "body_max_size_exceeded",
+    "body_parse_error",
 ]
 
 SMS_WEBHOOK_STATS_EVENTS = frozenset(
@@ -33,6 +34,7 @@ SMS_WEBHOOK_STATS_EVENTS = frozenset(
         "signature_invalid",
         "body_read_error",
         "body_max_size_exceeded",
+        "body_parse_error",
     )
 )
 

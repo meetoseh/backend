@@ -42,7 +42,7 @@ class MessageResourceEvent(BaseModel):
             sid=data["MessageSid"],
             status=data["MessageStatus"],
             error_code=str(data["ErrorCode"])
-            if data["ErrorCode"] is not None
+            if data.get("ErrorCode") is not None
             else None,
             error_message=None,
             date_updated=None,

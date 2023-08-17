@@ -31,10 +31,41 @@ async def sms_webhook(request: Request):
             )
             return Response(status_code=401)
 
-        if request.headers.get("content-type") != "application/x-www-form-urlencoded":
-            await handle_contextless_error(
-                extra_info=f"bad content type from twilio: {request.headers.get('content-type')=}"
+        content_type = request.headers.get("content-type")
+        if content_type is None:
+            await webhook_stats.increment_event(
+                itgs, event="body_parse_error", now=request_at
             )
+            return Response(status_code=400)
+
+        content_type_parts = [p.strip() for p in content_type.split(";", 2)]
+        if content_type_parts[0] != "application/x-www-form-urlencoded":
+            await webhook_stats.increment_event(
+                itgs, event="body_parse_error", now=request_at
+            )
+            return Response(status_code=400)
+
+        if len(content_type_parts) not in (1, 2):
+            await webhook_stats.increment_event(
+                itgs, event="body_parse_error", now=request_at
+            )
+            return Response(status_code=400)
+
+        hint_parts = [p.strip() for p in content_type_parts[1].split("=", 2)]
+
+        if len(hint_parts) != 2 or hint_parts[0] != "charset":
+            await webhook_stats.increment_event(
+                itgs, event="body_parse_error", now=request_at
+            )
+            return Response(status_code=400)
+
+        if hint_parts[1] != "utf-8":
+            await webhook_stats.increment_event(
+                itgs, event="body_parse_error", now=request_at
+            )
+            return Response(status_code=400)
+
+        if request.headers.get("content-type") != "application/x-www-form-urlencoded":
             await webhook_stats.increment_event(
                 itgs, event="body_parse_error", now=request_at
             )

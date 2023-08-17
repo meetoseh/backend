@@ -24,7 +24,7 @@ class ReadEventQueueInfoResponse(BaseModel):
         description=(
             "The difference between information_received_at and date_updated for "
             "the left-most event in the event queue, in seconds, if there is at "
-            "least one event in the queue"
+            "least one event in the queue and it has a date_updated value"
         )
     )
     newest_information_received_at: Optional[float] = Field(
@@ -38,7 +38,7 @@ class ReadEventQueueInfoResponse(BaseModel):
         description=(
             "The difference between information_received_at and date_updated for "
             "the right-most event in the event queue, in seconds, if there is at "
-            "least one event in the queue"
+            "least one event in the queue and it has a date_updated value"
         )
     )
 
@@ -69,8 +69,12 @@ async def read_event_queue_info(authorization: Optional[str] = Header(None)):
         if oldest_item_raw is not None:
             oldest_item = json.loads(oldest_item_raw)
             oldest_information_received_at = oldest_item["information_received_at"]
-            oldest_date_updated = oldest_item["date_updated"]
-            oldest_item_delay = oldest_information_received_at - oldest_date_updated
+            oldest_date_updated = oldest_item.get("date_updated")
+            oldest_item_delay = (
+                oldest_information_received_at - oldest_date_updated
+                if oldest_date_updated is not None
+                else None
+            )
         else:
             oldest_information_received_at = None
             oldest_item_delay = None
@@ -78,8 +82,12 @@ async def read_event_queue_info(authorization: Optional[str] = Header(None)):
         if newest_item_raw is not None:
             newest_item = json.loads(newest_item_raw)
             newest_information_received_at = newest_item["information_received_at"]
-            newest_date_updated = newest_item["date_updated"]
-            newest_item_delay = newest_information_received_at - newest_date_updated
+            newest_date_updated = newest_item.get("date_updated")
+            newest_item_delay = (
+                newest_information_received_at - newest_date_updated
+                if newest_date_updated is not None
+                else None
+            )
         else:
             newest_information_received_at = None
             newest_item_delay = None

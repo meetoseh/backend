@@ -47,6 +47,7 @@ class MessageResourceEvent(BaseModel):
             error_message=None,
             date_updated=None,
             information_received_at=request_at,
+            received_via="webhook",
         )
 
 

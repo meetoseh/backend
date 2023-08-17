@@ -30,6 +30,7 @@ import emotions.router
 import personalization.router
 import campaigns.router
 import interests.router
+import sms.router
 import personalization.register_background_tasks
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.lib.read_one_external
@@ -40,6 +41,8 @@ import admin.notifs.routes.read_daily_push_tokens
 import admin.notifs.routes.read_daily_push_tickets
 import admin.notifs.routes.read_daily_push_receipts
 import admin.sms.routes.read_daily_sms_sends
+import admin.sms.routes.read_daily_sms_polling
+import admin.sms.routes.read_daily_sms_events
 import asyncio
 from loguru import logger
 
@@ -132,6 +135,9 @@ app.include_router(
 app.include_router(
     interests.router.router, prefix="/api/1/interests", tags=["interests"]
 )
+app.include_router(
+    sms.router.router, prefix="/api/1/sms", tags=["sms"]
+)
 app.router.redirect_slashes = False
 
 
@@ -195,6 +201,16 @@ def register_background_tasks():
     background_tasks.add(
         asyncio.create_task(
             admin.sms.routes.read_daily_sms_sends.handle_reading_daily_sms_sends_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.sms.routes.read_daily_sms_polling.handle_reading_daily_sms_polling_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.sms.routes.read_daily_sms_events.handle_reading_daily_sms_events_from_other_instances()
         )
     )
 

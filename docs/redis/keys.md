@@ -527,39 +527,7 @@ the keys that we use in redis
   we guarrantee that if and only if a sid is a value in `sms:pending`, there is also
   `sms:pending:{sid}`
 
-- `sms:pending:{sid}` goes to a redis string containing a json object in the following
-  format:
-
-  ```json
-  {
-    "aud": "pending",
-    "uid": "string",
-    "send_initially_queued_at": 0,
-    "message_resource_created_at": 0,
-    "message_resource_last_updated_at": 0,
-    "message_resource": {
-      "sid": "string",
-      "status": "queued",
-      "error_code": null,
-      "date_updated": 0
-    },
-    "failure_job_last_called_at": null,
-    "num_failures": 0,
-    "num_changes": 0,
-    "phone_number": "string",
-    "body": "string",
-    "failure_job": {
-      "name": "runners.sms.default_failure",
-      "kwargs": {}
-    },
-    "success_job": {
-      "name": "runners.sms.default_success",
-      "kwargs": {}
-    }
-  }
-  ```
-
-  where:
+- `sms:pending:{sid}` goes to a redis hash containing the following keys
 
   - `aud` is always `pending`
   - `uid` is the uid we assigned with uid prefix `sms`
@@ -568,17 +536,24 @@ the keys that we use in redis
     which is the same time this was added to the pending set
   - `message_resource_last_updated_at` is the last time we learned about an update to
     this message resource
-  - `message_resource` contains a subset of the fields from Twilio's MessageResource, with
-    dates transcoded to seconds since the unix epoch. Only the 4 indicated fields are kept.
+  - `message_resource_sid` is the sid of the message resource
+  - `message_resource_status` is the status of the message resource
+  - `message_resource_error_code` is an optional string providing context to the status
+  - `message_resource_date_updated` is the posix time the resource was updated on Twilio's servers,
+    last we knew, used for disambiguating out of order events
   - `failure_job_last_called_at` when the recovery job runs, it atomically checks and
     increases this value when deciding what failure jobs to queue. Null if the failure job
     hasn't been run before
   - `num_failures` starts at zero; when the recovery job runs, it atomically increases this value if it's
     going to queue a failure job.
-  - `num_changes` starts at zero and is incremented whenever the redis key is updated, used
+  - `num_changes` starts at zero and is incremented whenever the any field is updated, used
     as a concurrency tool. Avoids the unlikely case of a collision on the timestamp fields,
     and the more likely case of clock drift causing the timestamps to not reflect the true order
     of events
+  - `phone_number` is the E.164 phone number the message was sent to
+  - `body` is the message that was sent
+  - `failure_job` is a json-encoded job callback, e.g., `{"name": "runners.example", "kwargs": {}}`
+  - `success_job` is a json-encoded job callback
 
 - `sms:send_job:lock` is a basic redis lock key used to ensure only one sms send job is running
   at a time
@@ -588,6 +563,55 @@ the keys that we use in redis
 
 - `sms:send_purgatory` goes to a list (inserted on the right, removed from the left) just
   like `sms:to_send` containing only sms sends that are in progress
+
+- `sms:recovery` goes to a list (inserted on the right, removed from the left) containing
+  message resource sids for which we want to poll the status of to push to the sms event queue.
+
+- `sms:recovery_purgatory` goes to a list (inserted on the right, removed from the left) containing
+  message resource sids the receipt recovery job is currently working on
+
+- `sms:event` goes to a list (inserted on the right, removed from the left) containing json
+  object representations describing updated message resources that we learned about, and where
+  we learned about them. The format is as follows:
+
+  ```json
+  {
+    "sid": "string",
+    "status": "string",
+    "error_code": "string|null",
+    "error_message": "string|null",
+    "date_updated": 0,
+    "information_received_at": 0,
+    "received_via": "string"
+  }
+  ```
+
+  where
+
+  - `sid` is the MessageResource unique identifier assigned by Twilio
+  - `status` is the status of the message resource when the information was received, or
+    the bonus value `lost` indicating that the message resource has been deleted on Twilio
+  - `error_code` is Twilio's error code providing context to the status, as a string, if
+    available
+  - `error_message` is Twilio's error message providing context to the error code, if available
+  - `date_updated` is Twilio's `date_updated`, transcoded to seconds since the unix epoch, which
+    can be used to disambiguate out of order events most of the time
+  - `information_received_at` is our clock time in seconds since the unix epoch when we got the
+    information, primarily for debugging purposes. The event queue is loosely sorted by this
+    field, ascending
+  - `received_via` is either `webhook` or `poll` and describes how we got this information
+
+- `sms:event:purgatory` is a list just like `sms:event`, except only containing the events the
+  Receipt Reconciliation Job is currently working on
+
+- `sms:receipt_stale_detection_job:lock` is a basic redis lock to ensure only one receipt stale
+  detection job is running at a time
+
+- `sms:receipt_recovery_job:lock` is a basic redis lock to ensure only one receipt recovery
+  job is running at a time
+
+- `sms:receipt_reconciliation_job:lock` is a basic redis lock to ensure only one receipt reconciliation
+  job is running at a time
 
 ### Stats namespace
 
@@ -901,6 +925,159 @@ rather than external functionality.
   - `failed_permanently`: how many failed in a non-retryable way (e.g., 400 response)
   - `failed_transiently`: how many failed in a retryable way (e.g., 429 response)
 
+- `stats:sms:receipt_stale_job` goes to a hash where the keys are, for the last time the receipt
+  stale detection job completed normally (except for `started_at`, which is the last time the job
+  started):
+
+  - `started_at`: the time the job started in seconds since the unix epoch
+  - `finished_at`: the time the job finished in seconds since the unix epoch
+  - `running_time`: how long the job took to complete in seconds
+  - `callbacks_queued`: how many failure callbacks were queued
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:sms:receipt_recovery_job` goes to a hash where the keys are, for the last time the receipt
+  stale detection job completed normally (except for `started_at`, which is the last time the job
+  started):
+
+  - `started_at`: the time the job started in seconds since the unix epoch
+  - `finished_at`: the time the job finished in seconds since the unix epoch
+  - `running_time`: how long the job took to complete in seconds
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+  - `attempted`: how many message resources we tried to fetch from twilio
+  - `pending`: how many message resources were retrieved successfully but still
+    had a pending status (like `sending`)
+  - `succeeded`: how many message resources were retrieved successfully and were
+    now in a terminal successful state (like `delivered`)
+  - `failed`: how many message resources were retrieved successfully but were
+    in a terminal failure state (like `undelivered`)
+  - `lost`: how many message resources no longer exist on twilio as evidenced by
+    a 404 response
+  - `permanent_error`: how many failed to be fetched due to an error unlikely
+    to be resolved by retrying
+  - `transient_error`: how many failed to be fetched due to an error likely
+    resolvable by retrying
+
+- `stats:sms:receipt_reconciliation_job` goes to a hash where the keys are, for the last time the receipt
+  stale detection job completed normally (except for `started_at`, which is the last time the job
+  started):
+
+  - `started_at`: the time the job started in seconds since the unix epoch
+  - `finished_at`: the time the job finished in seconds since the unix epoch
+  - `running_time`: how long the job took to complete in seconds
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+  - `attempted`: how many events we tried to process
+  - `pending`: how many indicated the message resource was still in a pending
+    state
+  - `succeeded`: how many indicated the message resource was now in a terminal
+    successful state
+  - `failed`: how many indicated the message resource was now in a terminal
+    failure state
+  - `found`: of those attempted, how many were still in the receipt pending set
+    and thus were able to be updated or removed
+  - `updated`: of those found, how many did we update to a new, but still pending,
+    status
+  - `duplicate`: of those found, how many didn't need an update because they had the
+    same value as before
+  - `out_of_order`: of those found, how many didn't need an update because we had newer
+    information already
+  - `removed`: of those found, how many were removed from the receipt pending set
+
+- `stats:sms_polling:daily:{unix_date}` goes to a hash where the keys are strings representing
+  the event (see `sms_polling_stats`) and the values are the counts for the given unix date,
+  not broken down by additional information (see the next key for the breakdown)
+
+  - `detected_stale`: how many times the receipt stale detection job detected that a message
+    resource hasn't been updated in a while and queued the failure callback
+  - `queued_for_recovery`: how many times a failure callback for an sms decided to "retry",
+    which in this context means queue the message resource sid on the recovery queue
+  - `abandoned`: how many times a failure callback for an sms decided to abandon the resource,
+    which in this context means delete the message resource from the receipt pending set
+  - `attempted`: how many message resources we tried to fetch via polling
+  - `received`: how many message resources we received via polling
+  - `error_client_404`: how many message resources no longer existed on Twilio
+  - `error_client_429`: how many message resources we couldn't fetch due to rate limiting
+  - `error_client_other`: how many message resources we couldn't fetch due to a 4xx response
+  - `error_server`: how many message resources we couldn't fetch due to a 5xx response
+  - `error_network`: how many message resources we couldn't fetch due to a network error
+    connecting to Twilio
+  - `error_internal`: how many message resources we couldn't fetch due to an internal error
+    forming the request or processing the response
+
+- `stats:sms_polling:daily:{unix_date}:extra:{event}` goes to a hash where the keys depend on the event
+  and the values are counts for the given unix date, such that the sum of the values within a particular
+  event match the events total. The events with an extra breakdown are:
+
+  - `detected_stale` broken down by message status at the time we detected it was stale
+  - `queued_for_recovery` broken down by number of previous failures
+  - `abandoned` broken down by number of previous failures
+  - `received` broken down by `{old message status}:{new message status}`, e.g., `accepted:queued`
+  - `error_client_other` broken down by HTTP status code
+  - `error_server` broken down by HTTP status code
+
+- `stats:sms_polling:daily:earliest` goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily sms polling information still in
+  redis
+
+- `stats:sms_events:daily:{unix_date}` goes to a hash where the keys are strings representing
+  the event (see `sms_event_stats`) and the values the counts for the given unix date, not broken
+  down by additional information (see the next key for the breakdown).
+
+  - `attempted`: how many events we tried to process.
+  - `received_via_webhook`: how many events (of those attempted) came from webhooks
+  - `received_via_polling`: how many events (of those attempted) came from polling
+  - `pending`: how many indicated the message resource was still in a pending
+    state
+  - `succeeded`: how many indicated the message resource was now in a terminal
+    successful state
+  - `failed`: how many indicated the message resource was now in a terminal
+    failure state
+  - `found`: of those attempted, how many were still in the receipt pending set
+    and thus were able to be updated or removed
+  - `updated`: of those found, how many did we update to a new, but still pending,
+    status
+  - `duplicate`: of those found, how many didn't need an update because they had the
+    same value as before
+  - `out_of_order`: of those found, how many didn't need an update because the event
+    was older than the information we already had
+  - `removed`: of those found, how many were removed from the receipt pending set
+  - `unknown`: of those attempted, how many were not found? (`found + unknown = attempted`)
+
+- `stats:sms_events:daily:{unix_date}:extra:{event}` goes to a hash where the keys depend on the event
+  and the values are counts for the given unix date, such that the sum of the values within a particular
+  event match the events total. The events with an extra breakdown are:
+  - `attempted` is broken down by `MessageStatus` received (`sent`, `lost`, etc)
+  - `received_via_webhook` and `received_via_polling` are broken down by the `MessageStatus`
+    of what was received
+  - `pending`, `succeeded`, and `failed` are broken down by the `MessageStatus` they are
+    now in
+  - `updated` is broken down by the formatted string `{old message status}:{new message status}`,
+    e.g., `accepted:sending`
+  - `duplicate` is broken down by the `MessageStatus`
+  - `out_of_order` is broken down by the out of order `{stored message status}:{event message status}`
+  - `removed` is broken down by the formatted string `{old message status}:{new message status}`,
+    e.g., `sending:sent`
+  - `unknown` is broken down by the `MessageStatus`
+- `stats:sms_events:daily:earliest` goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily sms event information still in
+  redis
+
+- `stats:sms_webhooks:daily:{unix_date}` goes to a hash where the strings representing the
+  event (described here), and the values are the count for the given unix date. The events are:
+
+  - `received`: how many webhook POST calls were received by the backend
+  - `verified`: how many of those webhook calls had a valid signature, and so we inspected the body
+  - `accepted`: how many of the verified calls were we able to understand
+  - `unprocessable`: how many of the verified calls couldn't be understood
+  - `signature_missing`: how many received calls were missing a signature
+  - `signature_invalid`: how many received calls had an invalid signature
+  - `body_read_error`: the body was not able to be read, required for verifying the signature
+  - `body_max_size_exceeded`: the body was too big and so we stopped processing it
+  - `body_parse_error`: the body content couldn't be parsed for signature verification
+
+- `stats:sms_webhooks:daily:earliest` goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily sms webhook information still in
+  redis
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -1035,6 +1212,16 @@ These are regular keys used by the personalization module
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.
 
 - `ps:stats:sms_sends:daily` is used to optimistically send compressed daily sms send
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:sms_polling:daily` is used to optimistically send compressed daily sms polling
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:sms_events:daily` is used to optimistically send compressed daily sms event
   statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
   in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.

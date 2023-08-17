@@ -313,6 +313,14 @@ the keys we store locally on backend instances via diskcache
   the serialized daily sms send stats for the given date range (incl -> excl)
   see also: [read_daily_sms_sends](../../admin/sms/routes/read_daily_sms_sends.py)
 
+- `daily_sms_polling:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily sms polling stats for the given date range (incl -> excl)
+  see also: [read_daily_sms_polling](../../admin/sms/routes/read_daily_sms_polling.py)
+
+- `daily_sms_events:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily sms polling stats for the given date range (incl -> excl)
+  see also: [read_daily_sms_events](../../admin/sms/routes/read_daily_sms_events.py)
+
 ## Personalization
 
 This contains keys for the personalization subspace

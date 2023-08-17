@@ -160,7 +160,6 @@ async def parse_day_from_result(result: list) -> PartialDaySMSSendStats:
             int_val = int(val)
             raw[f"{event}_breakdown"][str_key] = int_val
 
-    print(f"{raw=}")
     return PartialDaySMSSendStats.parse_obj(raw)
 
 

@@ -22,135 +22,87 @@ router = APIRouter()
 tz = pytz.timezone("America/Los_Angeles")
 
 
-class ReadDailySMSSendsResponse(BaseModel):
+class ReadDailySMSPollingResponse(BaseModel):
     labels: List[str] = Field(description="The shared labels for each chart")
-    queued: List[int] = Field(
+    detected_stale: List[int] = Field(
         description=(
-            "How many sms sends were added to the to send queue not as the result "
-            "of retrying"
+            "The number of times that the receipt stale detection job "
+            "detected that a message resource hasn't been updated in "
+            "a while and queued the failure callback"
         )
     )
-    succeeded_pending: List[int] = Field(
+    detected_stale_breakdown: Dict[str, List[int]] = Field(
+        description=("Breaks down the `detected_stale` count by message status")
+    )
+    queued_for_recovery: List[int] = Field(
         description=(
-            "How many sms sends were accepted by Twilio but whose final result was still "
-            "to be determined (the most likely case). This means any of these message "
-            "statuses: `queued`, `accepted`, `scheduled`, `sending`"
+            "The number of times that the failure callback decided to queue "
+            "the resource sid on the recovery queue"
         )
     )
-    succeeded_pending_breakdown: Dict[str, List[int]] = Field(
+    queued_for_recovery_breakdown: Dict[str, List[int]] = Field(
         description=(
-            "Individual breakdown of the `succeeded_pending` category. The keys are "
-            "the message statuses and the values are the counts for each status by "
-            "day. Only statuses with at least one non-zero count are included."
-        )
-    )
-    succeeded_immediate: List[int] = Field(
-        description=(
-            "How many sms sends were accepted by Twilio, and they managed to give a "
-            "successful status code immediately. This is an unlikely case, but not "
-            "prevented by the API. This refers to any of these message statuses: "
-            "`sent`, `delivered`"
-        )
-    )
-    succeeded_immediate_breakdown: Dict[str, List[int]] = Field(
-        description=(
-            "Individual breakdown of the `succeeded_immediate` category. The keys are "
-            "the message statuses and the values are the counts for each status by "
-            "day. Only statuses with at least one non-zero count are included."
+            "Breaks down the `queued_for_recovery` count by number of previous failures"
         )
     )
     abandoned: List[int] = Field(
         description=(
-            "How many sms sends received too many transient errors and were abandoned"
+            "The number of times the failure callback abandoned a message resource"
         )
     )
-    failed_due_to_application_error_ratelimit: List[int] = Field(
+    abandoned_breakdown: Dict[str, List[int]] = Field(
+        description=("Breaks down abandoned by number of previous failures")
+    )
+    attempted: List[int] = Field(
         description=(
-            "How many sms sends resulted in an identifiable `ErrorCode` which means "
-            "Twilio blocked the request due to a ratelimit. For us, this refers to "
-            "error codes `14107`, `30022`, `31206`, `45010`, `51002`, `54009`, and "
-            "`63017`"
+            "How many message resources the receipt recovery job tried to fetch"
         )
     )
-    failed_due_to_application_error_ratelimit_breakdown: Dict[str, List[int]] = Field(
+    received: List[int] = Field(
         description=(
-            "Individual breakdown of the `failed_due_to_application_error_ratelimit` "
-            "category. The keys are the error codes and the values are the counts for "
-            "each error code by day. Only error codes with at least one non-zero count "
-            "are included."
+            "How many message resources the receipt recovery job successfully fetched"
         )
     )
-    failed_due_to_application_error_other: List[int] = Field(
+    received_breakdown: Dict[str, List[int]] = Field(
         description=(
-            "How many sms sends resulted in an identifiable `ErrorCode`, but not one "
-            "that we interpret as a ratelimit."
+            "Breaks down received by {old_message_status}:{new_message_status}"
         )
     )
-    failed_due_to_application_error_other_breakdown: Dict[str, List[int]] = Field(
-        description=(
-            "Individual breakdown of the `failed_due_to_application_error_other` "
-            "category. The keys are the error codes and the values are the counts for "
-            "each error code by day. Only error codes with at least one non-zero count "
-            "are included."
-        )
+    error_client_404: List[int] = Field(
+        description="How many message resources didn't exist on Twiio"
     )
-    failed_due_to_client_error_429: List[int] = Field(
-        description=(
-            "How many sms sends resulted in a 429 http response without an identifiable "
-            "error code."
-        )
+    error_client_429: List[int] = Field(
+        description="How many message resources couldn't be fetched due to ratelimiting"
     )
-    failed_due_to_client_error_other: List[int] = Field(
-        description=(
-            "How many sms sends resulted in a 4XX http response besides 429 and without an "
-            "identifiable error code"
-        )
+    error_client_other: List[int] = Field(
+        description="How many resources couldn't be fetched due to some other 4xx response"
     )
-    failed_due_to_client_error_other_breakdown: Dict[str, List[int]] = Field(
-        description=(
-            "Individual breakdown of the `failed_due_to_client_error_other` category. "
-            "The keys are the http status codes and the values are the counts for each "
-            "status code by day. Only status codes with at least one non-zero count are "
-            "included."
-        )
+    error_client_other_breakdown: Dict[str, List[int]] = Field(
+        description="Breaks down error_client_other by HTTP status code"
     )
-    failed_due_to_server_error: List[int] = Field(
-        description=(
-            "How many sms sends resulted in a 5XX http response without an identifiable "
-            "error code."
-        )
+    error_server: List[int] = Field(
+        description="How many resources couldn't be fetched due to some 5xx response"
     )
-    failed_due_to_server_error_breakdown: Dict[str, List[int]] = Field(
-        description=(
-            "Individual breakdown of the `failed_due_to_server_error` category. The "
-            "keys are the http status codes and the values are the counts for each "
-            "status code by day. Only status codes with at least one non-zero count are "
-            "included."
-        )
+    error_server_breakdown: Dict[str, List[int]] = Field(
+        description="Breaks down error_server by HTTP status code"
     )
-    failed_due_to_internal_error: List[int] = Field(
-        description=(
-            "How many sms sends failed because we failed to form the request or parse "
-            "the response"
-        )
+    error_network: List[int] = Field(
+        description="How many resources couldn't be fetched due to some network error"
     )
-    failed_due_to_network_error: List[int] = Field(
-        description=(
-            "How many sms sends failed because of a network communication failure between "
-            "us and Twilio"
-        )
+    error_internal: List[int] = Field(
+        description="How many resources couldn't be fetched due to an error on our end"
     )
 
 
 @router.get(
-    "/daily_sms_sends",
-    response_model=ReadDailySMSSendsResponse,
+    "/daily_sms_polling",
+    response_model=ReadDailySMSPollingResponse,
     responses=STANDARD_ERRORS_BY_CODE,
 )
-async def read_daily_sms_sends(
+async def read_daily_sms_polling(
     authorization: Optional[str] = Header(None),
 ):
-    """Reads daily sms send statistics from the database for the preceeding 90
+    """Reads daily sms polling statistics from the database for the preceeding 90
     days. The data generally ends at the day before yesterday and is not updated
     until some point tomorrow. This endpoint is aggressively cached, thus it's
     not generally necessary for the frontend to reduce requests beyond
@@ -183,7 +135,7 @@ async def read_daily_sms_sends(
             "Content-Encoding": "gzip",
         }
 
-        cached_result = await read_daily_sms_sends_from_cache(
+        cached_result = await read_daily_sms_polling_from_cache(
             itgs, start_unix_date=start_unix_date, end_unix_date=end_unix_date
         )
         if cached_result is not None:
@@ -193,17 +145,17 @@ async def read_daily_sms_sends(
                 content=read_in_parts(cached_result), headers=headers
             )
 
-        typed_response = await read_daily_sms_sends_from_source(
+        typed_response = await read_daily_sms_polling_from_source(
             itgs, start_unix_date=start_unix_date, end_unix_date=end_unix_date
         )
         result = await run_in_threadpool(serialize_and_compress, typed_response)
-        await write_daily_sms_sends_to_cache(
+        await write_daily_sms_polling_to_cache(
             itgs,
             start_unix_date=start_unix_date,
             end_unix_date=end_unix_date,
             data=result,
         )
-        await write_daily_sms_sends_to_other_instances(
+        await write_daily_sms_polling_to_other_instances(
             itgs,
             start_unix_date=start_unix_date,
             end_unix_date=end_unix_date,
@@ -212,10 +164,10 @@ async def read_daily_sms_sends(
         return Response(content=result, headers=headers)
 
 
-async def read_daily_sms_sends_from_source(
+async def read_daily_sms_polling_from_source(
     itgs: Itgs, *, start_unix_date: int, end_unix_date: int
-) -> ReadDailySMSSendsResponse:
-    """Reads the daily sms send information from the source for the given unix
+) -> ReadDailySMSPollingResponse:
+    """Reads the daily sms polling information from the source for the given unix
     date range; note that this can only return already completed days, so
     end_unix_date should be in the past. Fills with zeroes if there is no data
     for a particular day.
@@ -232,24 +184,24 @@ async def read_daily_sms_sends_from_source(
         """
         SELECT
             retrieved_for, 
-            queued, 
-            succeeded_pending, 
-            succeeded_immediate, 
-            abandoned, 
-            failed_due_to_application_error_ratelimit, 
-            failed_due_to_application_error_other,
-            failed_due_to_client_error_429, 
-            failed_due_to_client_error_other, 
-            failed_due_to_server_error,
-            failed_due_to_internal_error, 
-            failed_due_to_network_error,
-            succeeded_pending_breakdown,
-            succeeded_immediate_breakdown,
-            failed_due_to_application_error_ratelimit_breakdown,
-            failed_due_to_application_error_other_breakdown,
-            failed_due_to_client_error_other_breakdown, 
-            failed_due_to_server_error_breakdown
-        FROM sms_send_stats
+            detected_stale,
+            queued_for_recovery,
+            abandoned,
+            attempted,
+            received,
+            error_client_404,
+            error_client_429,
+            error_client_other,
+            error_server,
+            error_network,
+            error_internal,
+            detected_stale_breakdown,
+            queued_for_recovery_breakdown,
+            abandoned_breakdown,
+            received_breakdown,
+            error_client_other_breakdown,
+            error_server_breakdown
+        FROM sms_polling_stats
         WHERE
             retrieved_for >= ?
             AND retrieved_for < ?
@@ -301,32 +253,32 @@ async def read_daily_sms_sends_from_source(
         push_empty_day(next_unix_date)
         next_unix_date += 1
 
-    return ReadDailySMSSendsResponse(
+    return ReadDailySMSPollingResponse(
         labels=labels,
-        queued=overall_lists[0],
-        succeeded_pending=overall_lists[1],
-        succeeded_pending_breakdown=extra_lists[0],
-        succeeded_immediate=overall_lists[2],
-        succeeded_immediate_breakdown=extra_lists[1],
-        abandoned=overall_lists[3],
-        failed_due_to_application_error_ratelimit=overall_lists[4],
-        failed_due_to_application_error_ratelimit_breakdown=extra_lists[2],
-        failed_due_to_application_error_other=overall_lists[5],
-        failed_due_to_application_error_other_breakdown=extra_lists[3],
-        failed_due_to_client_error_429=overall_lists[6],
-        failed_due_to_client_error_other=overall_lists[7],
-        failed_due_to_client_error_other_breakdown=extra_lists[4],
-        failed_due_to_server_error=overall_lists[8],
-        failed_due_to_server_error_breakdown=extra_lists[5],
-        failed_due_to_internal_error=overall_lists[9],
-        failed_due_to_network_error=overall_lists[10],
+        detected_stale=overall_lists[0],
+        detected_stale_breakdown=extra_lists[0],
+        queued_for_recovery=overall_lists[1],
+        queued_for_recovery_breakdown=extra_lists[1],
+        abandoned=overall_lists[2],
+        abandoned_breakdown=extra_lists[2],
+        attempted=overall_lists[3],
+        received=overall_lists[4],
+        received_breakdown=extra_lists[3],
+        error_client_404=overall_lists[5],
+        error_client_429=overall_lists[6],
+        error_client_other=overall_lists[7],
+        error_client_other_breakdown=extra_lists[4],
+        error_server=overall_lists[8],
+        error_server_breakdown=extra_lists[5],
+        error_network=overall_lists[9],
+        error_internal=overall_lists[10],
     )
 
 
-async def read_daily_sms_sends_from_cache(
+async def read_daily_sms_polling_from_cache(
     itgs: Itgs, *, start_unix_date: int, end_unix_date: int
 ) -> Union[bytes, io.BytesIO, None]:
-    """Reads the daily sms send information from the cache for the given unix
+    """Reads the daily sms polling information from the cache for the given unix
     date range, if it exists in the cache. The returned value is already gzipped.
 
     Args:
@@ -340,15 +292,15 @@ async def read_daily_sms_sends_from_cache(
             depending on its size and system properties.
     """
     cache = await itgs.local_cache()
-    key = f"daily_sms_sends:{start_unix_date}:{end_unix_date}".encode("ascii")
+    key = f"daily_sms_polling:{start_unix_date}:{end_unix_date}".encode("ascii")
     return cache.get(key, read=True)
 
 
-def serialize_and_compress(raw: ReadDailySMSSendsResponse) -> bytes:
+def serialize_and_compress(raw: ReadDailySMSPollingResponse) -> bytes:
     """Serializes and compresses the given data.
 
     Args:
-        raw (ReadDailySMSSendsResponse): The data
+        raw (ReadDailySMSPollingResponse): The data
 
     Returns:
         bytes: The serialized and compressed data
@@ -356,11 +308,11 @@ def serialize_and_compress(raw: ReadDailySMSSendsResponse) -> bytes:
     return gzip.compress(raw.json().encode("utf-8"), mtime=0)
 
 
-async def write_daily_sms_sends_to_cache(
+async def write_daily_sms_polling_to_cache(
     itgs: Itgs, *, start_unix_date: int, end_unix_date: int, data: bytes
 ) -> None:
-    """Writes the daily sms send stats for the given unix date range
-    to the cache, set to expire EOD
+    """Writes the daily sms polling stats for the given unix date range
+    to the cache, set to expire at the end of the day
 
     Args:
         itgs (Itgs): The itgs
@@ -373,14 +325,14 @@ async def write_daily_sms_sends_to_cache(
     cache_expire_in = unix_dates.unix_date_to_timestamp(tomorrow_unix_date, tz=tz) - now
     if cache_expire_in > 0:
         cache = await itgs.local_cache()
-        key = f"daily_sms_sends:{start_unix_date}:{end_unix_date}".encode("ascii")
+        key = f"daily_sms_polling:{start_unix_date}:{end_unix_date}".encode("ascii")
         cache.set(key, data, expire=cache_expire_in)
 
 
-async def write_daily_sms_sends_to_other_instances(
+async def write_daily_sms_polling_to_other_instances(
     itgs: Itgs, *, start_unix_date: int, end_unix_date: int, data: bytes
 ) -> None:
-    """Attempts to write the given date range of compressed daily sms send
+    """Attempts to write the given date range of compressed daily sms poll
     stats to the local cache on other instances, to reduce repeated queries
     to the database. This may also update our own cache.
 
@@ -397,16 +349,16 @@ async def write_daily_sms_sends_to_other_instances(
         + len(data).to_bytes(8, "big", signed=False)
         + data
     )
-    await redis.publish(b"ps:stats:sms_sends:daily", message)
+    await redis.publish(b"ps:stats:sms_polling:daily", message)
 
 
-async def handle_reading_daily_sms_sends_from_other_instances() -> Never:
-    """Uses the perpetual pub sub to listen for any sms send statistics
+async def handle_reading_daily_sms_polling_from_other_instances() -> Never:
+    """Uses the perpetual pub sub to listen for any sms polling statistics
     retrieved by other instances, and writes them to the local cache.
     """
     try:
         async with pps.PPSSubscription(
-            pps.instance, "ps:stats:sms_sends:daily", "rdsss-hrdssfoi"
+            pps.instance, "ps:stats:sms_polling:daily", "rdsp-hrdspfoi"
         ) as sub:
             async for raw_message_bytes in sub:
                 msg = io.BytesIO(raw_message_bytes)
@@ -416,7 +368,7 @@ async def handle_reading_daily_sms_sends_from_other_instances() -> Never:
                 data = msg.read(data_len)
 
                 async with Itgs() as itgs:
-                    await write_daily_sms_sends_to_cache(
+                    await write_daily_sms_polling_to_cache(
                         itgs,
                         start_unix_date=start_unix_date,
                         end_unix_date=end_unix_date,
@@ -428,5 +380,5 @@ async def handle_reading_daily_sms_sends_from_other_instances() -> Never:
         await handle_error(e)
     finally:
         print(
-            "admin.sms.routes.read_daily_sms_sends#handle_reading_daily_sms_sends_from_other_instances exiting"
+            "admin.sms.routes.read_daily_sms_polling#handle_reading_daily_sms_polling_from_other_instances exiting"
         )

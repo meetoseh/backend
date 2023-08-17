@@ -66,6 +66,12 @@ async def sms_webhook(request: Request):
             )
             return Response(status_code=403)
 
+        # FOR TESTING
+        slack = await itgs.slack()
+        await slack.send_web_error_message(
+            f"sms webhook received:\n\n{body=}\n\n{signature_b64=}"
+        )
+
         try:
             interpreted_body = urllib.parse.parse_qs(body.decode("utf-8"))
         except:

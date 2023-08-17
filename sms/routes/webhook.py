@@ -65,12 +65,6 @@ async def sms_webhook(request: Request):
             )
             return Response(status_code=400)
 
-        if request.headers.get("content-type") != "application/x-www-form-urlencoded":
-            await webhook_stats.increment_event(
-                itgs, event="body_parse_error", now=request_at
-            )
-            return Response(status_code=400)
-
         signature_b64: str = request.headers["x-twilio-signature"]
         try:
             signature: bytes = base64.b64decode(signature_b64)

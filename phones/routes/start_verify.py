@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
 from typing import Literal, Optional
+from error_middleware import handle_error
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from starlette.concurrency import run_in_threadpool
 from auth import auth_id
@@ -111,13 +112,37 @@ async def start_verify(
         twilio = await itgs.twilio()
         service_id = os.environ["OSEH_TWILIO_VERIFY_SERVICE_SID"]
 
-        if os.environ["ENVIRONMENT"] == "dev" and args.phone_number == "+15555555555":
-            verification = FakeVerification(sid=f"oseh_fv_{secrets.token_urlsafe(16)}")
-        else:
-            verification = await run_in_threadpool(
-                twilio.verify.v2.services(service_id).verifications.create,
-                to=args.phone_number,
-                channel="sms",
+        try:
+            if (
+                os.environ["ENVIRONMENT"] == "dev"
+                and args.phone_number == "+15555555555"
+            ):
+                verification = FakeVerification(
+                    sid=f"oseh_fv_{secrets.token_urlsafe(16)}"
+                )
+            else:
+                verification = await run_in_threadpool(
+                    twilio.verify.v2.services(service_id).verifications.create,
+                    to=args.phone_number,
+                    channel="sms",
+                )
+        except Exception as e:
+            await handle_error(
+                e,
+                extra_info=f"creating a verification for {auth_result.result.sub=}, {args.phone_number=}",
+            )
+            async with redis.pipeline() as pipe:
+                pipe.multi()
+                await pipe.decr(key)
+                await pipe.expire(key, 86400)
+                response = await pipe.execute()
+            return Response(
+                content=StandardErrorResponse[ERROR_503_TYPES](
+                    type="provider_error",
+                    message="There was an error with the phone verification provider. Try again later.",
+                ).json(),
+                status_code=503,
+                headers={"Retry-After": "60"},
             )
 
         if verification.status != "pending":

@@ -30,9 +30,12 @@ async def handle_error(exc: Exception, *, extra_info: Optional[str] = None) -> N
 
     from itgs import Itgs
 
-    async with Itgs() as itgs:
-        slack = await itgs.slack()
-        await slack.send_web_error_message(message, "an error occurred in backend")
+    try:
+        async with Itgs() as itgs:
+            slack = await itgs.slack()
+            await slack.send_web_error_message(message, "an error occurred in backend")
+    except:
+        logger.exception("Failed to send error report to slack")
 
 
 async def handle_contextless_error(*, extra_info: Optional[str] = None) -> None:
@@ -54,8 +57,11 @@ async def handle_contextless_error(*, extra_info: Optional[str] = None) -> None:
 
     from itgs import Itgs
 
-    async with Itgs() as itgs:
-        slack = await itgs.slack()
-        await slack.send_web_error_message(
-            message, "a contextless error occurred in backend"
-        )
+    try:
+        async with Itgs() as itgs:
+            slack = await itgs.slack()
+            await slack.send_web_error_message(
+                message, "a contextless error occurred in backend"
+            )
+    except:
+        logger.exception("Failed to send error report to slack")

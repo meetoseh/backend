@@ -219,7 +219,7 @@ async def finish_verify(
                     f"By verifying their phone number, {auth_result.result.sub} updated their "
                     f"notification preference to {new_notification_preference}"
                 )
-                await users.lib.stats.on_notification_time_updated(
+                await users.lib.stats.on_sms_notification_time_updated(
                     itgs,
                     user_sub=auth_result.result.sub,
                     old_preference=old_notification_preference,

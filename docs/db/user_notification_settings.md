@@ -6,7 +6,8 @@ they receive notifications on.
 
 SEE ALSO: [user_klaviyo_profiles](./user_klaviyo_profiles.md): without a
 klaviyo profile a user does not receive notifications regardless of
-this table
+this table (pending removal and replacement with the new notification
+system which uses Twilio+Amazon SES+Expo Push)
 
 ## Fields
 
@@ -15,7 +16,7 @@ this table
   Uses the [uid prefix](../uid_prefixes.md) `uns`.
 - `user_id (integer not null references users(id) on delete cascade)`:
   The user these settings are for
-- `channel (text not null)`: one of: `sms`
+- `channel (text not null)`: one of: `sms`, `push`
 - `preferred_notification_time (text not null)`: When the user would
   prefer to receive notifications. This is one of the following:
   - `any`: Any time of the day / unspecified
@@ -28,9 +29,15 @@ this table
   timezone to use for the user. A json object with one of the following
   shapes:
 
-  - `{"style":"migration"}` - We assigned this timezone during the migration
+  - `{"style": "migration"}` - We assigned this timezone during the migration
     where we added timezones, setting it to America/Los_Angeles
-  - `{"style":"browser"}` - Used the system default timezone on their browser
+  - `{"style": "browser"}` - Used the system default timezone on their browser
+  - `{"guessed": false, "style": "app"}` - Used the system default timezone on
+    their phone, i.e., the first non-null timeZone via
+    [getCalendars](https://docs.expo.dev/versions/latest/sdk/localization/#localizationgetcalendars).
+    For now the app just assumes "America/Los_Angeles" if it cannot get a timezone,
+    as timezones are supported by all devices (AFAIK). If it did this, then the
+    `guessed` value is true. Otherwise, it is false.
 
 - `created_at (real not null)`: The time this row was created in
   seconds since the unix epoch

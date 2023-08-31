@@ -28,6 +28,8 @@ particular inapp notification.
 - `user_max_created_at (real null)`: If specified, users which were created before
   this time (in seconds since the epoch) should not ever see this inapp notification.
   This is an easy way to support feature announcements.
+- `maximum_repetitions (integer null)`: If specified, users which have seen this
+  notification at least this number of times should not be prompted anymore.
 - `created_at (real not null)`: When this row was added
 
 ## Active Screens
@@ -147,6 +149,7 @@ CREATE TABLE inapp_notifications (
     active BOOLEAN NOT NULL,
     minimum_repeat_interval REAL NULL,
     user_max_created_at REAL NULL,
+    maximum_repetitions INTEGER NULL,
     created_at REAL NOT NULL
 );
 ```

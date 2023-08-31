@@ -14,6 +14,12 @@ import secrets
 import time
 import phonenumbers
 import pytz
+from loguru import logger
+
+from users.lib.timezones import (
+    TimezoneTechniqueSlug,
+    convert_timezone_technique_slug_to_db,
+)
 
 
 class StartVerifyRequest(BaseModel):
@@ -27,7 +33,12 @@ class StartVerifyRequest(BaseModel):
         description="The IANA timezone of the user, e.g. America/New_York. Ignored unless receive_notifications is true."
     )
 
-    timezone_technique: Literal["browser"] = Field(
+    receive_notifications: bool = Field(
+        False,
+        description="Whether or not to receive marketing notifications on this phone number",
+    )
+
+    timezone_technique: TimezoneTechniqueSlug = Field(
         description="The technique used to determine the timezone. Ignored unless receive_notifications is true."
     )
 
@@ -100,6 +111,12 @@ async def start_verify(
             response = await pipe.execute()
 
         if response[0] > 3:
+            if os.environ["ENVIRONMENT"] == "dev":
+                logger.info(
+                    f"Ratelimiting phone verifications for {auth_result.result.sub=}, {args.phone_number=}; "
+                    f"to reset ratelimits use the following redis command:\n"
+                    f"del {key}\n"
+                )
             return Response(
                 status_code=429,
                 headers={"Content-Type": "application/json; charset=utf-8"},
@@ -189,33 +206,36 @@ async def start_verify(
             ),
         )
 
-        new_uns_uid = f"oseh_uns_{secrets.token_urlsafe(16)}"
-        timezone_technique = json.dumps({"style": args.timezone_technique})
-        await cursor.execute(
-            """
-            INSERT INTO user_notification_settings (
-                uid, user_id, channel, preferred_notification_time, 
-                timezone, timezone_technique, created_at
+        if args.receive_notifications:
+            new_uns_uid = f"oseh_uns_{secrets.token_urlsafe(16)}"
+            timezone_technique = convert_timezone_technique_slug_to_db(
+                args.timezone_technique
             )
-            SELECT
-                ?, users.id, ?, ?, ?, ?, ?
-            FROM users WHERE users.sub = ?
-            ON CONFLICT (user_id, channel)
-            DO UPDATE SET timezone = ?, timezone_technique = ?
-            """,
-            (
-                new_uns_uid,
-                "sms",
-                "any",
-                args.timezone,
-                timezone_technique,
-                time.time(),
-                auth_result.result.sub,
-                args.timezone,
-                timezone_technique,
-            ),
-        )
-        # didn't klaviyo.ensure_user here so we shouldn't have to update notif stats
+            await cursor.execute(
+                """
+                INSERT INTO user_notification_settings (
+                    uid, user_id, channel, preferred_notification_time, 
+                    timezone, timezone_technique, created_at
+                )
+                SELECT
+                    ?, users.id, ?, ?, ?, ?, ?
+                FROM users WHERE users.sub = ?
+                ON CONFLICT (user_id, channel)
+                DO UPDATE SET timezone = ?, timezone_technique = ?
+                """,
+                (
+                    new_uns_uid,
+                    "sms",
+                    "any",
+                    args.timezone,
+                    timezone_technique,
+                    time.time(),
+                    auth_result.result.sub,
+                    args.timezone,
+                    timezone_technique,
+                ),
+            )
+            # didn't klaviyo.ensure_user here so we shouldn't have to update notif stats
 
         return Response(
             status_code=201,

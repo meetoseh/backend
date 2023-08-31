@@ -8,13 +8,18 @@ from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
 import pytz
 
+from users.lib.timezones import (
+    TimezoneTechniqueSlug,
+    convert_timezone_technique_slug_to_db,
+)
+
 
 router = APIRouter()
 
 
 class UpdateTimezoneArgs(BaseModel):
     timezone: str = Field(description="the new timezone")
-    timezone_technique: Literal["browser"] = Field(
+    timezone_technique: TimezoneTechniqueSlug = Field(
         description="The technique used to determine the timezone."
     )
 
@@ -61,7 +66,7 @@ async def update_timezone(
             """,
             (
                 args.timezone,
-                json.dumps({"style": args.timezone_technique}),
+                convert_timezone_technique_slug_to_db(args.timezone_technique),
                 auth_result.result.sub,
             ),
         )

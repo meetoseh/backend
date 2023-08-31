@@ -77,6 +77,7 @@ async def get_inapp_notification_show_at(
                 inapp_notifications.minimum_repeat_interval,
                 inapp_notification_users.created_at,
                 inapp_notifications.user_max_created_at,
+                inapp_notifications.maximum_repetitions,
                 users.created_at
             FROM inapp_notifications
             JOIN users ON users.sub = ?
@@ -114,7 +115,8 @@ async def get_inapp_notification_show_at(
         minimum_repeat_interval: Optional[float] = response.results[0][0]
         last_shown_at: Optional[float] = response.results[0][1]
         user_max_created_at: Optional[float] = response.results[0][2]
-        user_created_at: float = response.results[0][3]
+        maximum_repetitions: Optional[int] = response.results[0][3]
+        user_created_at: float = response.results[0][4]
 
         now = time.time()
         show_now: bool = True
@@ -132,6 +134,33 @@ async def get_inapp_notification_show_at(
         if user_max_created_at is not None and user_created_at > user_max_created_at:
             show_now = False
             check_again_at = None
+
+        if show_now and maximum_repetitions is not None:
+            response = await cursor.execute(
+                """
+                SELECT COUNT(*) FROM inapp_notification_users
+                WHERE
+                    EXISTS (
+                        SELECT 1 FROM users
+                        WHERE users.id = inapp_notification_users.user_id
+                          AND users.sub = ?
+                    )
+                    AND EXISTS (
+                        SELECT 1 FROM inapp_notifications
+                        WHERE
+                            inapp_notifications.id = inapp_notification_users.inapp_notification_id
+                            AND inapp_notifications.uid = ?
+                    )
+                """,
+                (
+                    auth_result.result.sub,
+                    args.inapp_notification_uid,
+                ),
+            )
+            num_seen: int = response.results[0][0]
+            if num_seen >= maximum_repetitions:
+                show_now = False
+                check_again_at = None
 
         return Response(
             content=GetInappNotificationShowAtResponse(

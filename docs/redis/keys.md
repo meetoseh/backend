@@ -205,7 +205,7 @@ the keys that we use in redis
     typ: Literal["action"]
     queued_at: float
     timezone: Optional[str]
-    timezone_technique: Optional[Literal["browser"]]
+    timezone_technique: Optional[TimezoneTechniqueSlug]
     is_outside_flow: bool
   ```
 

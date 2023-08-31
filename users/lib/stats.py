@@ -138,7 +138,7 @@ NotificationPreference = Literal[
 ]
 
 
-async def on_notification_time_updated(
+async def on_sms_notification_time_updated(
     itgs: Itgs,
     *,
     user_sub: str,
@@ -150,6 +150,10 @@ async def on_notification_time_updated(
     should only be called if the user really will receive notifications at the
     new preference, i.e., they have a user klaviyo profile, phone number, and
     notifications enabled (or this was true and the new preference is "unset")
+
+    For now this is only for the SMS channel. Once the new notifications system
+    is in and takes over from klaviyo, this will be removed and replaced with
+    the new system.
 
     Updates the following keys, which are described in docs/redis/keys.md
 

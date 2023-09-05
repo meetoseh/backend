@@ -28,6 +28,7 @@ mypy-extensions==0.4.3
 numpy==1.24.3
 packaging==22.0
 pathspec==0.10.3
+pem==23.1.0
 phonenumbers==8.13.6
 platformdirs==2.6.2
 pycparser==2.21

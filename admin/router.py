@@ -15,6 +15,7 @@ import admin.routes.read_total_users
 import admin.routes.read_utm_conversion_stats
 import admin.notifs.router
 import admin.sms.router
+import admin.email.router
 
 router = APIRouter()
 router.include_router(admin.routes.read_daily_active_users.router)
@@ -34,3 +35,4 @@ router.include_router(admin.routes.read_utm_conversion_stats.router)
 
 router.include_router(admin.notifs.router.router, prefix="/notifs")
 router.include_router(admin.sms.router.router, prefix="/sms")
+router.include_router(admin.email.router.router, prefix="/email")

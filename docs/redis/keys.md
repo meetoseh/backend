@@ -613,6 +613,120 @@ the keys that we use in redis
 - `sms:receipt_reconciliation_job:lock` is a basic redis lock to ensure only one receipt reconciliation
   job is running at a time
 
+### Email namespace
+
+- `email:to_send` goes to a list (inserted on the right, removed from the left) where each
+  item is a json object with the following keys:
+
+  - `aud ("send")`: the value `send`, used to disambiguate within the failure callback
+  - `uid (str)`: the unique identifier assigned to this email attempt, with uid prefix `em`
+  - `email (str)`: the recipient's email address
+  - `template (str)`: the slug of the email template on `email-templates` to use
+  - `template_parameters (dict[str, any])`: an object containing the email template parameters
+  - `initially_queued_at (float)`: unix timestamp when this email attempt was first added to
+    the to_send queue
+  - `retry (int)`: how many times this email attempt has previously failed transiently (e.g.,
+    because of a network issue reaching SES)
+  - `last_queued_at (float)`: unix timestamp for when this email attempt was most recently
+    added to the to_send queue
+  - `failure_job (job callback)`: the name and bonus kwargs for the job to run on failure;
+    always passed the kwarg `data_raw` which can be decoded with
+    `lib.email.email_info#decode_data_for_failure_job` in `jobs`. This job is responsible for
+    determining the retry strategy on transient failures as well as handling permanent failures.
+  - `success_job (job callback)`: the name and bonus kwargs for the job to run on success;
+    always passed the kwarg `data_raw` which can be decoded with
+    `lib.email.email_info#decode_data_for_success_job` in `jobs`.
+
+- `email:send_purgatory` goes to a list (inserted on the right, removed from the left)
+  containing the same values as `email:to_send` but consisting only of those being worked
+  on right now.
+
+- `email:send_job:lock` goes to a basic redis lock key for ensuring only one email send job
+  is running at a time
+
+- `email:receipt_pending` goes to a sorted set where the scores are `send_accepted_at`
+  and the values are message ids within the receipt pending set. every value in this
+  set corresponds to a message id for which `email:receipt_pending:{message_id}` exists
+  and has the same `send_accepted_at` as the score in `email:receipt_pending`.
+  Conversely, for every message id for which `email:receipt_pending:{message_id}` exists,
+  there is a corresponding value in this sorted set with that message id and whose
+  score corresponds to that `send_accepted_at`.
+
+- `email:receipt_pending:{message_id}` goes to a hash with the following values for the
+  message with the given id in the receipt pending set:
+
+  - `aud ("pending")`: the value `pending`, used to disambiguate within the failure callback
+  - `uid (str)`: the unique identifier assigned to this email attempt, with uid prefix `em`
+  - `message_id (str)`: the id assigned by AWS, same as in the key
+  - `email (str)`: the recipient's email address
+  - `template (str)`: the slug of the email template on `email-templates` to use
+  - `template_parameters (dict[str, any])`: an object containing the email template parameters
+  - `send_initially_queued_at (float)`: unix timestamp when this email attempt was first added to
+    the to_send queue
+  - `send_accepted_at (float)`: unix timestamp when this email attempt was accepted by ses and
+    added to the receipt pending set
+  - `failure_job (job callback)`: the name and bonus kwargs for the job to run on failure;
+    always passed the kwarg `data_raw` which can be decoded with
+    `lib.email.email_info#decode_data_for_failure_job` in `jobs`.
+  - `success_job (job callback)`: the name and bonus kwargs for the job to run on success;
+    always passed the kwarg `data_raw` which can be decoded with
+    `lib.email.email_info#decode_data_for_success_job` in `jobs`.
+
+- `email:reconciliation_job:lock` goes to a basic redis lock key for ensuring only one email
+  reconciliation job is running at a time
+
+- `email:reconciliation_purgatory` goes to a list (inserted on the right, removed from the left)
+  containing the same values as `email:event` but consisting only of those being worked
+  on right now.
+
+- `email:stale_receipt_job:lock` goes to a basic redis lock key for ensuring only one email
+  stale receipt job is running at a time
+
+- `email:event` goes to a redis list (inserted on the right, removed from the left)
+  containing abbreviated information from the
+  [SNS notifications](https://docs.aws.amazon.com/ses/latest/dg/notification-contents.html)
+
+  examples:
+
+  ```json
+  {
+    "message_id": "string",
+    "notification": { "type": "delivery" },
+    "received_at": 1693938540.949
+  }
+  ```
+
+  ```json
+  {
+    "message_id": "string",
+    "notification": {
+      "type": "bounce",
+      "reason": {
+        "primary": "Permanent",
+        "secondary": "NoEmail"
+      }
+    },
+    "received_at": 1693938540.949
+  }
+  ```
+
+  ```json
+  {
+    "message_id": "string",
+    "notification": { "type": "Complaint", "feedback_type": "abuse" },
+    "received_at": 1693938540.949
+  }
+  ```
+
+  where
+
+  - `message_id` is the MessageId assigned by Amazon SES
+  - `notification` describes the notification received, where the `type`
+    is used to disambiguate parsing and is `Delivery`, `Bounce`,
+    or `Complaint`. See [events.py](../../emails/lib/events.py) for details.
+  - `received_at` is when the notification was received by us in seconds
+    since the unix epoch
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -1078,6 +1192,134 @@ rather than external functionality.
   as a unix date number, for which there may be daily sms webhook information still in
   redis
 
+- `stats:email_send:send_job` goes to a hash describing the most recent send job run, with
+  `started_at` being updated at the start of the job and the remaining fields updated
+  atomically at the end of the job:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `attempted`: how many emails we attempted to send
+  - `templated`: of those attempted, how many emails we successfully templated
+  - `accepted`: of those templated, how many were accepted by amazon ses
+  - `failed_permanently`: how many had a permanent failure from either email-templates
+    or amazon ses
+  - `failed_transiently`: how many had a transient error from either email-templates or
+    amazon ses
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:email_send:daily:{unix_date}` goes to a hash where the values are numbers
+  describing the count for the given date described as a unix date number, and the
+  keys are:
+
+  - `queued`: how many message attempts were added to the to_send queue
+  - `attempted`: of those queued or retried, how many message attempts were
+    attempted by the send job
+  - `templated`: how many message attempts were successfully templated
+  - `accepted`: how many message attempts were accepted by amazon ses
+  - `failed_permanently`: how many had a permanent failure from either email-templates
+    or amazon ses
+  - `failed_transiently`: how many had a transient failure from either email-templates
+    or amazon ses
+  - `retried`: of those who failed transiently, how many were added back to the
+    send queue
+  - `abandoned`: of those who failed transiently, how many were abandoned rather than
+    retried, usually due to an excessive number of failures
+
+- `stats:email_send:daily:{unix_date}:extra:{event}` goes to a hash where the keys
+  depend on the event and the values go to the count on the given unix date. the event
+  is a key within `stats:email_send:daily:{unix_date}`, where the events with extra
+  breakdowns are:
+
+  - `accepted` is broken down by email template slug
+  - `failed_permanently` is broken down with `{step}:{error}` where the step is
+    either `template` or `ses` and the error is an http status code or
+    identifier e.g. `template:422` or `ses:SendingPausedException`
+  - `failed_transiently` is broken down with `{step}:{error}` like `failed_permanently`,
+    e.g., `template:503` or `ses:TooManyRequestsException`
+
+- `stats:email_send:daily:earliest` goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily email send information still in
+  redis
+
+- `stats:email_webhooks:daily:{unix_date}` goes to a hash where the strings representing the
+  event (described here), and the values are the count for the given unix date. The events are:
+
+  - `received`: how many webhook POST calls were received by the backend
+  - `verified`: how many of those webhook calls had a valid signature, and so we inspected the body
+  - `accepted`: how many of the verified calls were we able to understand
+  - `unprocessable`: how many of the verified calls couldn't be understood
+  - `signature_missing`: how many received calls were missing a signature
+  - `signature_invalid`: how many received calls had an invalid signature
+  - `body_read_error`: the body was not able to be read, required for verifying the signature
+  - `body_max_size_exceeded`: the body was too big and so we stopped processing it
+  - `body_parse_error`: the body content couldn't be parsed for signature verification
+
+- `stats:email_webhooks:daily:earliest` goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily email webhook information still in
+  redis
+
+- `stats:email_events:reconciliation_job` goes to a hash describing the most
+  recent email reconciliation job run, with `started_at` being updated at the
+  start of the job and the remaining fields updated atomically at the end of the
+  job:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `attempted`: how many events we attempted to process
+  - `succeeded_and_found`: how many were delivery receipts for emails in the receipt
+    pending set, an expected case
+  - `succeeded_but_abandoned`: how many were delivery for emails not in the receipt
+    pending set, an unexpected case
+  - `bounced_and_found`: how many were bounce for emails in the receipt
+    pending set, an expected case
+  - `bounced_but_abandoned`: how many were bounce not in the receipt pending
+    set, an unexpected case
+  - `complaint_and_found`: how many were complaint for emails in the receipt pending
+    set, an expected case
+  - `complaint_and_abandoned`: how many were complaint for emails not in the receipt
+    pending set, an expected case
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:email_events:daily:{unix_date}` goes to a hash where the strings representing the
+  event (described here), and the values are the count for the given unix date. The events are:
+
+  - `attempted`: how many events (from webhooks) we attempted to process
+  - `succeeded`: how many of those events were delivery notifications
+  - `bounced`: how many of those events were bounce notifications
+  - `complaint`: how many of those events were complaint notifications
+
+- `stats:email_events:daily:{unix_date}:extra:{event}` goes to a hash where the keys depend
+  on the event and the values are the count for the given unix date. The breakdowns by event
+  are as follows:
+
+  - `attempted` and `succeeded`: broken down by `found`/`abandoned`, referring
+    to if the event was in/was not in the receipt pending set, respectively
+  - `bounced`: broken down by `{found/abandoned}:{bounce type}:{bounce subtype}` where bounce types
+    are described at https://docs.aws.amazon.com/ses/latest/dg/notification-contents.html#bounce-types.
+    examples: `found:Transient:MailboxFull`, `found:Permanent:General`
+  - `complaint`: broken down by `{found/abandoned}:{feedback type}`, where complaint feedback types
+    are described at https://docs.aws.amazon.com/ses/latest/dg/notification-contents.html#complaint-object
+    examples: `abandoned:abuse`, `abandoned:None`
+
+- `stats:email_events:daily:earliest` goes to a string representing the earliest date,
+  as a unix date number, for which there may be daily email event information still in
+  redis
+
+- `stats:email_events:stale_receipt_job` goes to a hash describing the most
+  recent email stale receipt job run, with `started_at` being updated at the
+  start of the job and the remaining fields updated atomically at the end of the
+  job:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `abandoned`: how many receipts we abandoned, calling their failure callbacks
+    and removing them from the pending set, because they've been in the pending
+    set too long. this implies we missed a webhook.
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -1222,6 +1464,16 @@ These are regular keys used by the personalization module
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.
 
 - `ps:stats:sms_events:daily` is used to optimistically send compressed daily sms event
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:email_events:daily` is used to optimistically send compressed daily email event
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:email_send:daily` is used to optimistically send compressed daily email send
   statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
   in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.

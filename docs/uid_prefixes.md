@@ -97,3 +97,4 @@ something (in this case, identify a row)
 - `upt` - [user_push_tokens](db/user_push_tokens.md)
 - `pma` - push message attempt, used for push messages within redis
 - `sms` - sms, used for sms attempts within redis (e.g., `sms:to_send`)
+- `em` - email, used for email attempts with redis (e.g., `email:to_send`)

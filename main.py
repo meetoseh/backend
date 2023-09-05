@@ -31,6 +31,7 @@ import personalization.router
 import campaigns.router
 import interests.router
 import sms.router
+import emails.router
 import personalization.register_background_tasks
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.lib.read_one_external
@@ -135,9 +136,8 @@ app.include_router(
 app.include_router(
     interests.router.router, prefix="/api/1/interests", tags=["interests"]
 )
-app.include_router(
-    sms.router.router, prefix="/api/1/sms", tags=["sms"]
-)
+app.include_router(sms.router.router, prefix="/api/1/sms", tags=["sms"])
+app.include_router(emails.router.router, prefix="/api/1/emails", tags=["emails"])
 app.router.redirect_slashes = False
 
 

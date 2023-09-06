@@ -1,4 +1,6 @@
 from fastapi import Response
+from emails.handlers.bounce import handle_bounce
+from emails.handlers.complaint import handle_complaint
 from error_middleware import handle_error
 from itgs import Itgs
 from emails.handlers.delivery import handle_delivery
@@ -14,11 +16,16 @@ async def handle_notification(body_json: dict, topic_arn: str):
     async with Itgs() as itgs:
         try:
             if notification_type == "Delivery":
-                return await handle_delivery(itgs, body_json)
+                await handle_delivery(itgs, body_json)
+            elif notification_type == "Bounce":
+                await handle_bounce(itgs, body_json)
+            elif notification_type == "Complaint":
+                await handle_complaint(itgs, body_json)
             else:
                 raise NotImplementedError(
                     f"unknown notification type: {notification_type}"
                 )
+            return Response(status_code=202)
         except Exception as e:
             await handle_error(e)
             today = unix_dates.unix_date_today(tz=pytz.timezone("America/Los_Angeles"))

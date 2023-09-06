@@ -166,7 +166,17 @@ async def handle_raw_unconfirmed_sns(
         )
 
     try:
-        body_json = json.loads(str(body_bytes.getvalue(), "utf-8"))
+        body_str = str(body_bytes.getvalue(), "utf-8")
+    except:
+        return SNSResponse(
+            request_type="BodyParseError",
+            response=JSONResponse(
+                content={"message": "Expected utf-8 body"}, status_code=400
+            ),
+        )
+
+    try:
+        body_json = json.loads(body_str)
     except json.decoder.JSONDecodeError:
         return SNSResponse(
             request_type="BodyParseError",

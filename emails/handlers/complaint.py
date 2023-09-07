@@ -11,7 +11,7 @@ async def handle_complaint(itgs: Itgs, body_json: dict):
         EmailEvent(
             message_id=body_json["mail"]["messageId"],
             notification=EmailComplaintNotification(
-                notification_type="Complaint",
+                type="Complaint",
                 feedback_type=body_json["complaint"].get("complaintFeedbackType", None),
                 destination=body_json["mail"]["destination"],
                 complained_recipients=[

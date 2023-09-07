@@ -11,7 +11,7 @@ async def handle_delivery(itgs: Itgs, body_json: dict):
         EmailEvent(
             message_id=body_json["mail"]["messageId"],
             notification=EmailDeliveryNotification(
-                notification_type="Delivery",
+                type="Delivery",
             ),
             received_at=time.time(),
         ),

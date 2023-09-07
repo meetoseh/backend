@@ -13,6 +13,7 @@ from content_files.lib.serve_s3_file import read_in_parts
 from error_middleware import handle_error
 
 from itgs import Itgs
+from redis_helpers.redis_hash import RedisHash
 
 try:
     from typing import Never
@@ -565,18 +566,21 @@ def _create_partial(
                 parsed_results.append(None)
                 continue
 
-            basic_data: List[Tuple[bytes, bytes]] = results[results_idx]
-            fancy_data: List[List[Tuple[bytes, bytes]]] = results[
-                results_idx + 1 : results_idx + 1 + len(args.fancy_fields)
+            basic_data = RedisHash(results[results_idx])
+            fancy_data = [
+                RedisHash(r)
+                for r in results[
+                    results_idx + 1 : results_idx + 1 + len(args.fancy_fields)
+                ]
             ]
             results_idx += 1 + len(args.fancy_fields)
 
             merged_data = dict(
-                (key.decode("utf-8"), int(val)) for key, val in basic_data
+                (key.decode("utf-8"), int(val)) for key, val in basic_data.items_bytes()
             )
             for field, data in zip(args.fancy_fields, fancy_data):
                 merged_data[field + "_breakdown"] = dict(
-                    (key.decode("utf-8"), int(val)) for key, val in data
+                    (key.decode("utf-8"), int(val)) for key, val in data.items_bytes()
                 )
             parsed_results.append(merged_data)
         return parsed_results

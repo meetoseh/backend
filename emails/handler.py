@@ -1,3 +1,4 @@
+import json
 from fastapi import Response
 from emails.handlers.bounce import handle_bounce
 from emails.handlers.complaint import handle_complaint
@@ -12,15 +13,16 @@ from redis_helpers.set_if_lower import ensure_set_if_lower_script_exists, set_if
 
 async def handle_notification(body_json: dict, topic_arn: str):
     """Handles the given verified notification from Amazon SES"""
-    notification_type = body_json["notificationType"]
+    message_json = json.loads(body_json["Message"])
+    notification_type = message_json["notificationType"]
     async with Itgs() as itgs:
         try:
             if notification_type == "Delivery":
-                await handle_delivery(itgs, body_json)
+                await handle_delivery(itgs, message_json)
             elif notification_type == "Bounce":
-                await handle_bounce(itgs, body_json)
+                await handle_bounce(itgs, message_json)
             elif notification_type == "Complaint":
-                await handle_complaint(itgs, body_json)
+                await handle_complaint(itgs, message_json)
             else:
                 raise NotImplementedError(
                     f"unknown notification type: {notification_type}"

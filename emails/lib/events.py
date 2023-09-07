@@ -1,10 +1,10 @@
-from typing import Literal, Optional, Union
+from typing import List, Literal, Optional, Union
 from itgs import Itgs
 from pydantic import BaseModel, Field
 
 
 class EmailDeliveryNotification(BaseModel):
-    notification_type: Literal["Delivery"] = Field(
+    type: Literal["Delivery"] = Field(
         description="Indicates this is a delivery notification, i.e., the recipient received the email"
     )
 
@@ -65,18 +65,30 @@ EmailBounceReason = Union[
 
 
 class EmailBounceNotification(BaseModel):
-    notification_type: Literal["Bounce"] = Field(
+    type: Literal["Bounce"] = Field(
         description="Indicates this is a bounce notification, i.e., the recipient did not receive the email"
     )
     reason: EmailBounceReason = Field(description="The reason the email bounced")
+    destination: List[str] = Field(
+        description="The email addresses the email was sent to. This should contain just one item in practice"
+    )
+    bounced_recipients: List[str] = Field(
+        description="The email addresses of the recipients (within destination) that may have bounced"
+    )
 
 
 class EmailComplaintNotification(BaseModel):
-    notification_type: Literal["Complaint"] = Field(
+    type: Literal["Complaint"] = Field(
         description="Indicates this is a complaint notification, i.e., the recipient marked the email as spam"
     )
     feedback_type: Optional[str] = Field(
         description="If the ISP reported a Feedback-Type, the type of feedback from the user, e.g., 'abuse', 'fraud', 'virus', 'other', etc."
+    )
+    destination: List[str] = Field(
+        description="The email addresses the email was sent to. This should contain just one item in practice"
+    )
+    complained_recipients: List[str] = Field(
+        description="The email addresses of the recipients (within destination) that may have made the report"
     )
 
 

@@ -13,6 +13,11 @@ async def handle_complaint(itgs: Itgs, body_json: dict):
             notification=EmailComplaintNotification(
                 notification_type="Complaint",
                 feedback_type=body_json["complaint"].get("complaintFeedbackType", None),
+                destination=body_json["mail"]["destination"],
+                complained_recipients=[
+                    r["emailAddress"]
+                    for r in body_json["complaint"]["complainedRecipients"]
+                ],
             ),
             received_at=time.time(),
         ),

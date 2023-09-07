@@ -98,3 +98,5 @@ something (in this case, identify a row)
 - `pma` - push message attempt, used for push messages within redis
 - `sms` - sms, used for sms attempts within redis (e.g., `sms:to_send`)
 - `em` - email, used for email attempts with redis (e.g., `email:to_send`)
+- `ef` - [email_failures](db/email_failures.md)
+- `se` - [suppressed_emails](db/suppressed_emails.md)

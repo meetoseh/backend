@@ -40,7 +40,12 @@ async def handle_bounce(itgs: Itgs, body_json: dict):
         EmailEvent(
             message_id=body_json["mail"]["messageId"],
             notification=EmailBounceNotification(
-                notification_type="Bounce", reason=reason
+                notification_type="Bounce",
+                reason=reason,
+                destination=body_json["mail"]["destination"],
+                bounced_recipients=[
+                    r["emailAddress"] for r in body_json["bounce"]["bouncedRecipients"]
+                ],
             ),
             received_at=time.time(),
         ),

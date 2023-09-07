@@ -621,6 +621,7 @@ the keys that we use in redis
   - `aud ("send")`: the value `send`, used to disambiguate within the failure callback
   - `uid (str)`: the unique identifier assigned to this email attempt, with uid prefix `em`
   - `email (str)`: the recipient's email address
+  - `subject (str)`: the subject line of the email
   - `template (str)`: the slug of the email template on `email-templates` to use
   - `template_parameters (dict[str, any])`: an object containing the email template parameters
   - `initially_queued_at (float)`: unix timestamp when this email attempt was first added to
@@ -659,6 +660,7 @@ the keys that we use in redis
   - `uid (str)`: the unique identifier assigned to this email attempt, with uid prefix `em`
   - `message_id (str)`: the id assigned by AWS, same as in the key
   - `email (str)`: the recipient's email address
+  - `subject (str)`: the subject line to use
   - `template (str)`: the slug of the email template on `email-templates` to use
   - `template_parameters (dict[str, any])`: an object containing the email template parameters
   - `send_initially_queued_at (float)`: unix timestamp when this email attempt was first added to
@@ -1206,7 +1208,12 @@ rather than external functionality.
     or amazon ses
   - `failed_transiently`: how many had a transient error from either email-templates or
     amazon ses
-  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, `signal`, or
+    `credentials`. `credentials` is used when we receive a `NoCredentialsError`
+    from the boto3 client, which happens when there's an issue contacting the
+    IMDS credentials provider. This is not an infrequent issue as maintenance
+    usually leads to short (<1 minute) outages, which must be handled gracefully
+    https://docs.aws.amazon.com/sdkref/latest/guide/feature-imds-credentials.html
 
 - `stats:email_send:daily:{unix_date}` goes to a hash where the values are numbers
   describing the count for the given date described as a unix date number, and the

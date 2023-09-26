@@ -87,7 +87,6 @@ route = read_daily_stats.create_daily_stats_route(
             "queued",
             "attempted",
             "templated",
-            "accepted",
             "retried",
             "abandoned",
         ],

@@ -51,23 +51,39 @@ async def update_timezone(
         conn = await itgs.conn()
         cursor = conn.cursor()
 
-        await cursor.execute(
-            """
-            UPDATE user_notification_settings
-            SET
-                timezone = ?,
-                timezone_technique = ?
-            WHERE
-                EXISTS (
-                    SELECT 1 FROM users
-                    WHERE users.id = user_notification_settings.user_id
-                        AND users.sub = ?
-                )
-            """,
+        timezone_technique = convert_timezone_technique_slug_to_db(
+            args.timezone_technique
+        )
+
+        await cursor.executemany3(
             (
-                args.timezone,
-                convert_timezone_technique_slug_to_db(args.timezone_technique),
-                auth_result.result.sub,
+                (
+                    "UPDATE users SET timezone = ?, timezone_technique = ? WHERE sub = ?",
+                    (
+                        args.timezone,
+                        timezone_technique,
+                        auth_result.result.sub,
+                    ),
+                ),
+                (
+                    """
+                    UPDATE user_notification_settings
+                    SET
+                        timezone = ?,
+                        timezone_technique = ?
+                    WHERE
+                        EXISTS (
+                            SELECT 1 FROM users
+                            WHERE users.id = user_notification_settings.user_id
+                                AND users.sub = ?
+                        )
+                    """,
+                    (
+                        args.timezone,
+                        timezone_technique,
+                        auth_result.result.sub,
+                    ),
+                ),
             ),
         )
 

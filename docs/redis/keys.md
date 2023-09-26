@@ -729,6 +729,292 @@ the keys that we use in redis
   - `received_at` is when the notification was received by us in seconds
     since the unix epoch
 
+### Touches namespace
+
+Touches are a layer of abstraction above the individual channels
+(sms/email/push) which bundle related messages (e.g., an email or sms which both
+serve the same purpose). This bundle is referred to as a touch point, and the
+individual sms/email/push is referred to as a touch.
+
+Touches use the retry logic within the channel, and they all use the same retry
+strategy. Hence the failure callbacks on touches do not need to consider retries.
+They are generally used for persisting or deleting related resources, see e.g.,
+`user_touch_links` within the database.
+
+- `touch:to_send` goes to a list (inserted on the right, removed from the left)
+  where each item is a json object with the following keys:
+
+  - `aud ("send")`: reserved for future use
+  - `uid (str)`: the unique identifier we assigned to this touch, uses the
+    [uid prefix](../uid_prefixes.md) `tch`
+  - `user_sub (str)`: the sub of the user to contact
+  - `touch_point_event_slug (str)`: the event slug of the touch point
+    that we want to fire, e.g., `daily_reminder`
+  - `channel ("push", "sms", or "email")`: the channel to use to contact the
+    user, if we can find a way to do so (e.g., for "push" we need a push token
+    for that user or the touch will fail permanently with "unreachable")
+  - `event_parameters (dict)`: the parameters for the event, which depend on
+    the event.
+  - `success_callback (dict)`: the job callback (name, kwargs) to call as soon
+    as any selected destination for this touch succeeds, one time. For example,
+    if 3 destinations are selected, and in order the first fails, the second
+    succeeds, and the third fails, the success callback is called as soon as
+    the second succeeds and the failure callback is not invoked.
+  - `failure_callback (dict)`: the job callback (name, kwargs) to call once all
+    destinations have not succeeded. This is called if the target is unreachable,
+    e.g., no destinations are selected, or we found destinations but all attempts
+    have either been abandoned or failed permanently.
+  - `queued_at (float)`: when this was added to the send queue in seconds since
+    the unix epoch
+
+- `touch:send_purgatory` goes to a list (inserted on the right, removed from the left)
+  just like `touch:to_send` but only containing the touches we are working on dispatching
+  to the appropriate subqueue right now. This work is mostly finding the right address(es)
+  for the message, e.g., the phone number for sms or the push token for push, from the
+  database. This operation can be effectively batched, so this purgatory may contain
+  a reasonable number of items (hundreds, but probably not thousands).
+
+- `touch:send_job:lock` goes to a basic redis lock key to ensure only one touch send job
+  is running at a time
+
+- `touch:to_log` goes to a list (inserted on the right, removed from the left) containing
+  json objects which correspond to rows we want to upsert in `user_touch_point_states` or
+  rows we want to insert into `user_touches`, so that we can batch the updates to the
+  database. This alleviates the write load from touches at the cost of some consistency
+  if you tried to send multiple touches for the same event and channel close together.
+  Entries are in the form:
+
+  ```json
+  {
+    "table": "user_touch_point_states",
+    "action": "update",
+    "expected_version": 1,
+    "fields": {},
+    "queued_at": 0
+  }
+  ```
+
+  or
+
+  ```json
+  {
+    "table": "user_push_tokens",
+    "action": "update",
+    "fields": {
+      "token": "string",
+      "last_confirmed_at": 0
+    },
+    "queued_at": 0
+  }
+  ```
+
+  or
+
+  ```json
+  {
+    "table": "string",
+    "action": "insert",
+    "fields": {},
+    "queued_at": 0
+  }
+  ```
+
+  where they contain enough information that we can report integrity
+  errors in `user_touch_point_states` (mostly for peace of mind as
+  the touch log job should be the only job touching that table). The
+  tables allowed for inserts are `user_touches`, `user_touch_debug_log`,
+  and `user_touch_point_states`
+
+- `touch:log_purgatory` goes to a list (inserted on the right, removed from the left)
+  just like `touch:to_send` but only containing the touches we're working on right now.
+  This operation can be effectively batched, so this purgatory may contain a reasonable
+  number of items (hundreds, but probably not thousands).
+
+- `touch:log_job:lock` goes to a basic redis lock key to ensure only one touch log job is
+  running at a time
+
+- `touch:pending` goes to a sorted set where the keys are uids of touches and the
+  scores are when the touch was first found reachable by the send job. each
+  entry has a corresponding `touch:pending:{uid}` and
+  `touch:pending:{uid}:remaining`. This is used to facilitate calling the
+  failure callback eventually on touches even if something goes wrong with the
+  underlying subsystem that causes the appropriate callbacks not to be invoked.
+  Touches without either a success or failure callback are never added to this
+  set.
+
+- `touch:pending:{uid}` where the uid is the uid of the touch (in `touch:pending`)
+  whose callbacks have not been invoked yet, and the values are hashes where the
+  keys are `success_callback` and `failure_callback`, both of which are optional
+  but at least one of which must be provided.
+
+- `touch:pending:{uid}:remaining` where the uid is the uid of the touch
+  (in `touch:pending`) and the values are sets where each item is a uid
+  of an sms, email, or push notification that we are still waiting to either
+  abandon, fail permanently, or succeed.
+
+## Touch Links namespace
+
+This refers to trackable links / user touch links, which are unique codes that
+are sent to users that can be exchanged for what action they should perform
+(e.g., open the homepage or subscribe). Exchanging them in this way also results
+in us tracking that the link was clicked.
+
+These links can be created synchronously, such that they can be used immediately,
+and then persisted to the database later. Typically the flow is create links,
+create touch (where the links are part of the event parameters), when the touch
+reaches any of its destinations successfully (the success callback), persist the
+link. If the touch doesn't reach any destination (the failure callback), abandon
+the link.
+
+- `touch_links:buffer` goes to a sorted set where the scores are timestamps when
+  the the link was added to the buffer and the values are the codes for the links.
+  For each value within this sorted set there is a related `touch_links:buffer:{code}`
+  hash key with more information. There may also be a `touch_links:buffer:clicks:{code}`
+  redis list containing clicks on those links.
+
+- `touch_links:buffer:{code}` where the code is a value in `touch_links:buffer` and
+  refers to the unique code sent to the user goes to a hash with the following keys:
+
+  - `uid`: the unique identifier assigned to this touch link with
+    [uid prefix](../uid_prefixes.md) `utl`. The touch link will not yet
+    be in the database.
+  - `code`: the unique code sent to the user. usually embedded in e.g. a link
+  - `touch_uid`: the uid of the user touch that the code was sent in. This user
+    touch might not be persisted yet, and won't be persisted unless delivery
+    succeeds
+  - `page_identifier`: an enum-value for where the user should be taken/
+    what action the link should perform. This should be enough to get a broad sense
+    of what link they clicked, so multiple identifiers might result in the same
+    page technically.
+  - `page_extra`: json-encoded keyword arguments dictionary for the action. the
+    exact shape depends on the page identifier; see
+    [user_touch_links](../db/user_touch_links.md) for details
+  - `preview_identifier`: an enum-value for how to construct the open-graph
+    meta tags in the html of a link using this code. having custom open graph
+    tags for links greatly improves previews on chat-like channels (e.g., SMS)
+  - `preview_extra`: json-encoded keyword arguments dictionary for the preview;
+    the exact shape depends on the preview identifier, see
+    [user_touch_links](../db/user_touch_links.md) for details
+  - `created_at`: when this was added to the buffer sorted set; always matches
+    the score in `touch_links:buffer`
+
+- `touch_links:buffer:clicks:{code}` where the code is a value in `touch_links:buffer`
+  and refers to the unique code sent to the user goes to a list where each entry is
+  a json object with the following keys
+
+  - `uid`: the click uid with [uid prefix](../uid_prefixes.md) `utlc`. used in the
+    related lookup by uid for facilitating parent/child lookups
+  - `clicked_at`: when the click occurred in seconds since the epoch
+  - `visitor_uid`: the visitor who clicked the link, if known, otherwise omitted or
+    the empty string
+  - `user_sub`: the sub of the user who clicked the link, if known, otherwise omitted
+    or the empty string
+  - `track_type`: either `on_click` or `post_login` based on when the track call
+    occurred
+  - `parent_uid`: specified iff the `track_type` is `post_login`; the uid of the `on_click`
+    that was first sent out before the user logged in
+
+- `touch_links:buffer:on_clicks_by_uid:{uid}` goes to a hash with the following keys:
+
+  - `code`: the code for the click
+  - `has_child`: true (`b"1"`) iff the track_type is `on_click` and a `post_login` has already
+    been created, otherwise false (`b"0"`)
+
+- `touch_links:to_persist` goes to a sorted set where the scores are timestamps
+  when the link should be persisted and the values are codes of touch links within
+  `touch_links:buffer`.
+
+- `touch_links:persist_purgatory` goes to a sorted set just like `touch_links:to_persist`
+  but containing just the touch links that the persist link job is currently working on
+
+- `touch_links:persist_job:lock` goes to a basic redis lock that ensures only one
+  persist link job is running at a time
+
+- `touch_links:leaked_link_detection_job:lock` goes to a basic redis lock that ensures
+  only one leaked link detection job is running at a time
+
+- `touch_links:delayed_clicks` goes to a sorted set where the values are click uids and
+  the scores are the unix time when the delayed link clicks persist job should next try
+  to persist that click. Each value in this sorted set has a corresponding
+  `touch_links:delayed_clicks:{uid}` hash and, if the click is a `post_login` track type, a
+  `touch_links:delayed_clicks:childof:{uid}`
+
+- `touch_links:delayed_clicks:{uid}` where the uid is the the uid of a click in
+  the delayed clicks sorted set goes to a hash with the following keys:
+
+  - `uid`: the uid of the click, matching the key
+  - `link_code`: the code for the link this click was for
+  - `track_type`: one of `on_click`, `post_login`
+  - `parent_uid`: iff the track_type is `post_login`, the uid of the `on_click`
+    that this is augmenting
+  - `user_sub`: if the user that clicked is known, the sub of that user
+  - `visitor_uid`: if the visitor that clicked is known, the uid of that visitor
+  - `clicked_at`: when the click occurred in unix seconds since the unix epoch
+
+- `touch_links:delayed_clicks:childof:{uid}` where the uid is the uid of a click
+  which is either in the `user_touch_link_clicks` table, an entry in the list
+  `touch_links:buffer:clicks:{code}` for the code the click has, or an entry
+  in `touch_links:delayed_clicks` sorted set goes to a string containing the uid
+  of the child click in the `touch_links:delayed_clicks` sorted set
+
+- `touch_links:delayed_clicks_purgatory` goes to a sorted set just like
+  `touch_links:delayed_clicks` but only containing the clicks that the delayed
+  click persist job is working on right now.
+
+- `touch_links:delayed_click_persist_job:lock` goes to a basic redis lock for ensuring
+  only one delayed click persist job is running at a time
+
+## Daily Reminders namespace
+
+Used for dispatching one touch every day per row in `user_daily_reminders`. Each row
+has a start and end time (inclusive/inclusive) where the message can be sent. To
+materialize this list we iterate by ascending start time, selecting a time for the
+row, and storing that in a dispatch queue.
+
+Since each user has a timezone the start_time has to be interpreted from
+a different base offset. To handle this, we iterate over each timezone separately.
+
+- `daily_reminders:progress:{tz}:{unix_date}` goes to a hash with the following
+  keys, or an empty set if we have not materialized any records for that timezone
+  and date:
+
+  - `start_time`: the start time of the last row we materialized
+  - `uid`: the uid of the last row we materialized
+  - `finished`: true if we have reached the end of this list, false
+    otherwise.
+
+  the timezone is specified with an IANA zone identifier (e.g., America/Los_Angeles),
+  so an example key is `daily_reminders:progress:America/Los_Angeles:19622`
+
+- `daily_reminders:progress:timezones:{unix_date}` goes to a sorted set where the
+  values are timezones for the given unix date and the scores are the insertion
+  order (for convenience of iteration). We initialize the timezones only once
+  per day, so if a new user joins with a different timezone they won't receive a
+  message until the next day.
+
+- `daily_reminders:progress:earliest` goes to the earliest unix date that we are still
+  iterating over.
+
+- `daily_reminders:assign_time_job_lock` goes to a basic redis lock to ensure only
+  one Assign Time job is running at a time. This job starts at the earliest date,
+  proceeding until the next unix date, within each one iterating over the timezones,
+  within each one iterating over the relevant rows in `user_daily_reminders`, to insert
+  into the daily reminder queued sorted set
+
+- `daily_reminders:queued` goes to a sorted set where the values are json-encoded
+  objects with keys `uid` and `unix_date` (keys sorted) and the uid is for rows within
+  `user_daily_reminders` and the unix date is the unix date the notification is
+  for, and the scores are the time (as unix seconds from the unix epoch) when
+  the corresponding daily reminder should be sent
+
+- `daily_reminders:send_purgatory` goes to a sorted set just like
+  `daily_reminders:queued` containing the reminders the send job is working on
+  right now.
+
+- `daily_reminders:send_job_lock` goes to a basic redis lock to ensure only one
+  daily reminder Send job is running a time. This job pulls overdue messages from
+  the queued sorted set and sends them as touches.
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -1327,6 +1613,378 @@ rather than external functionality.
     set too long. this implies we missed a webhook.
   - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
 
+- `stats:touch_send:send_job` goes to a hash describing the most recent send job run, with
+  `started_at` being updated at the start of the job and the remaining fields updated
+  atomically at the end of the job:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `attempted`: how many touches we tried to forward to the appropriate subqueue
+  - `touch_points`: how many distinct touch points were fetched this run
+  - `attempted_sms`: of those attempted, how many were for sms
+  - `reachable_sms`: of those sms attempted, how many did we find (at least one) phone number for
+  - `unreachable_sms`: of those sms attempted, how many could we not find a phone number for
+  - `attempted_push`: of those attempted, how many were for push
+  - `reachable_push`: of those push attempted, how many did we find (at least
+    one) expo push token for
+  - `unreachable_push`: of those push attempted, how many could we not find a push token for
+  - `attempted_email`: of those attempted, how many were for email
+  - `reachable_email`: of those email attempted, how many did we find (at least one) email for
+  - `unreachable_email`: of those email attempted, how many could we not find an email for
+  - `stale`: of those attempted, how many have been in the queue so long that we
+    just skipped them to catch up.
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, `backpressure`, or
+    `signal`. we stop for `backpressure` if one of the subqueues gets
+    excessively large. This allows those queueing touches to use `touch:to_send`
+    as a valid backpressure source and ensures we determine the contact address
+    reasonable close to when the actual message is sent: imagine we select the
+    phone number to use, but then add it to the sms send queue with 1M messages
+    waiting; it might not be wise to try that phone number by the time we get
+    around to actually sending the message 12 days later.
+
+- `stats:touch_send:daily:{unix_date}` goes to a hash containing information on touch sends
+  for the given unix date, with the following keys:
+
+  - `queued`: how many touches were added to the to send queue
+  - `attempted`: how many touches did we attempt processing on
+  - `reachable`: of those attempted, how many did we find (at least one) contact address for
+  - `unreachable`: of those attempted, how many could we not find a contact address for
+  - `stale`: of those attempted, how many were too old by the time they reached the front
+    of the queue and were discarded
+
+- `stats:touch_send:daily:{unix_date}:extra:{event}` goes to a hash breaking down the given
+  event within the touch send stats for the same unix date, where the breakdown depends on
+  the key:
+
+  - `attempted` is broken down by `{event}:{channel}`, e.g, `daily_reminder:sms`
+  - `reachable` is broken down by `{event}:{channel}:{count}`, e.g., `daily_reminder:sms:3`
+    means we found 3 phone numbers to contact for the daily reminder event. the count mostly
+    applies to push for e.g., phone/tablet.
+  - `unreachable` is broken down by `{event}:{channel}`
+
+- `stats:touch_send:daily:earliest` goes to the earliest unix date that there may still
+  be touch send stats in redis for
+
+- `stats:touch_log:log_job` goes to a hash describing the most recent touch log
+  job, with `started_at` being updated at the start of the job and the remaining
+  fields updated atomically at the end of the job:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `inserts`: how many rows we tried to insert
+  - `updates`: how many rows we tried to update
+  - `full_batch_inserts`: how many maximum size batches we formed for inserts
+  - `full_batch_updates`: how many maximum size batches we formed for updates
+  - `partial_batch_inserts`: how many partial batches we formed for inserts
+  - `partial_batch_updates`: how many partial batches we formed for updates
+  - `accepted_inserts`: how many rows were successfully inserted
+  - `accepted_updates`: how many rows were successfully updated
+  - `failed_inserts`: how many more rows did we expect to see inserted than
+    were actually inserted?
+  - `failed_updates`: how many more rows did we expect to see updated than were
+    actually updated?
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:touch_stale:detection_job` goes to a hash describing the most recent
+  touch stale detection job, with `started_at` being updated at the start of the
+  job and the remaining fields updated atomically at the end of the job:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `stale`: how many stale entries in `touch:pending` we cleaned up
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:touch_stale:daily:{unix_date}` goes to a hash containing information on missed
+  internal callbacks for the given unix date, with the following keys:
+
+  - `stale`: how many stale callbacks were cleaned up
+
+- `stats:touch_stale:daily:earliest` goes to the earliest unix date that there may still
+  be touch stale stats in redis for
+
+- `stats:touch_links:persist_link_job` goes to a hash describing the most recent
+  touch links (aka trackable links) persist link job, with `started_at` being updated
+  at the start of the job and the remaining fields updated atomically at the end of
+  the job:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `attempted`: how many entries within the persistable buffered link sorted set
+    were removed and atttempted
+  - `lost`: of those attempted, how many were not in the buffered link sorted set
+    and thus could not be processed
+  - `integrity_error`: of those attempted, how many we couldn't persist to the
+    database due to some integrity error, e.g., the touch link already existed
+    or the touch didn't exist. this doesn't count click integrity errors; short
+    of an egregious error, clicks will always succeed if the corresponding
+    touch succeeds (they are inserted in the same transaction)
+  - `persisted` of those attempted, how many did we successfully persist to the
+    database
+  - `persisted_without_clicks`: of those persisted, how many did we persist without
+    any associated clicks. always -1 if there were any integrity errors
+  - `persisted_with_one_click`: of those persisted, how many did we persist with
+    exactly one associated click. always -1 if there were any integrity errors
+  - `persisted_with_multiple_clicks`: of those persisted, how many did we persist
+    with more than one associated click. always -1 if there were any integrity
+    errors
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:touch_links:leaked_link_detection_job` goes to a hash describing the
+  most recent touch links (aka trackable links) leaked link detection job, with
+  `started_at` being updated at the start of the job and the remaining fields
+  updated atomically at the end of the job:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `leaked`: how many leaked entries were detected within the
+    buffered link sorted set, i.e., how many extremely old scores were detected
+    within the buffered link sorted set
+  - `recovered`: of those leaked, how many had their `user_touch` persisted in
+    the database and hence we were able to persist
+  - `abandoned`: of those leaked, how many did not have their `user_touch` persisted
+    in the database and hence we were forced to abandon them
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:touch_links:daily:{unix_date}` goes to a hash describing the flow for
+  user touch links on the given day, with events backdated to when the link
+  was added to the buffered link queue (unless not possible) with the following keys:
+
+  - `created`: how many buffered links were created by adding to the buffered
+    link sorted set
+  - `persist_queue_attempts`: how many buffered links did we attempt to add to
+    the persistable buffered link sorted set. when the attempt succeeds this is
+    timestamped to the time the code was originally added to the buffered link
+    queue, otherwise it's timestamped to the current time
+  - `persist_queue_failed`: of the `persist_queue_attempts`, how many did nothing.
+    always timestamped to the current time
+  - `persists_queued`: of the `persist_queue_attempts`, how many resulted in a new
+    value in the persistable buffered links set. always timestamped to when the
+    code was created
+  - `persisted`: how many links did the persist link job persist to the database
+    within a batch where every row succeeded. always backdated
+  - `persisted_in_failed_batch`: how many links did the persist link job persist
+    to the database, but within a batch that failed. always timestamped to the
+    current time. this distinction is required until https://github.com/rqlite/rqlite/issues/1157
+    is resolved to efficiently determine which rows failed
+  - `persists_failed`: how many links did the persist link job remove from the
+    persistable buffered link sorted set but didn't actually persist. never
+    backdated
+  - `click_attempts`: how many clicks were received
+  - `clicks_buffered`: of the `click_attempts`, how many were added to the buffered
+    link clicks pseudo-set because the code was in the buffered link sorted set
+  - `clicks_direct_to_db`: of the `click_attempts`, how many were stored directly
+    in the database because the corresponding link was already persisted
+  - `clicks_delayed`: of the `click_attempts`, how many were added to the delayed
+    link clicks sorted set because the code was in the purgatory for the to persist
+    job or because there were other clicks for that code delayed
+  - `clicks_failed`: of the `click_attempts`, how many were dropped/ignored
+  - `persisted_clicks`: how many clicks did the persist link job persist to the
+    database while persisting the corresponding link, in a batch that completely
+    succeeded. always backdated
+  - `persisted_clicks_in_failed_batch`: how many clicks did the persist link job
+    persist to the database but within a batch that failed. always timestamped to
+    the current time. this is required until https://github.com/rqlite/rqlite/issues/1157
+    is resolved to efficiently determine which rows failed
+  - `persist_click_failed`: how many clicks did the persist link job fail to
+    persist to the database while persisting the corresponding link. this can
+    only be due to integrity errors and thus no further breakdown is possible
+  - `delayed_clicks_attempted`: how many delayed clicks did the delayed click persist
+    job attempt
+  - `delayed_clicks_persisted`: of the delayed clicks attempted, how many were successfully
+    persisted
+  - `delayed_clicks_delayed`: of the delayed clicks attempted, how many had to be delayed
+    again because they were still in the persist purgatory
+  - `delayed_clicks_failed`: of the delayed clicks attempted, how many could not be persisted
+  - `abandons_attempted`: how many times did we try to abandon a link
+  - `abandoned`: of the abandons attempted, how many successfully removed an
+    entry from the buffered link set
+  - `abandon_failed`: of the abandons attempted, how many failed to remove an entry
+    from the buffered link set
+  - `leaked`: how many times did the leaked link detection job handle
+    a buffered link that was sitting there a long time
+
+- `stats:touch_links:daily:{unix_date}:extra:{event}`
+
+  - `persist_queue_failed`: broken down by `{page identifier}:{reason}`, where reason
+    has one of the following values:
+
+    - `duplicated`: the code was already in the persistable buffered link sorted set
+      (or the persistable buffered link sorted set purgatory)
+    - `dropped`: the code was not in the buffered link sorted set
+
+  - `persists_queued` broken down by page identifier
+
+  - `persisted` is broken down by page identifier
+  - `persists_failed` broken down by reason, where reason is one of:
+
+    - `lost`: the code was not in the buffered link sorted set
+    - `integrity`: the code was in the buffered link sorted set but one of our integrity
+      checks failed when we tried to insert into the database, e.g, the link didn't exist
+      or the touch link already existed.
+
+  - `clicks_buffered` is broken down by
+    `{track type}:{page identifier}:vis={visitor known}:user={user known}`,
+    e.g., `on_click:home:vis=True:user=False`
+
+  - `clicks_direct_to_db` is broken down by
+    `{track type}:{page identifier}:vis={visitor known}:user={user known}`,
+    e.g., `post_login:home:vis=True:user=True`
+
+  - `clicks_delayed` is broken down by
+    `{track type}:{page identifier}:vis={visitor known}:user={user known}`,
+
+  - `clicks_failed` is broken down by:
+
+    - `dne`: the corresponding code wasn't found anywhere
+    - `on_click:{page_identifier}:{source}:too_soon`: the code was found in
+      the source (which is either buffer or db), but another click has been stored
+      too recently. ex: `on_click:home:buffer:too_soon`
+    - `post_login:{page_identifier}:{source}:parent_not_found` the code was found
+      in the source (which is either buffer or db), but the track type was
+      post_login and the parent uid couldn't be found in the source.
+      ex: `on_click:home:db:parent_not_found`.
+    - `post_login:{page_identifier}:{source}:parent_has_child` the code was found
+      in the source (which is either buffer or db), but the track type was post_login
+      and the parent specified already has a child
+
+  - `persisted_clicks` is broken down by `{page_identifier}:{number of clicks}`
+
+  - `delayed_clicks_persisted` is broken down by
+    `{track type}:{page identifier}:vis={visitor known}:user={user known}`,
+
+  - `delayed_clicks_failed` is broken down by reason, where reason is one of:
+
+    - `lost`: the link for the click is nowhere to be found
+    - `duplicate`: there is already a click with that uid in the database
+
+  - `abandoned` is broken down by `{page identifier}:{number of clicks}`, e.g.,
+    `home:0`
+
+  - `abandon_failed` is broken down by:
+
+    - `dne`: the code was not in the buffered link set
+    - `already_persisting`: the code is already in the persistable buffered link set
+      (or the corresponding purgatory)
+
+  - `leaked` is broken down by:
+
+    - `recovered`: the user touch for the link existed and the touch link did
+      not exist, meaning we were able to persist it
+    - `abandoned`: the user touch for the link did not exist and we were forced
+      to abandon the link
+    - `duplicate`: the link itself already existed, so we cleaned it up without
+      doing anything else
+
+- `stats:touch_links:daily:earliest` goes to the earliest unix date that there
+  may still be touch link stats in redis for
+
+- `stats:touch_links:delayed_clicks_persist_job` goes to a hash containing information about
+  the most recent touch delayed clicks persist job information, where `started_at`
+  is updated independently from the rest, where the keys are:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `attempted`: the number of attempts to persist clicks
+  - `persisted`: of those attempted, how many led to actually persisting a click
+  - `delayed`: of those attempted, how many led to adding the click back to the
+    delayed link clicks sorted set because the link for the click was still in the
+    persist purgatory
+  - `lost`: of those attempted, how many were dropped because there was no link
+    with that code anywhere
+  - `duplicate`: of those attempted, how many were dropped because a click with that
+    uid was already in the database
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:daily_reminders:assign_time_job` goes to a hash containing information about
+  the most recent daily reminders assign time job information, where `started_at`
+  is updated independently from the rest, where the keys are:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `start_unix_date`: the unix date that iteration started on
+  - `end_unix_date`: the unix date that iteration ended on
+  - `unique_timezones`: how many unique timezones we handled across all
+    dates.
+  - `pairs`: how many `(unix_date, timezone)` pairs we handled
+  - `queries`: how many queries to `user_daily_reminders` we made
+  - `attempted`: how many rows within `user_daily_reminders` we received
+    from the queries
+  - `overdue`: of those attempted, how many could have been assigned a time
+    before the job start time
+  - `stale`: of those overdue, how many were dropped because their end time
+    was more than a threshold before the job start time
+  - `sms_queued`: how many sms daily reminders we queued for the send job
+  - `push_queued`: how many push daily reminders we queued for the send job
+  - `email_queued`: how many email daily reminders we queued for the send job
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, `backpressure`,
+    or `signal`
+
+- `stats:daily_reminders:send_job` goes to a hash containing information about
+  the most recent daily reminders send job, where `started_at` is updated
+  independently from the rest, where the keys are:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `attempted`: how many values from the queue were processed
+  - `lost`: of those attempted, how many were dropped because they referenced a row
+    in user daily reminders which no longer existed
+  - `stale`: of those attempted, how many were dropped because their score was more
+    than a threshold before the job start time
+  - `links`: how many links we created for the touches we created
+  - `sms`: how many sms touches we created
+  - `push`: how many push touches we created
+  - `email`: how many email touches we created
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, `backpressure`,
+    or `signal`
+
+- `stats:daily_reminders:daily:{unix_date}` goes to a hash containing integers
+  for daily reminders on the given day. Unlike most daily counters, rather than
+  being delineated by America/Los_Angeles timezone, it's the canonical unix date
+  of the notification. This cannot be rotated for three days rather than the normal
+  two. The keys are:
+
+  - `attempted`: how many daily reminder rows were processed by the assign
+    time job
+  - `overdue`: of those attempted, how were processed too late to completely
+    respect the time range. For example, if a user wants to receive a notification
+    between 8AM and 9AM, but we don't check the row until 8:30AM, we can only
+    actually select times between 8:30AM and 9AM
+  - `skipped_assigning_time`: of those overdue, how many did we drop at the
+    assigning time step since we were simply too late. For example, if a
+    user wants to receive notifications between 8AM and 9AM but the job
+    doesn't process the row until 5PM, the daily reminder is dropped rather
+    than sending it so far out of the requested window. This also facilitates
+    recovery from backpressure.
+  - `time_assigned`: how many daily reminders got a time assigned
+  - `sends_attempted`: of those with a time assigned, how many did the send job
+    process
+  - `sends_lost`: of those sends attempted, how many referenced a row in user daily
+    reminders which didn't exist
+  - `skipped_sending`: of those sends attempted, how many did the send job drop
+    because it was simply too old. for example, if we assign a notification to
+    be sent at 8AM but the send job doesn't process it until 5PM, it's dropped
+    to avoid sending it so far out of the requested window. This also facilitates
+    recovery from backpressure.
+  - `links`: how many links were created for touches by the send job
+  - `sent`: how many touches were created by the send job
+
+- `stats:daily_reminders:daily:{unix_date}:extra:{event}` goes to a hash breaking
+  down some of the counters in daily reminders, where the keys depends on the event
+  (where the event is a key in `stats:daily_reminders:daily:{unix_date}`):
+
+  - `skipped_assigning_time` broken down by channel (sms/email/push)
+  - `time_assigned` broken down by channel (sms/email/push)
+  - `skipped_sending` broken down by channel (sms/email/push)
+  - `sent` broken down by channel (sms/email/push)
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -1481,6 +2139,26 @@ These are regular keys used by the personalization module
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.
 
 - `ps:stats:email_send:daily` is used to optimistically send compressed daily email send
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:touch_send:daily` is used to optimistically send compressed daily touch send
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:touch_stale:daily` is used to optimistically send compressed daily touch stale
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:touch_links:daily` is used to optimistically send compressed daily touch link
+  statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
+  in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
+  of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:daily_reminders:daily` is used to optimistically send compressed daily reminder
   statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
   in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.

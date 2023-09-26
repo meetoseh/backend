@@ -149,10 +149,11 @@ class ReadDailyStatsRouteArgs:
     """
 
     partial_response_model: Type[BaseModel]
-    """The model which can be passed todays and yesterdays data and produces
-    the response model for the partial data endpoint, i.e., the endpoint the
-    frontend uses to get the data that may not have been rotated to the database
-    yet as it might still be changing. For example,
+    """The model which can be passed todays (and previous days, if the fields
+    are specified with the correct names) and produces the response model for
+    the partial data endpoint, i.e., the endpoint the frontend uses to get the
+    data that may not have been rotated to the database yet as it might still be
+    changing. For example,
 
     ```py
     class MyPartialResponseItem(BaseModel):
@@ -162,7 +163,10 @@ class ReadDailyStatsRouteArgs:
     
     class MyPartialResponse(BaseModel):
         today: MyPartialResponseItem = Field()
+        # optional, fetched and set from redis if this field exists
         yesterday: MyPartialResponseItem = Field()
+        # optional, fetched and set from redis if this field exists
+        two_days_ago: MyPartialResponseItem = Field()
     ```
 
     The item model default values must be set, i.e., each field should be optional
@@ -269,11 +273,76 @@ def create_daily_stats_route(args: ReadDailyStatsRouteArgs):
     else:
         assert args.compressed_response_local_cache_key is None
 
-    # Other consistency things
+    # Other consistency things to try to ensure errors occur at start-up rather
+    # than when the route is actually used
     if args.table_name is not None:
         assert args.response_model is not None
+
+        # Verifying the model make sense
+        remaining_model_fields = dict(args.response_model.__fields__)
+        assert "labels" in remaining_model_fields
+        assert remaining_model_fields["labels"].outer_type_.__origin__ is list
+        assert remaining_model_fields["labels"].type_ is str
+        remaining_model_fields.pop("labels")
+
+        for simple_field_name in args.simple_fields:
+            assert simple_field_name in remaining_model_fields, simple_field_name
+            # it is not safe to compare types directly (List[int] == List[int]) depending on version and compiler
+            assert (
+                remaining_model_fields[simple_field_name].outer_type_.__origin__ is list
+            ), simple_field_name
+            assert (
+                remaining_model_fields[simple_field_name].type_ is int
+            ), simple_field_name
+            remaining_model_fields.pop(simple_field_name)
+
+        for fancy_field_name in args.fancy_fields:
+            assert fancy_field_name in remaining_model_fields, fancy_field_name
+            assert (
+                remaining_model_fields[fancy_field_name].outer_type_.__origin__ is list
+            ), fancy_field_name
+            assert (
+                remaining_model_fields[fancy_field_name].type_ is int
+            ), fancy_field_name
+            remaining_model_fields.pop(fancy_field_name)
+
+            breakdown_name = f"{fancy_field_name}_breakdown"
+            assert breakdown_name in remaining_model_fields, breakdown_name
+            assert (
+                remaining_model_fields[breakdown_name].outer_type_.__origin__ is dict
+            ), breakdown_name
+            assert (
+                remaining_model_fields[breakdown_name].outer_type_.__args__[0] is str
+            ), breakdown_name
+            assert (
+                remaining_model_fields[breakdown_name].type_.__origin__ is list
+            ), breakdown_name
+            assert (
+                remaining_model_fields[breakdown_name].type_.__args__[0] is int
+            ), breakdown_name
+            remaining_model_fields.pop(breakdown_name)
+
+        assert not remaining_model_fields, remaining_model_fields
     else:
         assert args.response_model is None
+
+    remaining_model_fields = dict(args.partial_response_model.__fields__)
+    assert "today" in remaining_model_fields
+    if "two_days_ago" in remaining_model_fields:
+        assert "yesterday" in remaining_model_fields
+
+    for partial_key in ["today", "yesterday", "two_days_ago"]:
+        if partial_key in remaining_model_fields:
+            assert remaining_model_fields[partial_key].required is False, partial_key
+            try:
+                _verify_partial_model_item(
+                    args, remaining_model_fields[partial_key].type_
+                )
+            except:
+                raise AssertionError(f"{partial_key=}")
+            remaining_model_fields.pop(partial_key)
+
+    assert not remaining_model_fields, remaining_model_fields
 
     historical_handler, background_task = _create_historical(args)
     partial_handler = _create_partial(args)
@@ -504,6 +573,12 @@ def _create_partial(
     read_from_db_sql: Optional[str] = None
     tz = pytz.timezone("America/Los_Angeles")
 
+    num_days = 1
+    if "yesterday" in args.partial_response_model.__fields__:
+        num_days += 1
+    if "two_days_ago" in args.partial_response_model.__fields__:
+        num_days += 1
+
     async def read_from_db(
         itgs: Itgs, *, unix_date: int
     ) -> Dict[str, Union[int, Dict[str, int]]]:
@@ -592,13 +667,11 @@ def _create_partial(
                 return auth_result.error_response
 
             today_unix_date = unix_dates.unix_date_today(tz=tz)
-            yesterday_unix_date = today_unix_date - 1
+            dates = [today_unix_date - i for i in range(num_days)]
 
-            response_obj_items = await read_from_redis(
-                itgs, unix_dates=[yesterday_unix_date, today_unix_date]
-            )
+            response_obj_items = await read_from_redis(itgs, unix_dates=dates)
             for idx, (unix_date, response_obj_item) in enumerate(
-                zip([yesterday_unix_date, today_unix_date], response_obj_items)
+                zip(dates, response_obj_items)
             ):
                 if response_obj_item is None:
                     response_obj_items[idx] = await read_from_db(
@@ -606,9 +679,12 @@ def _create_partial(
                     )
 
             response_obj = {
-                "yesterday": response_obj_items[0],
-                "today": response_obj_items[1],
+                "today": response_obj_items[0],
             }
+            if num_days > 1:
+                response_obj["yesterday"] = response_obj_items[1]
+            if num_days > 2:
+                response_obj["two_days_ago"] = response_obj_items[2]
 
             response_content = args.partial_response_model.parse_obj(response_obj)
             return Response(
@@ -693,3 +769,33 @@ def _create_read_partial_from_db_sql(args: ReadDailyStatsRouteArgs) -> str:
     builder.write(args.table_name)
     builder.write('" WHERE retrieved_for = ?')
     return builder.getvalue()
+
+
+def _verify_partial_model_item(
+    args: ReadDailyStatsRouteArgs, itm: Type[BaseModel]
+) -> None:
+    remaining_fields = dict(itm.__fields__)
+    for simple_field_name in args.simple_fields:
+        assert simple_field_name in remaining_fields, simple_field_name
+        assert remaining_fields[simple_field_name].type_ is int, simple_field_name
+        remaining_fields.pop(simple_field_name)
+
+    for fancy_field_name in args.fancy_fields:
+        assert fancy_field_name in remaining_fields, fancy_field_name
+        assert remaining_fields[fancy_field_name].type_ is int, fancy_field_name
+        assert remaining_fields[fancy_field_name].default == 0
+        remaining_fields.pop(fancy_field_name)
+
+        breakdown_name = f"{fancy_field_name}_breakdown"
+        assert breakdown_name in remaining_fields, breakdown_name
+        assert (
+            remaining_fields[breakdown_name].outer_type_.__origin__ is dict
+        ), breakdown_name
+        assert (
+            remaining_fields[breakdown_name].outer_type_.__args__[0] is str
+        ), breakdown_name
+        assert remaining_fields[breakdown_name].type_ is int, breakdown_name
+        assert remaining_fields[breakdown_name].default_factory is dict
+        remaining_fields.pop(breakdown_name)
+
+    assert not remaining_fields, remaining_fields

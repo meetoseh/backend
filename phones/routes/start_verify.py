@@ -181,36 +181,48 @@ async def start_verify(
             )
 
         uid = "oseh_pv_" + secrets.token_urlsafe(16)
+        timezone_technique = convert_timezone_technique_slug_to_db(
+            args.timezone_technique
+        )
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
 
-        await cursor.execute(
-            """
-            INSERT INTO phone_verifications (
-                uid, sid, user_id, phone_number, status, started_at, verification_attempts,
-                verified_at
-            )
-            SELECT
-                ?, ?, users.id, ?, ?, ?, 0, NULL
-            FROM users
-            WHERE users.sub = ?
-            ON CONFLICT (sid) DO NOTHING
-            """,
+        await cursor.executemany3(
             (
-                uid,
-                verification.sid,
-                args.phone_number,
-                verification.status,
-                time.time(),
-                auth_result.result.sub,
+                (
+                    """
+                    INSERT INTO phone_verifications (
+                        uid, sid, user_id, phone_number, status, started_at, verification_attempts,
+                        verified_at
+                    )
+                    SELECT
+                        ?, ?, users.id, ?, ?, ?, 0, NULL
+                    FROM users
+                    WHERE users.sub = ?
+                    ON CONFLICT (sid) DO NOTHING
+                    """,
+                    (
+                        uid,
+                        verification.sid,
+                        args.phone_number,
+                        verification.status,
+                        time.time(),
+                        auth_result.result.sub,
+                    ),
+                ),
+                (
+                    "UPDATE users SET timezone = ?, timezone_technique = ? WHERE sub = ?",
+                    (
+                        args.timezone,
+                        timezone_technique,
+                        auth_result.result.sub,
+                    ),
+                ),
             ),
         )
 
         if args.receive_notifications:
             new_uns_uid = f"oseh_uns_{secrets.token_urlsafe(16)}"
-            timezone_technique = convert_timezone_technique_slug_to_db(
-                args.timezone_technique
-            )
             await cursor.execute(
                 """
                 INSERT INTO user_notification_settings (

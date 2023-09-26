@@ -9,6 +9,9 @@ klaviyo profile a user does not receive notifications regardless of
 this table (pending removal and replacement with the new notification
 system which uses Twilio+Amazon SES+Expo Push)
 
+DEPRECATION: This table is to be removed pending the touch point flow
+in favor of more specific tables, like `user_daily_reminders`
+
 ## Fields
 
 - `id (integer primary key)`: The primary internal row identifier

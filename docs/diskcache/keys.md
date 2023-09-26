@@ -327,7 +327,23 @@ the keys we store locally on backend instances via diskcache
 
 - `daily_email_send:{start_unix_date}:{end_unix_date}` goes to a string containing
   the serialized daily email send stats for the given date range (incl -> excl)
-  see also: [email_event_stats](../../admin/email/routes/email_event_stats.py)
+  see also: [email_send_stats](../../admin/email/routes/email_send_stats.py)
+
+- `daily_touch_send:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily touch send stats for the given date range (incl -> excl)
+  see also: [touch_send_stats](../../admin/touch/routes/touch_send_stats.py)
+
+- `daily_touch_stale:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily touch stale stats for the given date range (incl -> excl)
+  see also: [touch_stale_stats](../../admin/touch/routes/touch_stale_stats.py)
+
+- `daily_touch_links:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily touch link stats for the given date range (incl -> excl)
+  see also: [touch_link_stats](../../admin/touch/routes/touch_link_stats.py)
+
+- `daily_reminders:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily reminder stats for the given date range (incl -> excl)
+  see also: [daily_reminder_stats](../../admin/daily_reminders/routes/daily_reminder_stats.py)
 
 ## Personalization
 

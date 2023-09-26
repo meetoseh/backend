@@ -151,6 +151,14 @@ async def update_notification_time(
                     args.channel,
                 ),
             ),
+            (
+                "UPDATE users SET timezone = ?, timezone_technique = ? WHERE sub = ?",
+                (
+                    args.timezone,
+                    timezone_technique,
+                    auth_result.result.sub,
+                ),
+            ),
         )
 
         if response[0].rows_affected is not None and response[0].rows_affected > 0:

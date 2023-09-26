@@ -30,6 +30,22 @@ authorization header via the sub claim.
   to determine the users entitlements and make some modifications, such as uploading
   a new apple receipt for the account. The uid prefix is `u_rc`, see
   [uid_prefixes](../uid_prefixes.md).
+- `timezone (text null)`: the users timezone, as an IANA timezone
+  (e.g., `America/Los_Angeles`)
+- `timezone_technique (text null)`: A hint for how we decided which
+  timezone to use for the user. A json object with one of the following
+  shapes:
+
+  - `{"style": "migration"}` - We assigned this timezone during the migration
+    where we added timezones, setting it to America/Los_Angeles
+  - `{"style": "browser"}` - Used the system default timezone on their browser
+  - `{"style": "app", "guessed": false}` - Used the system default timezone on
+    their phone, i.e., the first non-null timeZone via
+    [getCalendars](https://docs.expo.dev/versions/latest/sdk/localization/#localizationgetcalendars).
+    For now the app just assumes "America/Los_Angeles" if it cannot get a timezone,
+    as timezones are supported by all devices (AFAIK). If it did this, then the
+    `guessed` value is true. Otherwise, it is false.
+
 - `created_at (real not null)`: when this record was created in seconds since
   the unix epoch
 
@@ -47,6 +63,8 @@ CREATE TABLE users(
     family_name TEXT,
     admin BOOLEAN NOT NULL,
     revenue_cat_id TEXT UNIQUE NOT NULL,
+    timezone TEXT NULL,
+    timezone_technique TEXT NULL,
     created_at REAL NOT NULL
 );
 

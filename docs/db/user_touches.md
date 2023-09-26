@@ -12,7 +12,7 @@ See Also: [user_touch_debug_log](./user_touch_debug_log.md)
 
 - `id (integer primary key)`: Internal row identifier
 - `uid (text unique not null)`: Primary stable row identifier. Uses the
-  [uid prefix](../uid_prefixes.md) `uto`
+  [uid prefix](../uid_prefixes.md) `tch`
 - `user_id (integer not null references users(id) on delete cascade)`: the user
   we contacted
 - `channel (text not null)`: the channel we used, one of `push`, `sms`, or `email`

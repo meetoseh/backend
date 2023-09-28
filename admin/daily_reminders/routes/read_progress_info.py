@@ -97,7 +97,9 @@ async def read_progress_info(
                     progress_by_timezone[timezone] = ProgressInfoForTimezoneAndDate(
                         start_time=int(progress_raw[0]),
                         uid=progress_raw[1].decode("utf-8"),
-                        finished=bool(int(progress_raw[2])),
+                        finished=bool(int(progress_raw[2]))
+                        if progress_raw[2] is not None
+                        else False,
                     )
 
             progress_by_date_and_timezone[unix_date] = progress_by_timezone

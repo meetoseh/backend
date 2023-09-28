@@ -41,9 +41,17 @@ whenever the code is used
   now this is always the literal value `{}`
 - `preview_identifier (text not null)`: acts an enum for how previews of the link
   should generally look, i.e., the html meta tags like `og:title`.
-  See https://ogp.me/. For now always the value `default`
+  See https://ogp.me/. One of:
+  - `default`: uses standard meta tags from the homepage
+  - `example`: uses custom meta tags to show that we can
+  - `unsubscribe`: switches title and description to indicate unsubscribing
 - `preview_extra (text not null)`: goes to a json object which provides additional
-  information about the preview, where appropriate. For now, always the value `{}`
+  information about the preview. the schema depends on the identifier:
+  - `default`: always `{}`
+  - `example`: always `{}`
+  - `unsubscribe`: `{"list": "string"}` is used in the description to indicate which
+    email list they are unsubscribing from. should be plural, lowercase (e.g.,
+    `"daily reminders"`)
 
 Note: the timestamp is omitted because these are only created in lockstep with
 user touches.

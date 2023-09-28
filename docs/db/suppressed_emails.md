@@ -18,7 +18,9 @@ but it will be double checked before templating in the send job.
 - `uid (text unique not null)`: Primary stable external identifier. Uses the
   [uid prefix](../uid_prefixes.md) `se`
 - `email_address (text unique not null)`: the suppressed email address
-- `reason (text not null)`: one of `Bounce`, `Complaint`, `User`, `Admin`
+- `reason (text not null)`: one of `Bounce`, `Complaint`, `User`, `Admin`. For
+  `User`, sometimes more information can be found by checking the
+  `unsubscribed_emails_log` table.
 - `created_at (real not null)`: when this record was created in seconds since
   the epoch
 

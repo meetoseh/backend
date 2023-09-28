@@ -964,6 +964,17 @@ the link.
 - `touch_links:delayed_click_persist_job:lock` goes to a basic redis lock for ensuring
   only one delayed click persist job is running at a time
 
+- `touch_links:click_ratelimit:codes:{code}` goes to a number indicating how
+  many times we've seen a user click the given code within the current 3-second
+  window. This is used for determining if we should track the click
+
+- `touch_links:click_ratelimit:unauthenticated` goes to a number indicating how
+  many times we've seen an unauthenticated user click any link, used to prevent
+  scanning the key space.
+
+- `touch_links:click_ratelimit:warning` goes to a number indicating how many
+  warnings we've emitted in the last hour related to click ratelimits
+
 ## Daily Reminders namespace
 
 Used for dispatching one touch every day per row in `user_daily_reminders`. Each row

@@ -5,6 +5,7 @@ import users.me.routes.finish_checkout_stripe
 import users.me.routes.like_journey
 import users.me.routes.picture
 import users.me.routes.read_course_journeys
+import users.me.routes.read_daily_reminders
 import users.me.routes.read_entitlements
 import users.me.routes.read_history
 import users.me.routes.read_revenue_cat_id
@@ -17,6 +18,7 @@ import users.me.routes.start_introductory_journey
 import users.me.routes.start_journey_from_history
 import users.me.routes.started_ai_journey
 import users.me.routes.unlike_journey
+import users.me.routes.unsubscribe_daily_reminders
 import users.me.routes.update_name
 import users.me.routes.update_notification_time
 import users.me.routes.update_timezone
@@ -29,6 +31,9 @@ router.include_router(users.me.routes.cancel_subscription.router)
 router.include_router(users.me.routes.delete_account.router)
 router.include_router(users.me.routes.picture.router)
 router.include_router(users.me.routes.read_course_journeys.router)
+router.include_router(
+    users.me.routes.read_daily_reminders.router, tags=["notifications"]
+)
 router.include_router(users.me.routes.read_entitlements.router)
 router.include_router(users.me.routes.read_history.router)
 router.include_router(users.me.routes.read_revenue_cat_id.router)
@@ -43,6 +48,9 @@ router.include_router(users.me.routes.start_introductory_journey.router)
 router.include_router(users.me.routes.start_journey_from_history.router)
 router.include_router(users.me.routes.started_ai_journey.router)
 router.include_router(users.me.routes.unlike_journey.router)
+router.include_router(
+    users.me.routes.unsubscribe_daily_reminders.router, tags=["notifications"]
+)
 router.include_router(users.me.routes.update_name.router)
 router.include_router(users.me.routes.update_notification_time.router)
 router.include_router(users.me.routes.update_timezone.router)

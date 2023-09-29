@@ -66,7 +66,7 @@ async def inbound_message_webhook(request: Request):
                 )
                 return Response(status_code=400)
 
-            if hint_parts[1] != "utf-8":
+            if hint_parts[1] not in ("utf-8", "UTF-8", "utf8", "UTF8"):
                 logger.debug(
                     f"Dropping inbound webhook; wrong content type (d): {content_type=}"
                 )

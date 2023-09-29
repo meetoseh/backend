@@ -38,15 +38,12 @@ async def dev_login(args: DevLoginRequest):
     given_name = args.sub.capitalize()
     family_name = "Smith"
     email = f"{urllib.parse.quote(args.sub)}@oseh.com"
-    picture = (
-        f"https://avatars.dicebear.com/api/bottts/{urllib.parse.quote(args.sub)}.svg"
-    )
+    picture = f"https://api.dicebear.com/7.x/adventurer-neutral/svg?seed={urllib.parse.quote(args.sub)}"
 
     if args.sub == "timothy":
         given_name = "Timothy"
         family_name = "Moore"
         email = "tj@oseh.com"
-        picture = "https://avatars.dicebear.com/api/adventurer/tj-%40-meetoseh.svg"
     elif args.sub == "paul":
         given_name = "Paul"
         family_name = "Javid"

@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from itgs import Itgs
 import aiohttp
+from lib.daily_reminders.registration_stats import (
+    DailyReminderRegistrationStatsPreparer,
+)
 from oauth.models.oauth_state import OauthState
 from oauth.settings import ProviderSettings
 from redis.asyncio import Redis
@@ -14,7 +17,9 @@ import time
 import json
 import asyncio
 import hashlib
+import unix_dates
 import random
+import pytz
 
 
 class InterpretedClaims(BaseModel):
@@ -409,6 +414,7 @@ async def initialize_user_from_info(
         new_user_sub = f"oseh_u_{secrets.token_urlsafe(16)}"
         new_identity_uid = f"oseh_ui_{secrets.token_urlsafe(16)}"
         new_revenue_cat_id = f"oseh_u_rc_{secrets.token_urlsafe(16)}"
+        new_udr_uid = f"oseh_udr_{secrets.token_urlsafe(16)}"
         now = time.time()
         response = await cursor.executemany3(
             (
@@ -461,6 +467,28 @@ async def initialize_user_from_info(
                         new_user_sub,
                     ),
                 ),
+                *(
+                    [
+                        (
+                            """
+                            INSERT INTO user_daily_reminders (
+                                uid, user_id, channel, start_time, end_time, day_of_week_mask, created_at
+                            )
+                            SELECT
+                                ?, users.id, 'email', 21600, 39600, 127, ?
+                            FROM users
+                            WHERE users.sub = ?
+                            """,
+                            (
+                                new_udr_uid,
+                                now,
+                                new_user_sub,
+                            ),
+                        )
+                    ]
+                    if interpreted_claims.email_verified
+                    else []
+                ),
             )
         )
         if response[0].rows_affected is not None and response[0].rows_affected > 0:
@@ -481,6 +509,19 @@ async def initialize_user_from_info(
                     user_sub=new_user_sub,
                     picture_url=interpreted_claims.picture,
                     jwt_iat=interpreted_claims.iat,
+                )
+
+            if interpreted_claims.email_verified:
+                await (
+                    DailyReminderRegistrationStatsPreparer()
+                    .incr_subscribed(
+                        unix_dates.unix_timestamp_to_unix_date(
+                            now, tz=pytz.timezone("America/Los_Angeles")
+                        ),
+                        "email",
+                        "account_created",
+                    )
+                    .store(itgs)
                 )
 
             return UserWithIdentity(

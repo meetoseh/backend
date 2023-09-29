@@ -345,6 +345,11 @@ the keys we store locally on backend instances via diskcache
   the serialized daily reminder stats for the given date range (incl -> excl)
   see also: [daily_reminder_stats](../../admin/daily_reminders/routes/daily_reminder_stats.py)
 
+- `daily_reminder_registrations:{start_unix_date}:{end_unix_date}` goes to a
+  string containing the serialized daily reminder stats for the given date range
+  (incl -> excl) see also:
+  [daily_reminder_registration_stats](../../admin/daily_reminders/routes/daily_reminder_registration_stats.py)
+
 ## Personalization
 
 This contains keys for the personalization subspace

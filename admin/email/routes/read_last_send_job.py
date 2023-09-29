@@ -35,9 +35,9 @@ class ReadLastSendJobResponse(BaseModel):
     failed_transiently: int = Field(
         description="Of those attempted, how many failed in a way that might be fixed when they are retried"
     )
-    stop_reason: Literal["list_exhausted", "time_exhausted", "signal"] = Field(
-        description="Why the job finished, the last time it finished normally"
-    )
+    stop_reason: Literal[
+        "list_exhausted", "time_exhausted", "signal", "credentials"
+    ] = Field(description="Why the job finished, the last time it finished normally")
     in_purgatory: int = Field(
         description="How many emails are in purgatory (i.e, being processed by the send job right now)"
     )

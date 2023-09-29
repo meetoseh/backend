@@ -1,10 +1,12 @@
-import json
 import os
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
 from typing import Literal, Optional
 from error_middleware import handle_error
+from lib.daily_reminders.registration_stats import (
+    DailyReminderRegistrationStatsPreparer,
+)
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from starlette.concurrency import run_in_threadpool
 from auth import auth_id
@@ -14,6 +16,7 @@ import secrets
 import time
 import phonenumbers
 import pytz
+import unix_dates
 from loguru import logger
 
 from users.lib.timezones import (
@@ -247,7 +250,42 @@ async def start_verify(
                     timezone_technique,
                 ),
             )
-            # didn't klaviyo.ensure_user here so we shouldn't have to update notif stats
+
+            new_udr_uid = f"oseh_udr_{secrets.token_urlsafe(16)}"
+            udr_created_at = time.time()
+            response = await cursor.execute(
+                """
+                INSERT INTO user_daily_reminders (
+                    uid, user_id, channel, start_time, end_time, day_of_week_mask, created_at
+                )
+                SELECT
+                    ?, users.id, 'sms', 32400, 39600, 127, ?
+                FROM users 
+                WHERE 
+                    users.sub = ?
+                    AND NOT EXISTS (
+                        SELECT 1 FROM user_daily_reminders AS udr
+                        WHERE udr.user_id = users.id
+                          AND udr.channel = 'sms'
+                    )
+                """,
+                (
+                    new_udr_uid,
+                    udr_created_at,
+                    auth_result.result.sub,
+                ),
+            )
+
+            if response.rows_affected == 1:
+                stats = DailyReminderRegistrationStatsPreparer()
+                stats.incr_subscribed(
+                    unix_dates.unix_timestamp_to_unix_date(
+                        udr_created_at, tz=pytz.timezone("America/Los_Angeles")
+                    ),
+                    "sms",
+                    "phone_verify_start",
+                )
+                await stats.store(itgs)
 
         return Response(
             status_code=201,

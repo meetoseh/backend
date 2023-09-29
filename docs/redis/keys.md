@@ -1996,6 +1996,28 @@ rather than external functionality.
   - `skipped_sending` broken down by channel (sms/email/push)
   - `sent` broken down by channel (sms/email/push)
 
+- `stats:daily_reminders:daily:earliest` goes to the earliest unix date that there
+  may still be daily reminder stats in redis for
+
+- `stats:daily_reminder_registrations:daily:{unix_date}` goes to a hash containing integers
+  for daily reminder registrations on the given day, in America/Los_Angeles, where the
+  keys are:
+
+  - `subscribed`: how many subscriptions to daily reminders were created
+  - `unsubscribed`: how many subscriptions to daily reminders were deleted
+
+- `stats:daily_reminder_registrations:daily:{unix_date}:extra:{event}` goes to a
+  hash breaking down some of the counters in daily reminder registrations,
+  where the keys depends on the event:
+
+  - `subscribed`: broken down by `{channel}:{reason}`, where the reasons are listed
+    in the database documentation for daily_reminder_registration_stats
+  - `unsubscribed`: broken down by `{channel}:{reason}`, where the reasons are listed
+    in the database documentation for daily_reminder_registration_stats
+
+- `stats:daily_reminder_registrations:daily:earliest` goes to the earliest unix
+  date that there may still be daily reminder registration stats in redis for
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -2173,3 +2195,10 @@ These are regular keys used by the personalization module
   statistics. messages are formatted as (uint32, uint32, uint64, blob) where the ints mean,
   in order: `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is `length_bytes`
   of data to write to the corresponding local cache key. All numbers are big-endian encoded.
+
+- `ps:stats:daily_reminder_registrations:daily` is used to optimistically send
+  compressed daily reminder registration statistics. messages are formatted as
+  (uint32, uint32, uint64, blob) where the ints mean, in order:
+  `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
+  `length_bytes` of data to write to the corresponding local cache key. All
+  numbers are big-endian encoded.

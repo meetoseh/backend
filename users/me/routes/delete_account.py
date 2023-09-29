@@ -1,15 +1,19 @@
-import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import List, Literal, Optional
+import pytz
 from auth import auth_id
 from error_middleware import handle_error
+from lib.daily_reminders.registration_stats import (
+    DailyReminderRegistrationStatsPreparer,
+)
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from contextlib import asynccontextmanager
 from starlette.concurrency import run_in_threadpool
 import notifications.push.lib.token_stats
 import users.lib.entitlements
+import unix_dates
 import stripe
 import time
 import os
@@ -258,6 +262,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                                 api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
                             )
 
+            await cleanup_user_daily_reminders(itgs, auth_result.result.sub)
             await cleanup_user_push_tokens(itgs, auth_result.result.sub)
             await cleanup_klaviyo(itgs, auth_result.result.sub)
             await cursor.execute(
@@ -285,6 +290,55 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                 )
 
             return Response(status_code=204)
+
+
+async def cleanup_user_daily_reminders(itgs: Itgs, sub: str) -> None:
+    """Cleans up any daily reminders the user has, in particular this also
+    updates our daily reminder statistics
+
+    Args:
+        itgs (Itgs): the integrations to (re)use
+        sub (str): the sub of the user whose daily reminders will be cleaned
+            up
+    """
+    now = time.time()
+    unix_date = unix_dates.unix_timestamp_to_unix_date(
+        now, tz=pytz.timezone("America/Los_Angeles")
+    )
+    conn = await itgs.conn()
+    cursor = conn.cursor()
+
+    channels = ["sms", "email", "push"]
+
+    response = await cursor.executemany3(
+        tuple(
+            (
+                """
+                DELETE FROM user_daily_reminders
+                WHERE
+                    EXISTS (
+                        SELECT 1 FROM users 
+                        WHERE 
+                            users.id = user_daily_reminders.user_id
+                            AND users.sub=?
+                    )
+                    AND user_daily_reminders.channel = ?
+                """,
+                (sub, channel),
+            )
+            for channel in channels
+        )
+    )
+
+    deleted_by_channel = [
+        res.rows_affected if res.rows_affected is not None else 0 for res in response
+    ]
+
+    if sum(deleted_by_channel) > 0:
+        stats = DailyReminderRegistrationStatsPreparer()
+        for channel, amt in zip(channels, deleted_by_channel):
+            stats.incr_unsubscribed(unix_date, channel, "account_deleted", amt=amt)
+        await stats.store(itgs)
 
 
 async def cleanup_user_push_tokens(itgs: Itgs, sub: str) -> None:

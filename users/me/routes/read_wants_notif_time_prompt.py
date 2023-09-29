@@ -37,6 +37,9 @@ async def read_wants_notif_time_prompt(authorization: Optional[str] = Header(Non
         conn = await itgs.conn()
         cursor = conn.cursor("none")
 
+        # TODO need a replacement for using user_notification_settings here
+        # since it no logner does anything except tracking if they've set a
+        # notification time, which it doesn't do super accurately
         response = await cursor.execute(
             """
             SELECT
@@ -49,35 +52,13 @@ async def read_wants_notif_time_prompt(authorization: Optional[str] = Header(Non
                                 WHERE users.id = user_notification_settings.user_id
                                     AND users.sub = ?
                             )
-                            AND user_notification_settings.channel = 'sms'
-                            AND (
-                                user_notification_settings.preferred_notification_time = 'any'
-                                OR json_extract(user_notification_settings.timezone_technique, '$.style') = 'migration'
-                            )
+                            AND user_notification_settings.preferred_notification_time = 'any'
                     ) 
-                    AND EXISTS (
-                        SELECT 1 FROM phone_verifications
-                        WHERE
-                            EXISTS (
-                                SELECT 1 FROM users
-                                WHERE users.id = phone_verifications.user_id
-                                    AND users.sub = ?
-                            )
-                            AND phone_verifications.status = 'approved'
-                    )
                 ) AS b1
             """,
-            (auth_result.result.sub, auth_result.result.sub),
+            (auth_result.result.sub,),
         )
         wants_notif_prompt: bool = bool(response.results[0][0])
-
-        # this is also a good time to double check klaviyo for users which are migrating,
-        # since this endpoint is primarily for migrating users who were prompted for a phone
-        # number before we asked for their notification time
-        jobs = await itgs.jobs()
-        await jobs.enqueue(
-            "runners.klaviyo.ensure_user", user_sub=auth_result.result.sub
-        )
 
         return Response(
             content=ReadWantsNotifTimePromptResponse(

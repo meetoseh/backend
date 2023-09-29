@@ -3,9 +3,14 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from auth import auth_any
+from lib.daily_reminders.registration_stats import (
+    DailyReminderRegistrationStatsPreparer,
+)
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from loguru import logger
+import unix_dates
+import pytz
 
 
 class UnsubscribeDailyRemindersRequest(BaseModel):
@@ -100,6 +105,14 @@ async def unsubscribe_daily_reminders(
                 },
                 status_code=404,
             )
+
+        stats = DailyReminderRegistrationStatsPreparer()
+        stats.incr_unsubscribed(
+            unix_dates.unix_date_today(tz=pytz.timezone("America/Los_Angeles")),
+            channel,
+            "user",
+        )
+        await stats.store()
 
         try:
             slack = await itgs.slack()

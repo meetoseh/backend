@@ -36,53 +36,75 @@ async def inbound_message_webhook(request: Request):
     """
     async with Itgs() as itgs:
         if "x-twilio-signature" not in request.headers:
+            logger.debug("Dropping inbound webhook; no x-twilio-signature provided")
             return Response(status_code=401)
 
         content_type = request.headers.get("content-type")
         if content_type is None:
+            logger.debug("Dropping inbound webhook; no content-type provided")
             return Response(status_code=400)
 
         content_type_parts = [p.strip() for p in content_type.split(";", 2)]
         if content_type_parts[0] != "application/x-www-form-urlencoded":
+            logger.debug(
+                f"Dropping inbound webhook; wrong content type (a): {content_type=}"
+            )
             return Response(status_code=400)
 
         if len(content_type_parts) not in (1, 2):
+            logger.debug(
+                f"Dropping inbound webhook; wrong content type (b): {content_type=}"
+            )
             return Response(status_code=400)
 
         if len(content_type_parts) == 2:
             hint_parts = [p.strip() for p in content_type_parts[1].split("=", 2)]
 
             if len(hint_parts) != 2 or hint_parts[0] != "charset":
+                logger.debug(
+                    f"Dropping inbound webhook; wrong content type (c): {content_type=}"
+                )
                 return Response(status_code=400)
 
             if hint_parts[1] != "utf-8":
+                logger.debug(
+                    f"Dropping inbound webhook; wrong content type (d): {content_type=}"
+                )
                 return Response(status_code=400)
 
         signature_b64: str = request.headers["x-twilio-signature"]
         try:
             signature: bytes = base64.b64decode(signature_b64)
         except:
+            logger.debug(
+                f"Dropping inbound webhook; failed to interpret signature as base64"
+            )
             return Response(status_code=403)
 
         try:
             body_raw = io.BytesIO()
             async for chunk in request.stream():
                 if body_raw.tell() + len(chunk) > 1024 * 1024:
+                    logger.debug(f"Dropping inbound webhook; body too long")
                     return Response(status_code=413)
                 body_raw.write(chunk)
         except:
+            logger.exception(f"Dropping inbound webhook; error while loading body")
             return Response(status_code=500)
 
         body = body_raw.getvalue()
         if len(body) == 0:
+            logger.debug(f"Dropping inbound webhook; body is empty")
             return Response(status_code=403)
 
         try:
             interpreted_body = urllib.parse.parse_qs(body.decode("utf-8"))
         except:
+            logger.exception(f"Dropping inbound webhook; failed to parse body")
             return Response(status_code=400)
 
         if any(len(v) != 1 for v in interpreted_body.values()):
+            logger.debug(f"Dropping inbound webhook; body contains duplicate keys")
             return Response(status_code=400)
 
         interpreted_body = {k: v[0] for k, v in interpreted_body.items()}
@@ -107,6 +129,9 @@ async def inbound_message_webhook(request: Request):
         expected_signature = digest.digest()
 
         if not hmac.compare_digest(expected_signature, signature):
+            logger.debug(
+                f"Dropping inbound webhook; wrong signature {real_url=} {interpreted_body=} {expected_signature=} {signature=}"
+            )
             return Response(status_code=403)
 
         from_phone = interpreted_body.get("From")

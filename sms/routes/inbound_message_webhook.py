@@ -98,7 +98,9 @@ async def inbound_message_webhook(request: Request):
             return Response(status_code=403)
 
         try:
-            interpreted_body = urllib.parse.parse_qs(body.decode("utf-8"))
+            interpreted_body = urllib.parse.parse_qs(
+                body.decode("utf-8"), keep_blank_values=True
+            )
         except:
             logger.exception(f"Dropping inbound webhook; failed to parse body")
             return Response(status_code=400)

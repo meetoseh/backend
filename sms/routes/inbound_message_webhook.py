@@ -258,7 +258,7 @@ async def try_opt_in(itgs: Itgs, phone: str) -> bool:
     if not response.results:
         return False
 
-    if len(response.results) > 0:
+    if len(response.results) > 1:
         return False
 
     user_sub: str = response.results[0][0]

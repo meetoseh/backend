@@ -5,9 +5,14 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from itgs import Itgs
+from lib.daily_reminders.registration_stats import (
+    DailyReminderRegistrationStatsPreparer,
+)
 from lib.touch.links import click_link
 from models import StandardErrorResponse
 import socket
+import unix_dates
+import pytz
 
 
 router = APIRouter()
@@ -147,4 +152,18 @@ async def unsubscribe_by_email(
             slack = await itgs.slack()
             await slack.send_oseh_bot_message(
                 f"{socket.gethostname()} Suppressed {args.email} (user clicked unsubscribe link and entered email address)"
+            )
+
+        if result[2].rows_affected is not None and result[2].rows_affected > 0:
+            await (
+                DailyReminderRegistrationStatsPreparer()
+                .incr_unsubscribed(
+                    unix_dates.unix_timestamp_to_unix_date(
+                        unsubscribed_at, tz=pytz.timezone("America/Los_Angeles")
+                    ),
+                    "email",
+                    "user",
+                    amt=result[2].rows_affected,
+                )
+                .store(itgs)
             )

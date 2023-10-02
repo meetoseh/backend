@@ -36,6 +36,9 @@ by day
     are also deleted
   - `user`: the user explicitly asked to unsubscribe
   - `sms_stop`: the user sent a STOP message to our messaging service
+  - `unreachable`: there is no longer a way to reach the user on this channel,
+    e.g., a users last push token is reassigned and the registration is
+    for push notifications
 
 ## Schema
 

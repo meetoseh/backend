@@ -421,6 +421,11 @@ def _create_historical(
             ):
                 to_add: Dict[str, int] = json.loads(row[idx + 1])
                 dict_of_lists = breakdown_lists[idx - num_simple_lists]
+
+                for existing_key, arr in dict_of_lists.items():
+                    if existing_key not in to_add:
+                        arr.append(0)
+
                 for key, val in to_add.items():
                     arr = dict_of_lists.get(key)
                     if arr is None:

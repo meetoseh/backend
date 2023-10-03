@@ -259,6 +259,7 @@ async def get_raw_mobile_playlist_from_db(
                   AND content_files.uid = ?
             )
             AND content_file_exports.format = ?
+            AND content_file_exports.bandwidth > 90000
         """,
         (
             uid,

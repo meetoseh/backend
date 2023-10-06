@@ -112,7 +112,7 @@ async def unsubscribe_daily_reminders(
             channel,
             "user",
         )
-        await stats.store()
+        await stats.store(itgs)
 
         try:
             slack = await itgs.slack()

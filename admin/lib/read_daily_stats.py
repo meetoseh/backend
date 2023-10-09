@@ -373,6 +373,7 @@ def _create_historical(
     read_from_source_sql = _create_read_from_source_sql(args)
     num_simple_lists = len(args.simple_fields) + len(args.fancy_fields)
     tz = pytz.timezone("America/Los_Angeles")
+    num_partial_days = _get_implied_number_of_days_from_partial_response(args)
 
     async def read_from_source(
         itgs: Itgs, *, start_unix_date: int, end_unix_date: int
@@ -525,7 +526,7 @@ def _create_historical(
                 return auth_result.error_response
 
             today_unix_date = unix_dates.unix_date_today(tz=tz)
-            end_unix_date = today_unix_date - 1
+            end_unix_date = today_unix_date - num_partial_days + 1
             start_unix_date = end_unix_date - 90
 
             cachable_until = unix_dates.unix_date_to_timestamp(
@@ -578,11 +579,7 @@ def _create_partial(
     read_from_db_sql: Optional[str] = None
     tz = pytz.timezone("America/Los_Angeles")
 
-    num_days = 1
-    if "yesterday" in args.partial_response_model.__fields__:
-        num_days += 1
-    if "two_days_ago" in args.partial_response_model.__fields__:
-        num_days += 1
+    num_days = _get_implied_number_of_days_from_partial_response(args)
 
     async def read_from_db(
         itgs: Itgs, *, unix_date: int
@@ -702,6 +699,17 @@ def _create_partial(
             )
 
     return handler
+
+
+def _get_implied_number_of_days_from_partial_response(
+    args: ReadDailyStatsRouteArgs,
+) -> int:
+    num_days = 1
+    if "yesterday" in args.partial_response_model.__fields__:
+        num_days += 1
+    if "two_days_ago" in args.partial_response_model.__fields__:
+        num_days += 1
+    return num_days
 
 
 def _create_read_from_source_sql(args: ReadDailyStatsRouteArgs) -> str:

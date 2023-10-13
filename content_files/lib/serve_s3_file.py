@@ -75,12 +75,12 @@ async def serve_s3_file(itgs: Itgs, file: ServableS3File) -> Response:
         return resp
 
     if file.uid not in DOWNLOAD_LOCKS:
-        DOWNLOAD_LOCKS[file.uid] = asyncio.Lock()
-
         if len(DOWNLOAD_LOCKS) > 1024:
             for uid2 in list(DOWNLOAD_LOCKS.keys()):
                 if not DOWNLOAD_LOCKS[uid2].locked():
                     del DOWNLOAD_LOCKS[uid2]
+
+        DOWNLOAD_LOCKS[file.uid] = asyncio.Lock()
 
     async with DOWNLOAD_LOCKS[file.uid]:
         resp = await serve_s3_file_from_cache(itgs, file)

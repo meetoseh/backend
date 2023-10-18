@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Cookie
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Annotated, Optional, Literal
+from typing import Optional, Literal
+from typing_extensions import Annotated
 from error_middleware import handle_warning
 from lib.shared.clean_for_slack import clean_for_slack
 from models import StandardErrorResponse

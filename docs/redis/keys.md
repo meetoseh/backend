@@ -355,19 +355,10 @@ the keys that we use in redis
 
   the code is always exactly 22 characters.
 
-- `oauth:direct_account:login_attempts` goes to a list where the values are the timestamps
-  at which a login attempt was attempted, in fractional seconds since the unix epoch. This
-  is pruned on insertion and is used for ratelimiting all login attempts using a strict
-  rolling window strategy. Prevents brute force attacks, though since it's a crude strategy
-  an attack will need manual intervention to void requests before hitting the backend to
-  allow others to login.
-
-- `oauth:direct_account:login_attempts:{email}` goes to a number which is the number of
-  login attempts by that email since the key was expired, and the key is set to expire
-  after 5 minutes. Prevents simple brute force attacks from blocking all logins.
-
 - `oauth:direct_account:seen_jits:{jti}` goes to '1' if that jti has been seen and '0'
   otherwise. Expires 1m after the corresponding JWT expires.
+  NOTE: This is used for all CRSF tokens, but currently that just consists of
+  Sign in with Oseh
 
 - `push:send_job:lock` is a basic redis lock key used to ensure only one send job is
   running at a time, in case it takes more than a minute to complete.
@@ -852,7 +843,7 @@ They are generally used for persisting or deleting related resources, see e.g.,
   of an sms, email, or push notification that we are still waiting to either
   abandon, fail permanently, or succeed.
 
-## Touch Links namespace
+### Touch Links namespace
 
 This refers to trackable links / user touch links, which are unique codes that
 are sent to users that can be exchanged for what action they should perform
@@ -975,7 +966,7 @@ the link.
 - `touch_links:click_ratelimit:warning` goes to a number indicating how many
   warnings we've emitted in the last hour related to click ratelimits
 
-## Daily Reminders namespace
+### Daily Reminders namespace
 
 Used for dispatching one touch every day per row in `user_daily_reminders`. Each row
 has a start and end time (inclusive/inclusive) where the message can be sent. To
@@ -1025,6 +1016,249 @@ a different base offset. To handle this, we iterate over each timezone separatel
 - `daily_reminders:send_job_lock` goes to a basic redis lock to ensure only one
   daily reminder Send job is running a time. This job pulls overdue messages from
   the queued sorted set and sends them as touches.
+
+### Sign in with Oseh namespace
+
+Used for facilitating the Sign in with Oseh identity provider, which allows users
+to create a user in the Oseh platform without interacting with any third parties.
+Particularly beneficial when either we don't support a users preferred identity
+provider, or the user prefers not to interact with any large identity providers
+due to privacy concerns.
+
+The challenge of an identity provider implementation is minimizing the use of
+friction inducing elements like captchas while also detecting and mitigating
+fraudulent behavior. Fraudulent behavior typically falls into two categories:
+
+1. An attacker using a leaked email/password lists from other services trying
+   those email/passwords on our service. These attacks are almost always automated
+   and it's generally to switch the defender/attacker advantage -- CSRF tokens put
+   the automator on the defending side, similar to bot detection in videogames,
+   meaning we only have to find one way to detect them but they have to correctly
+   evade every single one of our strategies.
+
+2. An attacker creating fake accounts so that they can attack a later endpoint,
+   such as an stripe payment to test if a credit card is valid. These attacks
+   are usually _not_ automated, i.e., there is an actual person behind a keyboard
+   creating a bunch of accounts. Almost all use a vpn and cycle their ip address
+   regularly, and some will clear their cache/storage regularly. Our goal is to:
+
+   a. appear sophisticated enough that most decide not to bother with us after an
+   initial glance
+
+   b. annoy them into leaving. If such an attacker is detected, rather than blocking
+   them, adding a 20s delay on each page load, making text inputs reset randomly, or
+   throwing random vague error messages in random places will be much more effective.
+   Currently our implementation just turns on security checks and sends them
+   email verification emails with an obnoxiously long delay and which may or may
+   not actually have a useful code in it
+
+- `sign_in_with_oseh:check_account_attempts` goes to a list where the values are
+  timestamps (as seconds since the unix epoch) in approximately sorted order (as
+  near as clock drift allows). This list is pruned on insert to maintain the
+  count of how many check account calls have been made recently. This always
+  has an expiry set to when the most recent timestamp would fall outside of the
+  prune threshold. This is our primary method of hindering scanning attacks, i.e.,
+  where an attacker wants to find which users from a list have a Sign in with Oseh
+  identity.
+
+- `sign_in_with_oseh:check_account_attempts:email:{email}` goes to a number for how
+  many attempts have been made to check the account with the given email address
+  with less than a threshold of time between requests. This key always has an
+  expiry set to the threshold of time since the last request. If the value is
+  too high during a request it will trigger a security check.
+
+- `sign_in_with_oseh:check_account_attempts:visitor:{visitor}` goes to a set for which
+  email addresses the visitor with the given uid has tried to check with less
+  than a threshold of time between checks. Always has an expiry set to the
+  threshold of time since the last attempt by that visitor. This is primarily
+  used for detecting someone who isn't properly clearing their caches and
+  spamming requests. if this list corresponds to a list of recently created
+  identities, that's a strong sign of a human attacker
+
+- `sign_in_with_oseh:security_checks_required` goes to the value `1` if we have
+  recently detected that what is likely a real (though malevolent) person is
+  abusing our create account endpoints and we are requiring security checks for
+  everyone as a result. the security check itself is not expected to hinder them
+  much, but it is intended to avoid the user knowing we are annoying them based
+  on the security check itself. when this flag is tripped we also add a
+  chance of annoying a no-history request (no visitor or a recently created
+  visitor) if the check account attempts is still high, so even the email delay
+  or code not working isn't a guarrantee that they did something we detected,
+  while still impacting only a small number of real users
+
+- `sign_in_with_oseh:security_check_required:{email}` goes to the value `1` if
+  we have recently required a security check for the given email address. This
+  key always has an expiry set to the threshold of time since we last told the
+  client, where this threshold is generally much longer than the standard check
+  account attempt threshold. This means if an account keeps getting checked it
+  will be blocked with a security check until it stops getting checked for a
+  minimum amount of time, coarsening the result of targetted attacks (i.e., if
+  an attacker wants to know when Joe makes an account so they can send a
+  timely phishing email, the minimum time between requests will have to avoid
+  tripping our security check window, meaning they get a less accurate time and
+  a more poorly timed email)
+
+- `sign_in_with_oseh:security_checks:{email}` goes to a sorted set where the scores
+  are timestamps when the code was sent and the values are codes that we have
+  recently sent to the given email address. Pruned on insertion and always has
+  an expiry set to when we would prune the most recent code. Note that the code
+  score is set to the actual target send time for delayed codes. When we send a user
+  a bogus code we still insert a (random, different) code here so it still
+  counts for ratelimiting.
+
+- `sign_in_with_oseh:security_checks:{email}:codes:{code}` goes to a hash containing
+  hidden information forwarded from the elevation JWT acknowledged in order for the
+  code to be sent. Always set to expire 24h after the corresponding code was
+  created. the keys are:
+
+  - `acknowledged_at`: when the user acknowledged the elevation request
+  - `delayed`: goes to `1` if we purposely delayed sending the email, `0` otherwise
+  - `bogus`: goes to `1` if the code here does not match the one we sent them, `0` otherwise
+  - `sent_at`: when the code was added to the email to send queue, in seconds since the unix epoch
+  - `expires_at`: when the code should not be accepted any longer, in seconds since the unix epoch
+  - `reason`: the reason that the elevation was requested, matching the breakdown
+    of the `check_elevated` statistic where each value is explained:
+    - `visitor`
+    - `email`
+    - `global`
+    - `ratelimit`
+    - `email_ratelimit`
+    - `visitor_ratelimit`
+    - `strange`
+    - `disposable`
+  - `already_used`: goes to `1` if the code has already been used and `0` otherwise
+
+- `sign_in_with_oseh:attempted_security_check:{email}` goes to the number `1` if
+  someone has recently tried to use an email verification code when checking the
+  account with the given email address. Always set to expire after the minimum
+  check time elapses.
+
+- `sign_in_with_oseh:login_attempts:{jti}` goes to a sorted set where the values
+  are hashes of incorrect passwords that we've seen attempted by the Login JWT
+  with that JTI, and the scores are the first time they attempted that password.
+  We ratelimit users only after they try at least 3 different passwords to one
+  attempt per 60s. Always set to expire 1m after the corresponding Login JWT
+  expires. The passwords are hashed using the JTI as the salt, currently via
+  `210_000` iterations of `sha512` `pbkdf2_hmac`. Using a sorted set instead of
+  a counter here is not a security measure - rather, it's so that in the common
+  case where a frustrated user retries the same password several times we don't
+  pour salt on the wound by ratelimiting them. In theory this does open us up to
+  DoS attacks which could be mitigated by another ratelimit. Since Login JWTs
+  don't last particularly long (so this expires fairly quickly), and this value
+  is not included in our redis backups due to the expiration time (so it's not
+  persisted elsewhere), this has a fairly minimal exposure risk.
+
+- `sign_in_with_oseh:login_attempt_in_progress:{jti}` goes to a string value while
+  an instance is currently testing a password using the login JWT with the given
+  JTI and is unset otherwise. Always set to expire after 60s in case the instance
+  crashes. Used to limit concurrency on the login endpoint.
+
+- `sign_in_with_oseh:hidden_state:elevation:{jti}` goes to a hash containing state
+  about the Elevation JWT with the given JTI that we don't want to expose to the
+  user. Always set to expire 1m after the corresponding Elevation JWT expires. Keys:
+
+  - `reason` - the reason we blocked the request. the reason matches the reason in
+    the breakdown of the `check_elevated` statistic in
+    `stats:sign_in_with_oseh:authorize:daily:{unix_date}`, where each value is explained
+    - `visitor`
+    - `email`
+    - `global`
+    - `ratelimit`
+    - `email_ratelimit`
+    - `visitor_ratelimit`
+    - `strange`
+    - `disposable`
+
+- `sign_in_with_oseh:hidden_state:login:{jti}` goes to a hash containing state
+  about the Login JWT with the given JTI that we don't want to expose to the
+  user. Always set to expire 1m after the corresponding Login JWT expires. Keys:
+
+  - `used_code` goes to `1` if a code was used and `0` otherwise, which ensures
+    this hash always has a value
+  - `code_reason` goes to the reason why the code was requested, same as for the
+    elevation hidden state, if a code was used. otherwise, this is unset or empty
+
+- `sign_in_with_oseh:revoked:elevation:{jti}` goes to the value `1` where the jti
+  of the corresponding Elevation JWT has been revoked. These JWTs are revoked when
+  acknowledging the elevation request. Always set to expire 1m after the corresponding
+  JWT expires.
+- `sign_in_with_oseh:revoked:login:{jti}` goes to the value `1` where the jti
+  of the corresponding Login JWT has been revoked. These JWTs are revoked when
+  exchanged for a Sign in with Oseh JWT to aid in detecting client bugs. Always
+  set to expire 1m after the corresponding JWT expires
+- `sign_in_with_oseh:revoked:siwo:{jti}` goes to the value `1` where the
+  jti of the corresponding Sign in with Oseh JWT has been revoked. These JWTs
+  are revoked when exchanged for a code to aid in detecting client bugs. Always
+  set to expire 1m after the corresponding JWT expires
+
+- `sign_in_with_oseh:delayed_emails` goes to a sorted set where the scores are
+  when the email should be sent and the values are the same as in `email:to_send`,
+  with `queued_at` already sent to the target send time (i.e., matching the score).
+
+- `sign_in_with_oseh:min_delay_start` goes to an integer representing the earliest
+  time in unix seconds since the unix epoch that we should send an email. when delaying
+  an email we set this to the greater of its value and the current time and then
+  increment it by a constant value, then add our target delay time. This is the
+  ratelimiting portion of delayed emails.
+
+- `sign_in_with_oseh:recent_reset_password_emails` goes to a sorted set where
+  the scores are timestamps in seconds since the unix epoch when a reset
+  password email was sent and the values are reset password code uids. Pruned on
+  insert. Always set to expire after the longest ratelimiting period passes for
+  the most recent email
+
+- `sign_in_with_oseh:reset_password_codes_for_identity:{uid}` where uid is the
+  uid of a sign in with oseh identity goes to a sorted set where the values are
+  reset password code uids that were sent to that user and the scores are when
+  those codes were sent, matching the corresponding `sent_at`. Used for
+  ratelimiting emails to a specific user. Pruned on insert. Always set to expire
+  after the longest ratelimiting period passes for the most recent code
+
+- `sign_in_with_oseh:reset_password_codes:{code}` where code is a code sent in a
+  reset password email goes to a hash with the following keys:
+
+  - `identity_uid`: the uid of the sign in with oseh identity the code is valid for
+  - `code_uid`: an arbitrary uid assigned to this code using the uid prefix `rpc`,
+    used for referencing this code without having to store the repeat the code (which
+    might be quite long and lead to confusion about which key is authoritative)
+  - `sent_at`: when the email sent to the user was added to the Email To Send queue
+  - `used`: the value `1` if the reset password code has already been used and `0` otherwise
+
+  this key is always set to expire when the code expires
+
+- `sign_in_with_oseh:recent_password_update_attempts` goes to a sorted set where the
+  scores are timestamps when someone tried to update their password using a reset
+  password code and the values are arbitrary random strings. Used for ratelimiting.
+  Always set to expire after the longest ratelimiting period passes for the most
+  recent attempt.
+
+- `sign_in_with_oseh:recently_updated_password:{email}:{visitor}` goes to the value `1`
+  if the direct account with email address `email` recently updated their password with
+  the provided visitor value `visitor`. Always set to expire after a threshold of time
+  has passed. Used to skip the email check code if the visitor tries to login to that
+  email shortly after updating their password, as the visitor association may not have
+  been stored yet.
+
+- `sign_in_with_oseh:recent_verify_emails_for_identity:{uid}` where uid is the
+  uid of a sign in with oseh identity goes to the number `1` if the given identity
+  has recently requested email verification. Always set to expire after the minimum
+  time between sending verification emails by request passes.
+
+- `sign_in_with_oseh:verification_codes_for_identity:{uid}` where uid is the uid
+  of a sign in with oseh identity goes to a sorted set where the scores are
+  timestamps in seconds since the unix epoch when a verification code was sent
+  to that identity and the values are the verification codes sent. Pruned on insert
+  and always set to expire after the last code expires.
+
+- `sign_in_with_oseh:verification_codes_used:{uid}:{code}` goes to the value `1`
+  if identity with the given uid has already used the email verification code,
+  and is unset otherwise. Always set to expire when the code would be pruned from
+  `sign_in_with_oseh:verification_codes_for_identity:{uid}`
+
+- `sign_in_with_oseh:recent_verify_attempts_for_identity:{uid}` where uid is the
+  uid of a sign in with oseh identity goes to the number `1` if the given identity
+  has recently tried a verification code. Always set to expire after the minimum
+  time between verification attempts passes.
 
 ### Stats namespace
 
@@ -2018,6 +2252,365 @@ rather than external functionality.
 - `stats:daily_reminder_registrations:daily:earliest` goes to the earliest unix
   date that there may still be daily reminder registration stats in redis for
 
+- `stats:sign_in_with_oseh:authorize:daily:{unix_date}` goes to a hash containing integers
+  for sign in with oseh authorizations on the given day, in America/Los_Angeles, where the
+  keys are:
+
+  - `check_attempts`: how many users attempted to check if an account existed with an
+    email address
+  - `check_failed`: of the checks attempted, how many were rejected outright because of
+    a bad client id, redirect url, csrf token, or because they provided an invalid email
+    verification code
+  - `check_elevated`: of the checks attempted, how many did the backend block with a request
+    for an email verification code
+  - `check_elevation_acknowledged`: of the checks elevated, how many were acknowledged by
+    the client, ie., they requested the verification email
+  - `check_elevation_failed`: of the check elevations acknowledged, how many did we explicitly
+    block due to backpressure
+  - `check_elevation_succeeded`: of the check elevations acknowledged, how many did we tell the
+    client we sent them a code for (though that doesn't necessarily mean we sent an email)
+  - `check_succeeded`: of the checks attempted, how many did we provide a Login JWT for
+  - `login_attempted`: how many users attempted to exchange a Login JWT for a Sign in with Oseh
+    JWT on an existing identity
+  - `login_failed`: of the logins attempted, how many were blocked because the account did
+    not exist, the password was wrong, due to ratelimiting, or because the JWT was invalid
+  - `login_succeeded`: of the logins attempted, how many did we provide a Sign in with Oseh
+    JWT for
+  - `create_attempted`: how many users attempted to exchange a Login JWT for a Sign in with
+    Oseh JWT for a new identity
+  - `create_failed`: of the creates attempted, how many did we reject because of an integrity
+    issue or because the JWT was invalid
+  - `create_succeeded`: of the creates attempted, how many did we create a new identity and
+    return a Sign in with Oseh JWT for
+  - `password_reset_attempted`: how many users attempted to exchange a Login JWT for an email
+    containing a password reset code being sent to the email of the corresponding identity
+  - `password_reset_failed`: of the password resets attempted, how many were
+    blocked explicitly because the identity did not exist, the email is
+    suppressed, due to ratelimiting, because the JWT was invalid, or because of an
+    issue with the email templating server
+  - `password_reset_confirmed`: of the password resets attempted, how many did we tell the
+    user we sent them an email. This does not guarrantee we actually sent them an email
+  - `password_update_attempted`: how many users attempted to exchange a reset password code
+    to update the password of an identity and get a Sign in with Oseh JWT for that identity.
+  - `password_update_failed`: of the password updates attempted, how many were blocked
+    explicitly because the reset password code did not exist, the corresponding identity
+    did not exist, the csrf token was invalid, or due to ratelimiting
+  - `password_update_succeeded`: of the password updates attempted, how many resulted in
+    an identity with an updated password and a sign in with oseh jwt for that identity
+    being given to the client
+
+- `stats:sign_in_with_oseh:authorize:daily:{unix_date}:extra:{event}` goes to a hash where the
+  values are integers and the keys depend on the event, where the event is a key within the
+  overall days stats:
+
+  - `check_failed` is broken down by `{reason}:{details}` where reason is one of:
+
+    - `bad_client` - the client id and redirect url do not match a known pair. details
+      is one of `unknown` or `url` for if the client ID is unknown or doesn't have that
+      redirect url, respectively
+    - `bad_csrf` - the csrf token provided is invalid. the reason is one of:
+      - `malformed` - couldn't be interpreted as a JWT
+      - `incomplete` - the JWT is missing required claims
+      - `signature` - the signature is invalid
+      - `bad_iss` - the issuer does not match the expected value
+      - `bad_aud` - the audience does not match the expected value
+      - `expired` - the JWT is expired
+      - `already_used` - the JTI has already been seen
+    - `blocked` - we wanted to do a security check but the email is on the suppressed
+      emails list. the reason matches the breakdown for `check_elevated`
+    - `bad_code` - the code provided is invalid. the reason is one of:
+      - `unknown` - the code was not in the sorted set containing recent codes we sent the user, so
+        it's either just wrong or pretty old
+      - `expired` - the code has been sent to the user somewhat recently, but not recently enough
+      - `bogus` - we randomly generated a code independently, didn't send it to
+        them, and then they later provided us that code. this is a very strong
+        sign they are successfully guessing our codes!
+      - `lost` - the code was in the sorted set containing recent codes we sent the user, but the
+        required additional information about the code was not found in redis
+      - `already_used` - the code has already been used
+      - `revoked` - the code was revoked because another code has since been sent
+      - `not_sent_yet` - we haven't actually sent them the code yet! this is a sign they are
+        successfully guessing our codes
+
+  - `check_elevated` is broken down by `{reason}` where reason is one of
+
+    - `visitor` means that the visitor set has a lot of email addresses in it for
+      pretty new accounts. this is as strong an indictment as is possible that the client
+      is maliciously creating accounts and will trigger (or extend) the global security
+      check flag
+    - `email` means that we have recently required a security check on that email address
+      and are hence requiring it here for consistency
+    - `global` means that the global security check flag was set to 1, meaning we've recently
+      had the visitor check trip and are now scrutinizing everyone to make it harder for the
+      visitor that caused us to do this to know if it was them who triggered the check or
+      someone else
+    - `ratelimit` means that the number of check account attempts in total exceeded the
+      threshold and to prevent a scanning attack we need to ratelimit, but to allow
+      real users we are ratelimiting indirectly using verification emails
+    - `email_ratelimit` means that the number of check account attempts for that specific
+      email address exceeded a threshold
+    - `visitor_ratelimit` means that the number of check account attempts for that specific
+      visitor exceeded a threshold. this will trigger (or extend) the global security check
+      flag
+    - `strange` means that the email doesn't appear to be from a standard
+      provider (gmail, yahoo, etc) or otherwise appears a bit strange, e.g.,
+      it contains spaces, so we're requesting an email verification code because
+      we think the user made a typo
+    - `disposable` means that we recognize the provider as one that provides
+      disposable email addresses (we fetch the list from
+      https://github.com/disposable-email-domains/disposable-email-domains).
+      This is referring to emails that are created almost exclusively for
+      fraud, not aliases
+
+  - `check_elevation_failed` is broken down by:
+
+    - `bad_jwt`- the Elevation JWT provided is missing or invalid
+      - `missing` - the Elevation JWT is missing
+      - `malformed` - could not be interpreted as a JWT
+      - `incomplete` - the JWT is missing required claims
+      - `signature` - the signature is invalid
+      - `bad_iss` - the issuer does not match the expected value
+      - `bad_aud` - the audience does not match the expected value
+      - `expired` - the JWT is expired
+      - `lost` - the reason for the initial elevation could not be found when
+        looking it up by JTI; typically this means it was reused
+      - `revoked` - the elevation JWT has been revoked
+    - `backpressure:email_to_send` means we wanted to send the email immediately but there
+      are too many emails on the email to send queue
+    - `backpressure:delayed:total` means we wanted to send the email with a delay but there are
+      too many emails on the delayed email verification queue
+    - `backpressure:delayed:duration` means we wanted to send the email with a delay, but if we
+      send the email after the final delayed email is sent the code will be practically expired
+      before we even attempt the send
+
+  - `check_elevation_succeeded` is broken down by `sent:{reason}`
+    `delayed:{bogus|real}:{reason}` or `unsent:{unsent_reason}:{reason}`. in all cases, the
+    reason matches the original `check_elevated` reason.
+
+    - `sent` means we queued a real verification email to be sent as soon as possible
+      by pushing it to the Email To Send queue
+
+    - `delayed` means we queued an email to be sent to the user after a bit of time
+      has passed to act as a ratelimiter. the amount of time is usually
+      the greater of a minimum amount of time into the future and when the next
+      queued email will be sent with a small gap. The next segment is `bogus` if
+      the code we included in the email wasn't the same code that we stored to
+      confuse the user, and `real` means the code in the email is the same code
+      we stored so it's actually possible to complete the verification.
+
+    - `unsent` means we didn't send them a verification email. the `unsent_reason`
+      will be one of
+
+      - `suppressed`: the email address is suppressed
+      - `ratelimited`: we have sent too many verification emails to that email address
+        recently and don't want to spam them, even with delays
+      - `deterred`: we aren't sending this email to deter human-driven fraud
+
+  - `check_succeeded` is broken down by `normal`, `code_provided`, or
+    `{elevation_reason}:{override_reason}`. When `normal` that means none of
+    our attack detection measures indicated anything was afoot and so we had
+    no reason to trigger a security check. When `code_provided`, the user provided
+    a valid email verification code. Otherwise, the first value is the
+    same as the reason for `check_elevated`, and `override_reason` is one of:
+
+    - `visitor`: a visitor was provided, the email address corresponds to a
+      Sign in with Oseh identity, that Sign in with Oseh identity corresponds
+      to a user on the Oseh platform, and the visitor has been seen with that
+      user in the last year.
+    - `test_account`: the email address if for an account we explicitly gave to
+      a third party (typically Google/Apple, for app review), and they don't have
+      access to the underlying email address
+
+  - `login_failed` is broken down by `{reason}[:{details}]` where reason is one of:
+    - `bad_jwt` - the login JWT provided is missing or invalid
+      - `missing` - the login JWT is missing
+      - `malformed` - could not be interpreted as a JWT
+      - `incomplete` - the JWT is missing required claims
+      - `signature` - the signature is invalid
+      - `bad_iss` - the issuer does not match the expected value
+      - `bad_aud` - the audience does not match the expected value
+      - `expired` - the JWT is expired
+      - `lost` - the hidden state for the JWT was not in redis
+      - `revoked` - the login JWT has been revoked
+    - `integrity` - there is no identity. `details` is either
+      - `client` - we didn't check the database, the login JWT indicates it's for
+        the create account endpoint
+      - `server` - the identity existed when the login JWT was created, but it no
+        longer does
+    - `bad_password` - the provided password didn't match.
+    - `ratelimited` - the user has provided more than 3 unique passwords with this
+      login JWT, all of them were wrong, and its been less than 60 seconds since the
+      last attempt. we have to ratelimit to prevent brute force attacks
+  - `login_succeeded` is broken down by:
+    - `no_code:unverified` they were not required to go through a verification
+      request and their Sign in with Oseh identity did not have a verified email,
+      so they still don't have a verified email
+    - `no_code:verified` they were not required to go through a verification request
+      but their Sign in with Oseh identity already had a verified email, so they
+      still do
+    - `code:unverified` they provided an email verification code to get the login JWT
+      and logged into a Sign in with Oseh identity with an unverified email, which
+      changes it to verified without them having to go through the normal process
+    - `code:verified` they provided an email verification code to get the login JWT
+      but their Sign in with Oseh identity already had a verified email so there was
+      no change
+  - `create_failed` is broken down by `{reason}[:{details}]` where reason is one of:
+
+    - `bad_jwt` - same as for `login_failed`
+    - `integrity` - same as for `login_failed`, but in this case it's an error if
+      the identity does exist
+
+  - `create_succeeded` is broken down by `code`/`no_code` which means they did/did not
+    have to provide a code to get the Login JWT, and so the resulting account
+    is/is not verified immediately.
+
+  - `password_reset_failed` is broken down by `{reason}[:{details}]` where reason is one
+    of:
+
+    - `bad_jwt` - same as for `create_failed`
+    - `integrity` - same as for `create_failed`
+    - `suppressed` - we wanted to send the password reset email, but the email address
+      suppressed
+    - `global_ratelimited`: we have sent too many password reset emails recently
+      in general which is a possible sign of malicious behavior
+    - `uid_ratelimited`: we have sent too many password reset emails to the identity recently
+      and we don't want to spam them
+    - `backpressure:email_to_send`: we wanted to send an email but there were too many emails
+      in the Email To Send queue
+
+  - `password_reset_confirmed` is always `sent`
+
+    - `sent` means we sent the email to be delivered as quickly as possible via the
+      Email To Send queue
+
+  - `password_update_failed` is broken down by `{reason}[:{details}]` where reason is one
+    of:
+
+    - `bad_csrf` - the csrf token is invalid
+    - `bad_code` - the reset password code is invalid
+      - `used` - the reset password code was already used
+      - `dne` - the reset password code never existed or expired
+    - `integrity` - the reset password code did exist, but the identity has since been
+      deleted
+    - `ratelimited` - there have been too many password update attempts recently. this
+      is a basic global ratelimit
+
+  - `password_update_succeeded` is broken down by
+
+    - `was_unverified` - the identity whose password was updated did not have a verified
+      email address and now does
+    - `was_verified` - the identity whose password was updated already had a verified email
+      address and still does
+
+- `stats:sign_in_with_oseh:authorize:daily:earliest` goes to the earliest unix
+  date for which their still might be sign in with oseh authorize statistics in
+  redis
+
+- `stats:sign_in_with_oseh:verify_email:daily:{unix_date}` goes to a hash
+  containing integers for sign in with oseh verifications using the sign in with
+  oseh jwt on the given day, in America/Los_Angeles, where the keys are:
+
+  - `email_requested`: how many sign in with oseh JWTs were used to request
+    a verification email be sent
+  - `email_failed`: how many verification emails we refused to send due to
+    a bad jwt, backpressure, or ratelimiting
+  - `email_succeeded`: how many verification emails we queued to be sent
+    as soon as possible
+  - `verify_attempted`: how many verification codes (along with a sign in with
+    oseh JWT) were provided in an attempt to verify the users email address
+  - `verify_failed`: of the verifies attempted how many were rejected due to
+    a bad jwt, bad code, ratelimiting, or because the corresponding identity
+    has been deleted
+  - `verify_succeeded`: of the verifies attempted how many were accepted because
+    the code was valid for the identity authorized in the sign in with oseh jwt
+
+- `stats:sign_in_with_oseh:verify_email:daily:{unix_date}:extra:{event}` goes
+  to a hash where the values are integers breaking down the given event, where
+  the keys depend on the event:
+
+  - `email_failed` is broken down by `{reason}[:{details}]` where reason is one of
+
+    - `bad_jwt` - the Sign in with Oseh JWT is missing or invalid. details are:
+      - `missing` - the JWT is missing
+      - `malformed` - could not be interpreted as a JWT
+      - `incomplete` - the JWT is missing required claims
+      - `signature` - the signature is invalid
+      - `bad_iss` - the issuer does not match the expected value
+      - `bad_aud` - the audience does not match the expected value
+      - `expired` - the JWT is expired
+      - `revoked` - the JWT has been revoked
+    - `backpressure` - there are too many emails in the email to send queue
+    - `ratelimited` - we have sent a verification email to the user recently
+    - `integrity` - the sign in with oseh identity has been deleted
+
+  - `verify_failed` is broken down by `{reason}[:{details}]` where reason is one
+    of:
+
+    - `bad_jwt` - the Sign in with Oseh JWT is missing or invalid. details are:
+      - `missing` - the JWT is missing
+      - `malformed` - could not be interpreted as a JWT
+      - `incomplete` - the JWT is missing required claims
+      - `signature` - the signature is invalid
+      - `bad_iss` - the issuer does not match the expected value
+      - `bad_aud` - the audience does not match the expected value
+      - `expired` - the JWT is expired
+      - `revoked` - the JWT has been revoked
+    - `bad_code` - the code is invalid
+      - `dne`: the code was not sent to them recently (or at all)
+      - `expired`: the code was sent to them recently but is expired
+      - `revoked`: the code was sent to them recently, but since then a newer code has been sent
+      - `used`: the code was sent to them recently and was already used
+    - `integrity` - the sign in with oseh identity has been deleted. we revoke
+      the JWT when we see this
+    - `ratelimited` - a verification code has been attempted for this email recently
+
+  - `verify_succeeded` is broken down by either `was_verified`/`was_unverified` for
+    if the Sign in with Oseh identity already had/did not already have a verified
+    email, respectively
+
+- `stats:sign_in_with_oseh:verify_email:daily:earliest` goes to the earliest unix
+  date for which there still might be sign in with oseh verify email statistics
+
+- `stats:sign_in_with_oseh:exchange:daily:{unix_date}` goes to a hash containing
+  integers for how many sign in with oseh jwts were exchanged for codes on the
+  given in day, in America/Los_Angeles, where the keys are
+
+  - `attempted`: how many sign in with oseh jwts were provided to be exchanged for
+    a code for the Oseh platform
+  - `succeeded`: of those attempted, how many resulted in a code being provided
+  - `failed`: of those attempted, how many were explicitly blocked
+
+- `stats:sign_in_with_oseh:exchange:daily:{unix_date}:extra:{event}` goes
+  to a hash where the values are integers breaking down the given event, where
+  the keys depend on the event:
+
+  - `failed` is broken down by `{reason}:{details}` where reason is one of
+    - `bad_jwt` - the Sign in with Oseh JWT is missing or invalid. details are:
+      - `missing` - the JWT is missing
+      - `malformed` - could not be interpreted as a JWT
+      - `incomplete` - the JWT is missing required claims
+      - `signature` - the signature is invalid
+      - `bad_iss` - the issuer does not match the expected value
+      - `bad_aud` - the audience does not match the expected value
+      - `expired` - the JWT is expired
+      - `revoked` - the JWT has been revoked
+    - `integrity` - the corresponding sign in with oseh identity has been deleted
+
+- `stats:sign_in_with_oseh:exchange:daily:earliest` goes to the earliest unix
+  date for which there might still be sign in with oseh exchange statistics
+  in redis
+- `stats:sign_in_with_oseh:send_delayed_job` goes to a hash containing information about
+  the most recent sign in with oseh send delayed email verifications job, where
+  `started_at` is updated independently from the rest, where the keys are:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in milliseconds of the last (finished) job
+  - `attempted`: how many values from the queue were processed
+  - `moved`: how many values were moved to the email to send queue
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, `backpressure`,
+    or `signal`
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -2198,6 +2791,27 @@ These are regular keys used by the personalization module
 
 - `ps:stats:daily_reminder_registrations:daily` is used to optimistically send
   compressed daily reminder registration statistics. messages are formatted as
+  (uint32, uint32, uint64, blob) where the ints mean, in order:
+  `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
+  `length_bytes` of data to write to the corresponding local cache key. All
+  numbers are big-endian encoded.
+
+- `ps:stats:sign_in_with_oseh:authorize:daily` is used to optimistically send
+  compressed sign in with oseh authorize statistics. messages are formatted as
+  (uint32, uint32, uint64, blob) where the ints mean, in order:
+  `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
+  `length_bytes` of data to write to the corresponding local cache key. All
+  numbers are big-endian encoded.
+
+- `ps:stats:sign_in_with_oseh:verify_email:daily` is used to optimistically send
+  compressed sign in with oseh verify email statistics. messages are formatted as
+  (uint32, uint32, uint64, blob) where the ints mean, in order:
+  `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
+  `length_bytes` of data to write to the corresponding local cache key. All
+  numbers are big-endian encoded.
+
+- `ps:stats:sign_in_with_oseh:exchange:daily` is used to optimistically send
+  compressed sign in with oseh exchange statistics. messages are formatted as
   (uint32, uint32, uint64, blob) where the ints mean, in order:
   `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
   `length_bytes` of data to write to the corresponding local cache key. All

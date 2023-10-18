@@ -233,7 +233,7 @@ end
 redis.call("ZADD", key, new_score, new_value)
 
 local new_biggest_score = redis.call("ZRANGE", key, -1, -1, "WITHSCORES")[2]
-redis.call("EXPIREAT", key, tonumber(new_biggest_score))
+redis.call("EXPIREAT", key, math.ceil(tonumber(new_biggest_score)))
 
 return 1
 """

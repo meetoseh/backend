@@ -554,7 +554,7 @@ end
 
 if current_length > 0 then
     local highest_score = redis.call("ZRANGE", key, -1, -1, "WITHSCORES")[2]
-    redis.call("EXPIREAT", key, tonumber(highest_score))
+    redis.call("EXPIREAT", key, math.ceil(tonumber(highest_score)))
 end
 
 return 1

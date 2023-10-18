@@ -7,7 +7,7 @@ from itgs import Itgs
 from argparse import ArgumentParser
 import asyncio
 import base64
-from oauth.routes.code import KeyDerivationMethod
+from oauth.siwo.lib.key_derivation import create_new_key_derivation_method
 import time
 import getpass
 from loguru import logger
@@ -44,12 +44,8 @@ async def create_account(*, email: str, email_verified: bool, password: str):
         password (str): The password to create the account with
     """
     uid = f"oseh_da_{secrets.token_urlsafe(64)}"
-    key_derivation_method = KeyDerivationMethod(
-        name="pbkdf2_hmac",
-        hash_name="sha1",
-        salt=base64.b64encode(secrets.token_bytes(32)).decode("ascii"),
-        iterations=1_000_000,
-    )
+    key_derivation_method = create_new_key_derivation_method()
+    assert key_derivation_method.name == "pbkdf2_hmac"
     derived_password = hashlib.pbkdf2_hmac(
         key_derivation_method.hash_name,
         password.encode("utf-8"),

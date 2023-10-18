@@ -3,6 +3,7 @@ import secrets
 import time
 from typing import Literal, Optional
 from fastapi import Response
+from error_middleware import handle_error
 from models import StandardErrorResponse
 import jwt
 from dataclasses import dataclass
@@ -11,12 +12,33 @@ from itgs import Itgs
 
 @dataclass
 class SuccessfulCSRF:
-    iss: Literal["oseh-web", "oseh-native"]
-    """The issuer of the token, either `oseh-web` or `oseh-native`"""
+    iss: Literal["oseh-web"]
+    """The issuer of the token, always `oseh-web`"""
     iat: int
     """The time the token was issued in seconds since the epoch"""
     exp: int
     """The time the token expires in seconds since the epoch"""
+
+
+BadCSRFReason = Literal[
+    "malformed",
+    "incomplete",
+    "signature",
+    "bad_iss",
+    "bad_aud",
+    "epxired",
+    "already_used",
+]
+"""The reasons we might reject a CSRF token."""
+
+
+@dataclass
+class CheckCSRFError:
+    response: Response
+    """The suggested response to return to the user."""
+
+    reason: BadCSRFReason
+    """The reason the token was rejected."""
 
 
 @dataclass
@@ -24,7 +46,7 @@ class CheckCSRFResponse:
     result: Optional[SuccessfulCSRF]
     """If the token was valid, the result of the check. Otherwise, `None`."""
 
-    error_response: Optional[Response]
+    error: Optional[CheckCSRFError]
     """If the token was not successful, the response to return to the user."""
 
     @property
@@ -52,13 +74,17 @@ def create_bad_csrf_response(hint: str):
     )
 
 
-async def check_csrf(itgs: Itgs, csrf: str) -> CheckCSRFResponse:
+async def check_csrf(itgs: Itgs, csrf: Optional[str]) -> CheckCSRFResponse:
     """Verifies that the given cross site request forgery token is valid. This
-    token is either created by the frontend-web serverside or by the native app.
-    In both cases it's possible for third parties to get a valid token: in the
-    former case, they can parse the http. In the latter case, they can decompile
-    the app. However, both are pretty annoying to do, so it's going to stop all
-    but the most dedicated attackers from using an endpoint.
+    token is created by the frontend-web serverside.
+
+    It's possible for third parties to get a valid token by parsing the returned
+    HTML/JS, since it has to be transmitted to the client before the actual
+    request. Hence a CSRF token is not sufficient on its own to verify a request
+    is being served by a legitimate client, however, it can be used as a tool to
+    detect and block specific fraudulent requests. For example, if the attacker
+    is automatically scrapping CSRF tokens we can make their life arbitrarily
+    difficult by varying how the token is injected.
 
     Used only when we really don't want third parties to use an endpoint, e.g.
     the code endpoint for exchanging an email/password for a code.
@@ -69,28 +95,56 @@ async def check_csrf(itgs: Itgs, csrf: str) -> CheckCSRFResponse:
       (since it can be created just before the request), but an hour for
       web (where the token is created when the page is opened and requires
       a page refresh to regenerate)
-    - `iss`: either `oseh-web` or `oseh-native`; this will determine which
-      secret we should use to verify the token
+    - `iss`: `oseh-web`
     - `aud`: must be `oseh-direct-account-code`
     - `jti`: a unique identifier for the token; we will deny tokens that
        have been used before. this is primarily to make it easier to void
        attacks that are based on parsing the http responses of the /authorize
        endpoint by e.g. putting it temporarily behind cloudflare.
     """
+    if csrf is None or csrf == "":
+        return CheckCSRFResponse(
+            result=None,
+            error=CheckCSRFError(
+                response=create_bad_csrf_response("Missing or empty"),
+                reason="malformed",
+            ),
+        )
+
     try:
         unverified_claims = jwt.decode(
             csrf,
             options={"verify_signature": False},
         )
     except:
-        return CheckCSRFResponse(None, create_bad_csrf_response("Failed to decode."))
-
-    if unverified_claims.get("iss") not in ("oseh-web", "oseh-native"):
         return CheckCSRFResponse(
-            None, create_bad_csrf_response("iss not present or invalid")
+            result=None,
+            error=CheckCSRFError(
+                response=create_bad_csrf_response("Failed to decode."),
+                reason="malformed",
+            ),
         )
 
-    secret = get_secret_by_issuer(unverified_claims["iss"])
+    if unverified_claims.get("iss") != "oseh-web":
+        return CheckCSRFResponse(
+            result=None,
+            error=CheckCSRFError(
+                response=create_bad_csrf_response("iss not present or invalid"),
+                reason="bad_iss",
+            ),
+        )
+
+    try:
+        secret = get_secret_by_issuer(unverified_claims["iss"])
+    except ValueError:
+        return CheckCSRFResponse(
+            result=None,
+            error=CheckCSRFError(
+                response=create_bad_csrf_response("iss not present or invalid"),
+                reason="bad_iss",
+            ),
+        )
+
     try:
         verified_claims = jwt.decode(
             csrf,
@@ -101,17 +155,32 @@ async def check_csrf(itgs: Itgs, csrf: str) -> CheckCSRFResponse:
             options={"require": ["jti", "iss", "exp", "aud", "iat"]},
             leeway=1,
         )
-    except:
+    except Exception as e:
+        if not isinstance(e, jwt.exceptions.ExpiredSignatureError):
+            await handle_error(e, extra_info="Failed to decode CSRF token")
+
+        if isinstance(e, jwt.exceptions.InvalidIssuerError):
+            reason = "bad_iss"
+        elif isinstance(e, jwt.exceptions.InvalidAudienceError):
+            reason = "bad_aud"
+        elif isinstance(e, jwt.exceptions.ExpiredSignatureError):
+            reason = "expired"
+        elif isinstance(e, jwt.exceptions.MissingRequiredClaimError):
+            reason = "incomplete"
+        elif isinstance(e, jwt.exceptions.InvalidSignatureError):
+            reason = "signature"
+        else:
+            reason = "malformed"
+
         return CheckCSRFResponse(
-            None, create_bad_csrf_response("understood but invalid")
+            result=None,
+            error=CheckCSRFError(
+                response=create_bad_csrf_response("understood but invalid"),
+                reason=reason,
+            ),
         )
 
-    if "jti" not in verified_claims:
-        return CheckCSRFResponse(None, create_bad_csrf_response("jti not present"))
-
     jti = verified_claims["jti"]
-    if not isinstance(jti, str) or len(jti) < 10 or len(jti) > 50:
-        return CheckCSRFResponse(None, create_bad_csrf_response("jti is invalid"))
 
     redis = await itgs.redis()
     result = await redis.set(
@@ -121,35 +190,37 @@ async def check_csrf(itgs: Itgs, csrf: str) -> CheckCSRFResponse:
         exat=verified_claims["exp"] + 60,
     )
     if not result:
-        return CheckCSRFResponse(None, create_bad_csrf_response("jti already seen"))
+        return CheckCSRFResponse(
+            result=None,
+            error=CheckCSRFError(
+                response=create_bad_csrf_response("jti already seen"),
+                reason="already_used",
+            ),
+        )
 
     return CheckCSRFResponse(
-        SuccessfulCSRF(
+        result=SuccessfulCSRF(
             iss=verified_claims["iss"],
             iat=verified_claims["iat"],
             exp=verified_claims["exp"],
         ),
-        None,
+        error=None,
     )
 
 
-def get_secret_by_issuer(iss: Literal["oseh-web", "oseh-native"]) -> str:
+def get_secret_by_issuer(iss: Literal["oseh-web"]) -> str:
     if iss == "oseh-web":
         return os.environ["OSEH_CSRF_JWT_SECRET_WEB"]
-    elif iss == "oseh-native":
-        return os.environ["OSEH_CSRF_JWT_SECRET_NATIVE"]
     else:
         raise ValueError(f"Unknown iss: {iss}")
 
 
-async def create_csrf(iss: Literal["oseh-web", "oseh-native"], duration: int) -> str:
+async def create_csrf(iss: Literal["oseh-web"], duration: int) -> str:
     """Creates a new CSRF token with the given issue with the given duration.
-    Used by the frontend-web (serverside) and the native app (clientside).
-    The native version is included for completeness but is reimplemented in
-    javascript for the react-native version.
+    Used by the frontend-web (serverside).
 
     Args:
-        iss (str): either `oseh-web` or `oseh-native`
+        iss (str): `oseh-web`
         duration (int): the duration of the token in seconds
 
     Returns:

@@ -28,15 +28,18 @@ designed to allow signup functionality should we offer it in the future.
     ```json
     {
       "name": "pbkdf2_hmac",
-      "hash_name": "sha1",
+      "hash_name": "sha512",
       "salt": "5UnzN+Z48/KmIM30TlzmF9cizNXeVk56PZ5yBecs0Hc=",
-      "iterations": 1000000
+      "iterations": 210000
     }
     ```
 
-    - `hash_name`: is `sha1`
+    - `hash_name`: is one of `sha1`, `sha256`, `sha512`, typically `sha512`
     - `salt`: base64 encoded 256 bits (e.g., `base64.b64encode(secrets.token_bytes(32))`)
-    - `iterations`: how many iterations to perform, typically 1_000_000
+    - `iterations`: how many iterations to perform, typically `210_000`
+
+  - Currently there are no other OWASP recommended password hashing algorithms available
+    on the backend servers; in particular, `hashlib.scrypt` is not available
 
 - `derived_password (text not null)`: The result of the key derivation method on
   the correct password, base64 encoded

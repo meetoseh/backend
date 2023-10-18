@@ -13,7 +13,7 @@ from content_files.lib.serve_s3_file import read_in_parts
 from error_middleware import handle_error
 
 from itgs import Itgs
-from redis_helpers.redis_hash import RedisHash
+from lib.shared.redis_hash import RedisHash
 
 try:
     from typing import Never

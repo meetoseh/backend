@@ -27,6 +27,9 @@ by day
     we switch to the touch point system we moved over the users who were already
     receiving notifications
   - `sms_start`: the user sent a START message to our messaging service
+  - `push_token_reassigned`: when reassigning a push token, if the new user
+    for the push token previously had no push tokens we subscribe them to
+    daily push notification reminders
 - `unsubscribed (integer not null)`: how many daily reminder notifications were
   removed by deleting a row in `user_daily_reminders`
 - `unsubscribed_breakdown (text not null)`: goes to a json object where the

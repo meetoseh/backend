@@ -350,6 +350,18 @@ the keys we store locally on backend instances via diskcache
   (incl -> excl) see also:
   [daily_reminder_registration_stats](../../admin/daily_reminders/routes/daily_reminder_registration_stats.py)
 
+- `daily_siwo_authorize:{start_unix_date}:{end_unix_date}` goes to a
+  string containing the serialized sign in with oseh authorize stats for the given date range
+  (incl -> excl) see also: [authorize_stats](../../admin/siwo/routes/authorize_stats.py)
+
+- `daily_siwo_verify_email:{start_unix_date}:{end_unix_date}` goes to a
+  string containing the serialized sign in with oseh verify email stats for the given date range
+  (incl -> excl) see also: [verify_email_stats](../../admin/siwo/routes/verify_email_stats.py)
+
+- `daily_siwo_exchange:{start_unix_date}:{end_unix_date}` goes to a
+  string containing the serialized sign in with oseh exchange stats for the given date range
+  (incl -> excl) see also: [verify_email_stats](../../admin/siwo/routes/verify_email_stats.py)
+
 ## Personalization
 
 This contains keys for the personalization subspace

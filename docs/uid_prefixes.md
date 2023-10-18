@@ -112,3 +112,7 @@ something (in this case, identify a row)
 - `utl` - [user_touch_links](db/user_touch_links.md)
 - `utlc` - [user_touch_link_clicks](db/user_touch_link_clicks.md)
 - `uel` - [unsubscribed_emails_log](db/unsubscribed_emails_log.md)
+- `rpc` - reset password code uids (not the code itself), used to allow for a
+  shorter lookup key compared to the codes themselves in e.g.
+  `sign_in_with_oseh:recent_reset_password_emails`
+- `sel` - [siwo_email_log](db/siwo_email_log.md)

@@ -265,6 +265,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
             await cleanup_user_daily_reminders(itgs, auth_result.result.sub)
             await cleanup_user_push_tokens(itgs, auth_result.result.sub)
             await cleanup_klaviyo(itgs, auth_result.result.sub)
+            await cleanup_siwo_email_log(itgs, auth_result.result.sub)
             await cursor.execute(
                 "DELETE FROM users WHERE sub=?", (auth_result.result.sub,)
             )
@@ -440,6 +441,28 @@ async def cleanup_klaviyo(itgs: Itgs, sub: str) -> None:
                 f"failed to cleanup klaviyo account while deleting profile (request profile deletion); {sub=}, {klaviyo_id=}, {email=}, {phone_number=}, {list_ids=}"
             ),
         )
+
+
+async def cleanup_siwo_email_log(itgs: Itgs, sub: str) -> None:
+    """If the user with the given sub exists and has a verified email, deletes
+    the corresponding entries in the siwo email log
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor()
+
+    await cursor.execute(
+        """
+        DELETE FROM siwo_email_log
+        WHERE
+            EXISTS (
+                SELECT 1 FROM users
+                WHERE users.sub = ?
+                  AND users.email = siwo_email_log.email
+                  AND users.email_verified = 1
+            )
+        """,
+        (sub,),
+    )
 
 
 @asynccontextmanager

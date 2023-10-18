@@ -5,7 +5,8 @@ from fastapi import APIRouter, Cookie
 from fastapi.datastructures import Headers
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal, Optional, Annotated
+from typing import Literal, Optional
+from typing_extensions import Annotated
 from error_middleware import handle_warning
 from itgs import Itgs
 from lib.shared.clean_for_slack import clean_for_slack

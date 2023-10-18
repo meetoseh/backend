@@ -1,8 +1,8 @@
 import json
 from fastapi import APIRouter, Cookie
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
-from typing import Annotated, Literal, Optional
+from typing import Optional
+from typing_extensions import Annotated
 from error_middleware import handle_warning
 from lib.email.send import send_email
 from lib.shared.clean_for_slack import clean_for_slack

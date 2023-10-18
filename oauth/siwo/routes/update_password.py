@@ -3,7 +3,8 @@ import socket
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Annotated, Literal, Optional
+from typing import Literal, Optional
+from typing_extensions import Annotated
 from error_middleware import handle_warning
 from lib.shared.clean_for_slack import clean_for_slack
 from models import StandardErrorResponse

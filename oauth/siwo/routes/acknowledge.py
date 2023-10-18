@@ -2,7 +2,8 @@ import json
 import secrets
 from fastapi import APIRouter, Cookie
 from fastapi.responses import Response
-from typing import Literal, Optional, Annotated, Tuple
+from typing import Literal, Optional, Tuple
+from typing_extensions import Annotated
 from error_middleware import handle_warning
 from lib.email.send import create_email_uid
 from lib.shared.clean_for_slack import clean_for_slack

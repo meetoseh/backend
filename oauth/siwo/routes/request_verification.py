@@ -2,7 +2,8 @@ import json
 import secrets
 from fastapi import APIRouter, Cookie
 from fastapi.responses import Response
-from typing import Annotated, Optional, Literal
+from typing import Optional, Literal
+from typing_extensions import Annotated
 from error_middleware import handle_warning
 from lib.shared.job_callback import JobCallback
 from oauth.siwo.code.security_check import generate_code

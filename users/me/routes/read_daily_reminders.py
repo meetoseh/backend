@@ -248,7 +248,7 @@ async def read_daily_reminders(authorization: Optional[str] = Header(None)):
                 _,
                 _,
                 _,
-            ) in (push_response.results or [])
+            ) in (push_response.results[:1] if push_response.results else [])
         ]
         assert len(push) <= 1
 

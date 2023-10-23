@@ -37,7 +37,7 @@ from redis_helpers.touch_link_try_create import (
 )
 import unix_dates
 import pytz
-import logging
+from loguru import logger as logging
 
 tz = pytz.timezone("America/Los_Angeles")
 
@@ -388,7 +388,7 @@ async def click_link(
             """
             SELECT
                 user_touch_links.uid,
-                user_touches.uid,
+                user_touches.send_uid,
                 user_touch_links.code,
                 user_touch_links.page_identifier,
                 user_touch_links.page_extra,
@@ -649,6 +649,7 @@ async def _create_buffered_link_using_rejection_sampling(
                 buffer_key=b"touch_links:buffer",
                 stats_key=stats_key,
                 stats_earliest_key=b"stats:touch_links:daily:earliest",
+                code=code.encode("utf-8"),
                 **encoded_link_kwargs,
                 already_incremented_stats=already_incremented_stats,
                 unix_date=unix_date,

@@ -6,13 +6,19 @@ but can be difficult to use as a debugging source given everything has to go
 correctly before an entry appears here.
 
 See Also: [touch_points](./touch_points.md)
-See Also: [user_touch_debug_log](./user_touch_debug_log.md)
+See Also: [user_touch_debug_log](./logs/user_touch_debug_log.md)
 
 ## Fields
 
 - `id (integer primary key)`: Internal row identifier
-- `uid (text unique not null)`: Primary stable row identifier. Uses the
-  [uid prefix](../uid_prefixes.md) `tch`
+- `send_uid (text not null)`: The unique identifier assigned to the
+  send intent. This is the primary uid passed around; grouping on this uid
+  gives all the destinations reached as a result of creating a single touch.
+  Uses the [uid prefix](../uid_prefixes.md) `tch`
+- `uid (text unique not null)`: Primary stable external row identifier. Uses
+  the [uid prefix](../uid_prefixes.md) `tch_r` (where `r` is for row). For rows
+  which were inserted before the `send_uid` migration, this column will match
+  the send uid.
 - `user_id (integer not null references users(id) on delete cascade)`: the user
   we contacted
 - `channel (text not null)`: the channel we used, one of `push`, `sms`, or `email`
@@ -41,6 +47,7 @@ See Also: [user_touch_debug_log](./user_touch_debug_log.md)
 ```sql
 CREATE TABLE user_touches (
     id INTEGER PRIMARY KEY,
+    send_uid TEXT NOT NULL,
     uid TEXT UNIQUE NOT NULL,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     channel TEXT NOT NULL,
@@ -55,4 +62,7 @@ CREATE INDEX user_touches_user_id_created_at_idx ON user_touches(user_id, create
 
 /* Foreign key */
 CREATE INDEX user_touches_touch_point_id_idx ON user_touches(touch_point_id);
+
+/* Search */
+CREATE INDEX user_touches_send_uid_idx ON user_touches(send_uid);
 ```

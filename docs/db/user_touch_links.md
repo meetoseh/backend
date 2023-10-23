@@ -28,7 +28,9 @@ whenever the code is used
 - `uid (text unique not null)`: Primary stable external identifier for this
   row. Uses the [uid prefix](../uid_prefixes.md) `utl`
 - `user_touch_id (integer not null references user_touches(id) on delete cascade)`
-  the user touch which contained this link code
+  the user touch which contained this link code. This is any user touch which
+  has the correct `send_uid` - if there are multiple destinations from a single
+  touch send intent, they all contain the same link.
 - `code (text unique not null)`: the unique code we sent the user
 - `page_identifier (text not null)`: acts as an enum for where the user should be
   redirected. one of:

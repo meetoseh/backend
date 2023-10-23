@@ -66,7 +66,7 @@ async def exchange_for_code(
     async with Itgs() as itgs:
         auth_result = await auth_jwt(itgs, siwo_core, revoke=True)
         if not auth_result.success:
-            async with exchange_stats() as stats:
+            async with exchange_stats(itgs) as stats:
                 stats.incr_attempted(unix_date=exchange_unix_date)
                 stats.incr_failed(
                     unix_date=exchange_unix_date,
@@ -78,7 +78,7 @@ async def exchange_for_code(
             auth_result.result.oseh_client_id is None
             or auth_result.result.oseh_redirect_url is None
         ):
-            async with exchange_stats() as stats:
+            async with exchange_stats(itgs) as stats:
                 stats.incr_attempted(unix_date=exchange_unix_date)
                 stats.incr_failed(unix_date=exchange_unix_date, reason=b"incomplete")
             return NOT_FOR_OAUTH_RESPONSE
@@ -98,7 +98,7 @@ async def exchange_for_code(
                 f"`{auth_result.result.sub}`, but no corresponding direct "
                 "account exists",
             )
-            async with exchange_stats() as stats:
+            async with exchange_stats(itgs) as stats:
                 stats.incr_attempted(unix_date=exchange_unix_date)
                 stats.incr_failed(unix_date=exchange_unix_date, reason=b"integrity")
             return INVALID_TOKEN_RESPONSE
@@ -123,6 +123,10 @@ async def exchange_for_code(
             ),
             exat=exp_at,
         )
+
+        async with exchange_stats(itgs) as stats:
+            stats.incr_attempted(unix_date=exchange_unix_date)
+            stats.incr_succeeded(unix_date=exchange_unix_date)
 
         return Response(
             content=ExchangeForCodeResponse(code=code).json(),

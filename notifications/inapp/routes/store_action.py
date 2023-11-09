@@ -1,4 +1,5 @@
 import json
+import os
 import secrets
 import time
 from fastapi import APIRouter, Header
@@ -74,7 +75,7 @@ async def store_inapp_notification_action(
                     SELECT COUNT(*) FROM inapp_notification_user_actions AS ianua
                     WHERE
                         ianua.inapp_notification_user_id = inapp_notification_users.id
-                ) < 15
+                ) < 30
             """,
             (
                 user_action_uid,
@@ -87,8 +88,28 @@ async def store_inapp_notification_action(
         )
 
         if response.rows_affected is None or response.rows_affected < 1:
-            await handle_contextless_error(
-                extra_info=f"Silently ignoring in-app notification action: insert checks failed; {args.inapp_notification_user_uid}, {args.action_slug}, {serd_extra}"
-            )
+            silence_alert = False
+            if os.environ["ENVIRONMENT"] == "dev":
+                response = await cursor.execute(
+                    "SELECT 1 FROM "
+                    "inapp_notification_users, inapp_notification_actions, users "
+                    "WHERE "
+                    "inapp_notification_users.uid = ? "
+                    "AND inapp_notification_actions.inapp_notification_id = inapp_notification_users.inapp_notification_id "
+                    "AND inapp_notification_actions.slug = ? "
+                    "AND inapp_notification_users.user_id = users.id "
+                    "AND users.sub = ?",
+                    (
+                        args.inapp_notification_user_uid,
+                        args.action_slug,
+                        auth_result.result.sub,
+                    ),
+                )
+                silence_alert = not not response.results
+
+            if not silence_alert:
+                await handle_contextless_error(
+                    extra_info=f"Silently ignoring in-app notification action: insert checks failed; {args.inapp_notification_user_uid}, {args.action_slug}, {serd_extra}"
+                )
 
         return Response(status_code=204)

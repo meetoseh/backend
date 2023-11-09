@@ -18,6 +18,10 @@ on the operating system).
 - `platform (text not null)`: one of `ios`, `android`, `generic`
 - `token (text unique not null)`: the expo push token, typically formatted as
   `ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]`
+- `receives_notifications (boolean not null)`: true if this push token should
+  receive notifications of any kind, false if we still beleive it is valid but
+  the user specifically does not want to receive any notifications to this token.
+  This can be thought of as a suppression flag
 - `created_at (real not null)`: when this record was created in seconds since
   the unix epoch
 - `updated_at (real not null)`: when this record was last updated in seconds
@@ -36,6 +40,7 @@ CREATE TABLE user_push_tokens (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     platform TEXT NOT NULL,
     token TEXT UNIQUE NOT NULL,
+    receives_notifications BOOLEAN NOT NULL,
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
     last_seen_at REAL NOT NULL,

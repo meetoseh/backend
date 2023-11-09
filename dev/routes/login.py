@@ -38,6 +38,9 @@ async def dev_login(args: DevLoginRequest):
     given_name = args.sub.capitalize()
     family_name = "Smith"
     email = f"{urllib.parse.quote(args.sub)}@oseh.com"
+    email_verified = True
+    phone_number = None
+    phone_number_verified = None
     picture = f"https://api.dicebear.com/7.x/adventurer-neutral/svg?seed={urllib.parse.quote(args.sub)}"
 
     if args.sub == "timothy":
@@ -65,6 +68,17 @@ async def dev_login(args: DevLoginRequest):
     elif args.sub.startswith("dupl_"):
         given_name = "Duplicate"
         email = "duplicate@oseh.com"
+    elif args.sub.startswith("unverified_"):
+        given_name = "Unverified"
+        email_verified = False
+    elif args.sub.startswith("with_phone_"):
+        given_name = "Withphone"
+        phone_number = "+15555555555"
+        phone_number_verified = True
+    elif args.sub.startswith("unver_phone_"):
+        given_name = "Unverphone"
+        phone_number = "+15555555555"
+        phone_number_verified = False
 
     async with Itgs() as itgs:
         now = int(time.time())
@@ -75,8 +89,14 @@ async def dev_login(args: DevLoginRequest):
             "given_name": given_name,
             "family_name": family_name,
             "email": email,
-            "email_verified": True,
+            "email_verified": email_verified,
             "picture": picture,
+            **({} if phone_number is None else {"phone_number": phone_number}),
+            **(
+                {}
+                if phone_number_verified is None
+                else {"phone_number_verified": phone_number_verified}
+            ),
         }
         interpreted = await oauth.lib.exchange.interpret_provider_claims(
             itgs,

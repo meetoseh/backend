@@ -360,7 +360,11 @@ the keys we store locally on backend instances via diskcache
 
 - `daily_siwo_exchange:{start_unix_date}:{end_unix_date}` goes to a
   string containing the serialized sign in with oseh exchange stats for the given date range
-  (incl -> excl) see also: [verify_email_stats](../../admin/siwo/routes/verify_email_stats.py)
+  (incl -> excl) see also: [exchange_stats](../../admin/siwo/routes/exchange_stats.py)
+
+- `daily_contact_methods:{start_unix_date}:{end_unix_date}` goes to a
+  string containing the serialized contact method stats for the given date range
+  (incl -> excl) see also: [contact_method_stats](../../admin/routes/contact_method_stats.py)
 
 ## Personalization
 

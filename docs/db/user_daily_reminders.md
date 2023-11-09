@@ -1,7 +1,12 @@
 # user_daily_reminders
 
-Indicates that a user wants to receive daily reminders on a given channel within
+Indicates that a user receives daily reminders on a given channel within
 a given time range. The users timezone should be used (`users.timezone`).
+
+The rows in this table can be computed from the `user_daily_reminder_settings`
+table and the various contact method tables (`user_email_addresses`,
+`user_phone_numbers`, `user_push_tokens`). There is no functional freedom for
+the rows here.
 
 This is designed to handle timezones in a human-understandable way which is easy
 to compute, rather than worrying about being as "correct" as possible. For
@@ -13,7 +18,10 @@ sidesteps tons of issues (e.g., how can you send a notification at 2AM if 2AM
 was skipped? or what if 2AM occurs twice that day?). Further, it does this while
 still making it intuitive to predict what it will do.
 
-SEE ALSO: `user_notification_settings`, which this replaces
+SEE ALSO: `user_daily_reminder_settings` where the users preferences are stored
+(which contains information not necessary for sending reminders but may be necessary
+for mutating them)
+
 SEE ALSO: `touch_points` as this table is used to emit the `daily_reminder`
 event for the Daily Reminder touch point.
 

@@ -127,55 +127,20 @@ async def callback(
             # to be generated to retry
             return INVALID_TOKEN
 
-        if user_info is None:
-            # hopefully we're not creating a new user hence the users email is
-            # in the database
-            conn = await itgs.conn()
-            cursor = conn.cursor("none")
-            response = await cursor.execute(
-                """
-                SELECT users.email, users.given_name, users.family_name
-                FROM users
-                WHERE
-                    EXISTS (
-                        SELECT 1 FROM user_identities
-                        WHERE user_identities.user_id = users.id
-                          AND user_identities.provider = ?
-                          AND user_identities.sub = ?
-                    )
-                """,
-                (
-                    state_info.provider,
-                    claims["sub"],
-                ),
-            )
-
-            if not response.results:
-                user_info = User(
-                    name=Name(firstName="Anonymous", lastName=""),
-                    email=claims.get("email", "anonymous@example.com"),
-                )
-            else:
-                email: str = response.results[0][0]
-                given_name: Optional[str] = response.results[0][1]
-                family_name: Optional[str] = response.results[0][2]
-                user_info = User(
-                    name=Name(
-                        firstName=given_name or "Anonymous", lastName=family_name or ""
-                    ),
-                    email=email,
-                )
-
         interpreted_claims = oauth.lib.exchange.InterpretedClaims(
             sub=claims["sub"],
-            email=user_info.email,
+            email=claims.get("email") if user_info is None else user_info.email,
             email_verified=(
-                (claims.get("email") == user_info.email)
-                and claims.get("email_verified", False)
+                claims.get("email_verified", False)
+                if user_info is None
+                else (
+                    (claims.get("email") == user_info.email)
+                    and claims.get("email_verified", False)
+                )
             ),
-            name=user_info.name.first_name + " " + user_info.name.last_name,
-            given_name=user_info.name.first_name,
-            family_name=user_info.name.last_name,
+            name=None,
+            given_name=None if user_info is None else user_info.name.first_name,
+            family_name=None if user_info is None else user_info.name.last_name,
             phone_number=None,
             phone_number_verified=None,
             picture=None,

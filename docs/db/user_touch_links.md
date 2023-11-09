@@ -17,7 +17,7 @@ These records are generally created automatically by the touch system by using
 `link_parameters` within the touch send function.
 
 See Also: [user_touches](./user_touches.md)
-See Also: [user_touch_debug_log](./user_touch_debug_log.md), which gets an entry
+See Also: [user_touch_debug_log](./logs/user_touch_debug_log.md), which gets an entry
 when these records are created
 See Also: [user_touch_link_clicks](./user_touch_link_clicks.md) which tracks
 whenever the code is used

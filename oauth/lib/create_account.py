@@ -35,7 +35,7 @@ def main():
 
 
 async def create_account(*, email: str, email_verified: bool, password: str):
-    """Creates a new direct account with the given email and password,
+    """Creates a new Sign in with Oseh identity with the given email and password,
     if one does not already exist.
 
     Args:

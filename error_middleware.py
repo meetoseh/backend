@@ -18,7 +18,10 @@ async def handle_request_error(request: Request, exc: Exception) -> Response:
 
 async def handle_error(exc: Exception, *, extra_info: Optional[str] = None) -> None:
     """Handles a generic error"""
-    logger.error("Posting error to slack", exc_info=exc)
+    long_message = "\n".join(
+        traceback.format_exception(type(exc), exc, exc.__traceback__)
+    )
+    logger.error(f"Posting error to slack:\n\n{long_message}\n\n{extra_info=}")
 
     message = "\n".join(
         traceback.format_exception(type(exc), exc, exc.__traceback__)[-5:]

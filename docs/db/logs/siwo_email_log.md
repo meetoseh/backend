@@ -18,7 +18,7 @@ account we clear the email log for that email address
 
 - `id (integer primary key)`: Internal row identifier
 - `uid (text unique not null)`: The uid assigned to this contact attempt,
-  using the [uid prefix](../uid_prefixes.md) `sel`
+  using the [uid prefix](../../uid_prefixes.md) `sel`
 - `purpose (text not null)`: the purpose of this email. one of:
   - `security_check`: Sent as a result of the frontend acknowledging an elevation
     is required in order to get a Login JWT

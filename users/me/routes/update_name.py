@@ -67,9 +67,6 @@ async def update_name(
         await jobs.enqueue(
             "runners.revenue_cat.ensure_user", user_sub=auth_result.result.sub
         )
-        await jobs.enqueue(
-            "runners.klaviyo.ensure_user", user_sub=auth_result.result.sub
-        )
         return UpdateNameResponse(
             given_name=args.given_name, family_name=args.family_name
         )

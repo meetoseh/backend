@@ -91,7 +91,7 @@ async def unsubscribe_by_email(
                         ?, ?, ?, ?
                     WHERE
                         NOT EXISTS (
-                            SELECT 1 FROM suppressed_emails WHERE email_address = ?
+                            SELECT 1 FROM suppressed_emails WHERE email_address = ? COLLATE NOCASE
                         )
                     """,
                     (
@@ -137,9 +137,9 @@ async def unsubscribe_by_email(
                     DELETE FROM user_daily_reminders
                     WHERE
                         EXISTS (
-                            SELECT 1 FROM users
-                            WHERE users.id = user_daily_reminders.user_id
-                              AND users.email = ?
+                            SELECT 1 FROM user_email_addresses
+                            WHERE user_email_addresses.user_id = user_daily_reminders.user_id
+                              AND user_email_addresses.email = ?
                         )
                         AND user_daily_reminders.channel = ?
                     """,
@@ -155,7 +155,7 @@ async def unsubscribe_by_email(
             )
 
         if result[2].rows_affected is not None and result[2].rows_affected > 0:
-            await (
+            stats = (
                 DailyReminderRegistrationStatsPreparer()
                 .incr_unsubscribed(
                     unix_dates.unix_timestamp_to_unix_date(

@@ -18,7 +18,6 @@ class User(BaseModel):
     sub: str = Field(description="The sub of the user")
     given_name: str = Field(description="The given name of the user")
     family_name: str = Field(description="The family name of the user")
-    email: str = Field(description="The email address of the user")
     created_at: float = Field(
         description="The time the user was created in seconds since the epoch"
     )
@@ -173,7 +172,19 @@ async def create_vip_chat_request(
 
         if args.user_sub is None:
             response = await cursor.execute(
-                "SELECT sub FROM users WHERE email = ? LIMIT 2",
+                """
+                SELECT
+                    users.sub 
+                FROM users
+                WHERE
+                    EXISTS (
+                        SELECT 1 FROM user_email_addresses 
+                        WHERE 
+                            user_email_addresses.user_id = users.id
+                            AND user_email_addresses.email = ?
+                    )
+                LIMIT 2
+                """,
                 (args.user_email,),
             )
             if not response.results:
@@ -201,7 +212,7 @@ async def create_vip_chat_request(
             args.user_sub = response.results[0][0]
 
         response = await cursor.execute(
-            "SELECT given_name, family_name, email, created_at FROM users WHERE sub = ?",
+            "SELECT given_name, family_name, created_at FROM users WHERE sub = ?",
             (args.user_sub,),
         )
         if not response.results:
@@ -223,12 +234,11 @@ async def create_vip_chat_request(
         (
             user_given_name,
             user_family_name,
-            user_email,
             user_created_at,
         ) = response.results[0]
 
         response = await cursor.execute(
-            "SELECT given_name, family_name, email, created_at FROM users WHERE sub = ?",
+            "SELECT given_name, family_name, created_at FROM users WHERE sub = ?",
             (auth_result.result.sub,),
         )
         if not response.results:
@@ -237,7 +247,6 @@ async def create_vip_chat_request(
         (
             added_by_user_given_name,
             added_by_user_family_name,
-            added_by_user_email,
             added_by_user_created_at,
         ) = response.results[0]
 
@@ -355,14 +364,12 @@ async def create_vip_chat_request(
                         sub=args.user_sub,
                         given_name=user_given_name,
                         family_name=user_family_name,
-                        email=user_email,
                         created_at=user_created_at,
                     ),
                     added_by_user=User(
                         sub=auth_result.result.sub,
                         given_name=added_by_user_given_name,
                         family_name=added_by_user_family_name,
-                        email=added_by_user_email,
                         created_at=added_by_user_created_at,
                     ),
                     variant=args.variant,

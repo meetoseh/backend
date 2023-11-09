@@ -138,7 +138,7 @@ the keys that we use in redis
 
   ```py
   class OauthStateInfo:
-      provider: Literal["Google", "SignInWithApple"]
+      provider: Literal["Google", "SignInWithApple", "Direct", "Dev"]
       refresh_token_desired: bool
       redirect_uri: str
   ```
@@ -180,38 +180,6 @@ the keys that we use in redis
   for how many phone number verifications the user has tried to give us the code for with less than
   10 minutes between them. This is accomplished with incr then expire, see
   [phones verify](../../phones/routes/finish_verify.py)
-
-- `users:klaviyo_ensure_user:{user_sub}:lock` goes to either an empty key or the json serialization
-  of
-
-  ```py
-  class KlaviyoEnsureUserLock:
-    typ: Literal["lock"]
-    acquired_at: float
-    host: str
-    pid: str
-    uid: str
-  ```
-
-  where `host` is the result of `socket.gethostname()` on the instance with the lock, the
-  pid is the process id, and uid is a randomly generated uid that is included in certain
-  log messages to further facilitate debugging.
-
-- `users:klaviyo:ensure_user:{user_sub}:queue` goes to either an empty key or a list where the
-  first element is the json serialization of
-
-  ```py
-  class KlaviyoEnsureUserQueuedAction:
-    typ: Literal["action"]
-    queued_at: float
-    timezone: Optional[str]
-    timezone_technique: Optional[TimezoneTechniqueSlug]
-    is_outside_flow: bool
-  ```
-
-  which represents a call to the jobs `execute` being run, detecting that there was
-  a lock, and queued the action to be queued by the instance which has the lock once
-  it finishes whatever its currently doing.
 
 - `visitors:user_associations:{user_sub}:lock` goes to the string '1' while we should
   drop user associations for the given user as we've recently stored one. Primarily
@@ -333,32 +301,19 @@ the keys that we use in redis
 - `reddit:lock`: A lock that prevents us having multiple praw instances trying to use
   reddit at once, which will cause issues with the refresh token.
 
-- `oauth:direct_account:code:{client_id}:{code}` goes to a text json object matching the following
-  examples format:
+- `described_users:{sub}` goes to a string which is `1` if an instance is fetching this
+  value, otherwise containing the jsonified representation of a `DescribedUser`
+  from [lib/shared/describe_user.py](../../lib/shared/describe_user.py). Always
+  set to expire after 15m from when it was last checked (if a json object) or
+  10s after starting fetching (if fetching)
 
-  ```json
-  {
-    "redirect_uri": "string",
-    "sub": "string",
-    "email": "string",
-    "email_verified": true,
-    "expires_at": 0
-  }
-  ```
+- `described_users:profile_picture:{sub}` goes to a string which is `1` if an instance
+  is currently fetching this value, `0` if there is no profile picture available for
+  the user with that sub, and otherwise a url where the users profile picture can be
+  found. Always set to expire 15m from when it was last checked (if `0` or a json
+  object) or 10s after starting fetching (if fetching)
 
-  where the `code` is the randomly generated (as if by `secrets.token_urlsafe(16)`) code,
-  client id is the client id the code is valid for, redirect uri is the redirect uri the
-  code is valid for, the sub/email/email_verified at are the corresponding fields for
-  the resulting token if the code is used successfully, and expires_at is the latest time
-  in unix seconds since the epoch before the code should be considered expired, in case
-  for some reason key expiration is delayed (such as from a poorly done redis restore).
-
-  the code is always exactly 22 characters.
-
-- `oauth:direct_account:seen_jits:{jti}` goes to '1' if that jti has been seen and '0'
-  otherwise. Expires 1m after the corresponding JWT expires.
-  NOTE: This is used for all CRSF tokens, but currently that just consists of
-  Sign in with Oseh
+### Push Namespace
 
 - `push:send_job:lock` is a basic redis lock key used to ensure only one send job is
   running at a time, in case it takes more than a minute to complete.
@@ -469,6 +424,12 @@ the keys that we use in redis
 
 - `push:check_job:lock` is a basic redis lock key used to ensure only one push receipt check
   job is running at a time
+
+- `daily_reminder_settings_improved_at` is a redis key that goes to the time in seconds since
+  the epoch when we improved the notification setting options available. Users who set their
+  daily reminder settings before this time are reprompted
+
+### SMS Namespace
 
 - `sms:to_send` goes to a list (inserted on the right, removed from the left)
   where each item is a json object in the following form:
@@ -623,11 +584,11 @@ the keys that we use in redis
     added to the to_send queue
   - `failure_job (job callback)`: the name and bonus kwargs for the job to run on failure;
     always passed the kwarg `data_raw` which can be decoded with
-    `lib.email.email_info#decode_data_for_failure_job` in `jobs`. This job is responsible for
+    `lib.emails.email_info#decode_data_for_failure_job` in `jobs`. This job is responsible for
     determining the retry strategy on transient failures as well as handling permanent failures.
   - `success_job (job callback)`: the name and bonus kwargs for the job to run on success;
     always passed the kwarg `data_raw` which can be decoded with
-    `lib.email.email_info#decode_data_for_success_job` in `jobs`.
+    `lib.emails.email_info#decode_data_for_success_job` in `jobs`.
 
 - `email:send_purgatory` goes to a list (inserted on the right, removed from the left)
   containing the same values as `email:to_send` but consisting only of those being worked
@@ -660,10 +621,10 @@ the keys that we use in redis
     added to the receipt pending set
   - `failure_job (job callback)`: the name and bonus kwargs for the job to run on failure;
     always passed the kwarg `data_raw` which can be decoded with
-    `lib.email.email_info#decode_data_for_failure_job` in `jobs`.
+    `lib.emails.email_info#decode_data_for_failure_job` in `jobs`.
   - `success_job (job callback)`: the name and bonus kwargs for the job to run on success;
     always passed the kwarg `data_raw` which can be decoded with
-    `lib.email.email_info#decode_data_for_success_job` in `jobs`.
+    `lib.emails.email_info#decode_data_for_success_job` in `jobs`.
 
 - `email:reconciliation_job:lock` goes to a basic redis lock key for ensuring only one email
   reconciliation job is running at a time
@@ -1017,6 +978,12 @@ a different base offset. To handle this, we iterate over each timezone separatel
   daily reminder Send job is running a time. This job pulls overdue messages from
   the queued sorted set and sends them as touches.
 
+- `daily_reminders:counts` goes to a redis hash containing how many users are
+  registered to receive daily reminders on the given channel. the keys are:
+  - `email`
+  - `sms`
+  - `push`
+
 ### Sign in with Oseh namespace
 
 Used for facilitating the Sign in with Oseh identity provider, which allows users
@@ -1260,6 +1227,33 @@ fraudulent behavior. Fraudulent behavior typically falls into two categories:
   has recently tried a verification code. Always set to expire after the minimum
   time between verification attempts passes.
 
+- `oauth:direct_account:code:{client_id}:{code}` goes to a text json object matching the following
+  examples format:
+
+  ```json
+  {
+    "redirect_uri": "string",
+    "sub": "string",
+    "email": "string",
+    "email_verified": true,
+    "expires_at": 0
+  }
+  ```
+
+  where the `code` is the randomly generated (as if by `secrets.token_urlsafe(16)`) code,
+  client id is the client id the code is valid for, redirect uri is the redirect uri the
+  code is valid for, the sub/email/email_verified at are the corresponding fields for
+  the resulting token if the code is used successfully, and expires_at is the latest time
+  in unix seconds since the epoch before the code should be considered expired, in case
+  for some reason key expiration is delayed (such as from a poorly done redis restore).
+
+  the code is always exactly 22 characters.
+
+- `oauth:direct_account:seen_jits:{jti}` goes to '1' if that jti has been seen and '0'
+  otherwise. Expires 1m after the corresponding JWT expires.
+  NOTE: This is used for all CRSF tokens, but currently that just consists of
+  Sign in with Oseh
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -1418,35 +1412,6 @@ rather than external functionality.
 - `stats:daily_new_users:earliest` goes to a string representing the earliest
   date, as a unix date number, for which there may be a daily new users count
   still in redis
-
-- `stats:user_notification_settings:counts`: Goes to a hash where the keys
-  represent a preference, using the same preference values
-  as [uns stats](../db/stats/user_notification_setting_stats) `old_preference`
-  or `new_preference` fields, and the values go to the total number of
-  users with the given notification preference.
-
-- `stats:daily_user_notification_settings:earliest` goes to a string representing
-  the earliest date, as a unix date number, for which there may be a daily user
-  notification settings count still in redis.
-
-- `stats:daily_user_notification_settings:{unix_date}` where:
-
-  - `unix_date` is formatted as the number of days since the epoch
-
-  goes to a hash where the keys are in the form `{old_preference}:{new_preference}`
-  where
-
-  - `old_preference` matches the values in [uns stats](../db/stats/user_notification_setting_stats)
-    `old_preference`
-  - `new_preference` matches the values in [uns stats](../db/stats/user_notification_setting_stats)
-    `new_preference`
-
-  and the values correspond to how many people changed their preference from the old value
-  to the new value, without any attempts at deduplication by user (although duplicate
-  changes by user is unlikely at the time of writing due to how the frontend flow works)
-
-  With 5 preference values, there are `5*4 = 20` possible keys. For N preference values,
-  there are `N*(N-1)` possible keys.
 
 - `stats:visitors:daily:earliest` goes to a string representing the earliest date,
   as a unix date number, for which there may be daily visitor information still in
@@ -2611,6 +2576,101 @@ rather than external functionality.
   - `stop_reason`: one of `list_exhausted`, `time_exhausted`, `backpressure`,
     or `signal`
 
+- `stats:contact_methods:daily:{unix_date}` goes to a hash containing integers
+  describing how many contact methods were created/edited/deleted, where the
+  keys are:
+  - `created`: a contact method was associated with a user
+  - `deleted`: a contact method was disassociated with a user (or deleted because
+    the user was being deleted)
+  - `verified`: a contact method was verified from a user. this does
+    not get incremented when a contact method was verified when it was created
+  - `enabled_notifications`: a contact method which previously did not
+    have notifications enabled now has notifications enabled. Note that contact methods
+    that are created with notifications enabled do not increment this value.
+  - `disabled_notifications`: a contact method which previously had
+    notifications enabled now no longer has notifications enabled (but wasn't
+    deleted). Note that contact methods that are created with notifications
+    disabled do not increment this value.
+- `stats:contact_methods:daily:{unix_date}:extra:{event}`: goes to a hash where
+  the values are integers breaking down the given event, where the keys depend
+  on the event:
+  - `created` is broken down by `{channel}:{verified}:{notifs enabled}:{reason}`
+    where channel is `email`/`phone`/`push`, verified is one of
+    `verified`/`unverified` (omitted for the push channel), notifs enabled is one
+    of `enabled`/`disabled`, and the reason depends on the channel:
+    - `email`:
+      - `identity`: the user exchanged an identity code and we pulled the `email`
+        and `email_verified` claims
+      - `migration`: migrated from before when these stats existed
+    - `phone`:
+      - `identity`: a new user identity was associated with the user and we pulled the
+        `phone_number` and `phone_number_verified` claims
+      - `verify`: the user completed the phone verification flow
+      - `migration`: migrated from before when these stats existed
+    - `push`:
+      - `app`: the app sent us a push token
+      - `migration`: migrated from before when these stats existed
+  - `deleted` is broken down by `{channel}:{reason}` where channel is
+    `email`/`phone`/`push` and the reason depends on the channel:
+    - `email`:
+      - `account`: the account was deleted
+    - `phone`:
+      - `account`: the account was deleted
+    - `push`:
+      - `account`: the account was deleted
+      - `reassigned`: the push token was assigned to a different user
+      - `excessive`: the user created a new push token causing them to have
+        an excessive number of active push tokens, so we deleted the oldest one
+      - `device_not_registered`: the push token is no longer valid (or was never valid
+        and we just found out about that)
+  - `verified` is broken down by `{channel}:{reason}` where channel is
+    `email`/`phone` and the reason depends on the channel:
+    - `email`:
+      - `identity`: the user exchanged an identity code and we pulled the `email`
+        and `email_verified` claims, the email was already associated but not verified,
+        and the `email_verified` claim was true.
+        Note that the Oseh platform never verifies emails directly, but Sign in with Oseh
+        can be used for the same effect.
+    - `phone`:
+      - `identity`: the user exchanged an identity code and we pulled the `phone_number`
+        and `phone_number_verified` claims, the phone numebr was already associated but
+        not verified, and the `phone_number_verified` claim was true
+      - `verify`: the user completed the phone verification flow for a phone number that
+        was already associated with their account
+      - `sms_start`: there was only one user associated with a phone number and
+        they texted START
+  - `enabled_notifications` is broken down by `{channel}:{reason}` where channel
+    is `email`/`phone`/`push` and the reason depends on the channel:
+    - `email`:
+      - not currently possible
+    - `phone`:
+      - `verify`: the user completed the phone verification flow, indicated they want
+        notifications, the phone number was already associated with their account, and
+        the phone number had notifications disabled.
+    - `push`:
+      - not currently possible
+  - `disabled_notifications` is broken down by `{channel}:{reason}` where
+    channel is `email`/`phone`/`push` and the reason depends on the channel:
+    - `email`:
+      - `unsubscribe`: user unsubscribed their email address within the
+        app/website, while logged in (the logged out variant suppresses the
+        email address instead, to ensure it applies to every account)
+    - `phone`:
+      - `unsubscribe`: the user unsubscribed their phone number within the
+        app/website. Note that sending the STOP message causes their phone
+        number to be suppressed instead as it applies to all accounts
+      - `verify`: the user verified a phone number with notifications disabled
+      - `dev_auto_disable`: we automatically disable phone notifications to non-test phones
+        (i.e., phones that the dev environment actually tries to message) once per day to avoid
+        increasing costs from dev environments while still allowing testing sms flows in dev
+    - `push`:
+      - `unsubscribe`: user unsubscribed their device within the app/website.
+        note that currently this is not _that_ effective considering push tokens
+        rotate arbitrarily, especially on Android, but it's included for now
+        until a better solution is available
+- `stats:contact_methods:daily:earliest` goes to the earliest unix date for
+  which there might still be sign in with contact method statistics in redis
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -2812,6 +2872,13 @@ These are regular keys used by the personalization module
 
 - `ps:stats:sign_in_with_oseh:exchange:daily` is used to optimistically send
   compressed sign in with oseh exchange statistics. messages are formatted as
+  (uint32, uint32, uint64, blob) where the ints mean, in order:
+  `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
+  `length_bytes` of data to write to the corresponding local cache key. All
+  numbers are big-endian encoded.
+
+- `ps:stats:contact_methods:daily` is used to optimistically send
+  compressed contact method statistics. messages are formatted as
   (uint32, uint32, uint64, blob) where the ints mean, in order:
   `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
   `length_bytes` of data to write to the corresponding local cache key. All

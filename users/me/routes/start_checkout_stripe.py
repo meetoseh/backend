@@ -4,8 +4,9 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-from auth import auth_id
+from auth import AuthResult, auth_id
 from itgs import Itgs
+from lib.contact_methods.user_current_email import get_user_current_email
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from starlette.concurrency import run_in_threadpool
 from user_safe_error import UserSafeError
@@ -115,7 +116,7 @@ async def start_checkout_stripe(
             )
 
         try:
-            customer_id = await ensure_stripe_customer(itgs, auth_result.result.sub)
+            customer_id = await ensure_stripe_customer(itgs, auth_result)
         except UserSafeError as exc:
             return exc.response
 
@@ -185,7 +186,7 @@ async def start_checkout_stripe(
             raise
 
 
-async def ensure_stripe_customer(itgs: Itgs, user_sub: str) -> str:
+async def ensure_stripe_customer(itgs: Itgs, auth_result: AuthResult) -> str:
     """Gets or creates and gets the stripe customer id to use for the
     given user.
     """
@@ -206,24 +207,24 @@ async def ensure_stripe_customer(itgs: Itgs, user_sub: str) -> str:
         ORDER BY stripe_customers.created_at DESC, stripe_customers.uid ASC
         LIMIT 1
         """,
-        (user_sub,),
+        (auth_result.result.sub,),
     )
     if response.results:
         return response.results[0][0]
 
+    email = await get_user_current_email(itgs, auth_result, default=None)
     response = await cursor.execute(
         """
         SELECT
-            users.email,
             users.given_name,
             users.family_name
         FROM users WHERE users.sub = ?
         """,
-        (user_sub,),
+        (auth_result.result.sub,),
     )
     if not response.results:
         raise UserSafeError(
-            f"{user_sub=} does not exist",
+            f"`{auth_result.result.sub=}` does not exist",
             Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="user_not_found",
@@ -236,7 +237,7 @@ async def ensure_stripe_customer(itgs: Itgs, user_sub: str) -> str:
             ),
         )
 
-    email, given_name, family_name = response.results[0]
+    given_name, family_name = response.results[0]
     name = f"{given_name} {family_name}"
 
     try:
@@ -245,12 +246,15 @@ async def ensure_stripe_customer(itgs: Itgs, user_sub: str) -> str:
             api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
             email=email,
             name=name,
-            metadata={"user_sub": user_sub, "created_for": "start_checkout_stripe"},
+            metadata={
+                "user_sub": auth_result.result.sub,
+                "created_for": "start_checkout_stripe",
+            },
         )
     except Exception as exc:
         await handle_error(exc)
         raise UserSafeError(
-            f"Failed to create stripe customer for {user_sub=}",
+            f"Failed to create stripe customer for {auth_result.result.sub=}",
             Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="stripe_error",
@@ -275,7 +279,12 @@ async def ensure_stripe_customer(itgs: Itgs, user_sub: str) -> str:
             ?, ?, users.id, ?
         FROM users WHERE users.sub = ?
         """,
-        (f"oseh_sc_{secrets.token_urlsafe(16)}", customer.id, time.time(), user_sub),
+        (
+            f"oseh_sc_{secrets.token_urlsafe(16)}",
+            customer.id,
+            time.time(),
+            auth_result.result.sub,
+        ),
     )
 
     return customer.id

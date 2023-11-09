@@ -64,9 +64,34 @@ particular inapp notification.
   - `choice` - extra is formatted as `{"value": 1}` where value is 1-7
   - `set_goal` - the continue button, extra is formatted as `{"days_per_week": 1}`
 
-- Reminder Time (`oseh_ian_aJs054IZzMnJE2ulbbyT6w`) allows the user to select
-  when they would like to get reminders. This uses an interactive prompt, so
-  there are no actions available here.
+- Reminder Time by Channel (`oseh_ian_n-1kL6iJ76lhSgxLSAPJrQ`) allows the user
+  to decide when they would like to receive daily reminder notifications
+
+  - `open`: not a real action. this screen can be configured to only ask
+    for specific channels. has extra `{"channels": ["string"]}` to describe
+    which channels they were prompted with in order
+  - `open_time`: the user opened the modal to configure the time range.
+  - `close_time`: the user closed the modal to configure the time range.
+    has extra `{"channel": "string", "start": 0, "end": 0}` where
+    start/end are in integer seconds from midnight
+  - `open_days`: the user opened the modal to configure what days
+  - `close_days`: the user closed the modal to configure the days.
+    has extra `{"channel": "string", "days": ["string"]}`
+  - `set_reminders`: the user set their reminder settings on a channel.
+    has extra
+    ```json
+    {
+      "channel": "string",
+      "time": { "start": 0, "end": 0 },
+      "days": ["string"],
+      "next_channel": "string",
+      "error": false
+    }
+    ```
+    where `next_channel` may be null
+  - `tap_channel`: the user tapped on a channel button at the top to jump
+    to it. has extra `{"channel": "string", "already_seen": false}`
+  - `x`: the user closed the screen using the x button at the top right
 
 - AI Journey (`oseh_ian_ncpainTP_XZJpWQ9ZIdGQA`) asks the user if they want to
   try an ai-generated journey. If they select yes, they go through the journey
@@ -130,7 +155,11 @@ particular inapp notification.
     `last_requested_locally` either null or a float representing seconds since the
     unix epoch, and platform is either `ios` or `android`.
   - `open_native`: The user selected `allow notifications` and so we brought up the
-    native prompt, but they haven't yet selected ok.
+    native prompt, but they haven't yet selected ok. Prior to being able to set
+    reminder times, this would have no extra. Since then, this has
+    `{"time_range": { "start": 0, "end": 0 }, "days": ["Monday"]}` where time_range
+    is the selected time range (seconds from midnight offsets) and days are the
+    selected days to receive reminders.
   - `close_native`: The user made their selection on the native prompt. extra is
     formatted as `{"granted": true, "error": null}` where granted is true if we now have permission
     and false otherwise. error is a string if we caught an error, though it may not

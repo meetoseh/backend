@@ -1,13 +1,14 @@
+import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term, Case, ExistsCriterion
-from pypika.functions import Coalesce, Max
+from pypika.functions import Coalesce, Max, Function, AggregateFunction
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_admin
-from db.utils import sqlite_string_concat
+from db.utils import CaseInsensitiveCriterion, sqlite_string_concat
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItem, FilterItemModel
@@ -17,17 +18,15 @@ from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from image_files.models import ImageFileRef
 import image_files.auth as img_file_auth
 from itgs import Itgs
-from users.lib.models import User
+from users.lib.models import User, UserEmail, UserPhone
 
 USER_SORT_OPTIONS = [
     SortItem[Literal["sub"], str],
-    SortItem[Literal["email"], str],
     SortItem[Literal["created_at"], float],
     SortItem[Literal["last_seen_at"], float],
 ]
 UserSortOption = Union[
     SortItemModel[Literal["sub"], str],
-    SortItemModel[Literal["email"], str],
     SortItemModel[Literal["created_at"], float],
     SortItemModel[Literal["last_seen_at"], float],
 ]
@@ -38,16 +37,16 @@ class UserFilter(BaseModel):
         None, description="the unique identifier of the user"
     )
     email: Optional[FilterTextItemModel] = Field(
-        None, description="the email of the user"
+        None, description="any email of the user"
     )
     email_verified: Optional[FilterItemModel[bool]] = Field(
-        None, description="whether or not the user has verified their email"
+        None, description="any email associated with the user is verified"
     )
     phone_number: Optional[FilterTextItemModel] = Field(
         None, description="the phone number of the user"
     )
     phone_number_verified: Optional[FilterItemModel[bool]] = Field(
-        None, description="whether or not the user has verified their phone number"
+        None, description="any phone number associated with the user is verified"
     )
     given_name: Optional[FilterTextItemModel] = Field(
         None, description="the first name of the user"
@@ -163,10 +162,6 @@ async def read_users(
 base_keys: Set[str] = frozenset(
     (
         "sub",
-        "email",
-        "email_verified",
-        "phone_number",
-        "phone_number_verified",
         "given_name",
         "family_name",
         "admin",
@@ -192,6 +187,14 @@ async def raw_read_users(
 
     last_seen_ats = Table("last_seen_ats")
 
+    user_email_addresses = Table("user_email_addresses")
+    suppressed_email_addresses = Table("suppressed_emails")
+    aggregated_email_addresses = Table("aggregated_email_addresses")
+
+    user_phone_numbers = Table("user_phone_numbers")
+    suppressed_phone_numbers = Table("suppressed_phone_numbers")
+    aggregated_phone_numbers = Table("aggregated_phone_numbers")
+
     query: QueryBuilder = (
         Query.with_(
             Query.from_(visitor_users)
@@ -202,13 +205,63 @@ async def raw_read_users(
             .groupby(visitor_users.user_id),
             last_seen_ats.get_table_name(),
         )
+        .with_(
+            Query.from_(user_email_addresses)
+            .select(
+                user_email_addresses.user_id.as_("user_id"),
+                AggregateFunction(
+                    "json_group_array",
+                    Function(
+                        "json_array",
+                        user_email_addresses.email,
+                        user_email_addresses.verified,
+                        user_email_addresses.receives_notifications,
+                        ExistsCriterion(
+                            Query.from_(suppressed_email_addresses)
+                            .select(1)
+                            .where(
+                                CaseInsensitiveCriterion(
+                                    suppressed_email_addresses.email_address
+                                    == user_email_addresses.email
+                                )
+                            )
+                        ),
+                    ),
+                ).as_("emails"),
+            )
+            .groupby(user_email_addresses.user_id),
+            aggregated_email_addresses.get_table_name(),
+        )
+        .with_(
+            Query.from_(user_phone_numbers)
+            .select(
+                user_phone_numbers.user_id.as_("user_id"),
+                AggregateFunction(
+                    "json_group_array",
+                    Function(
+                        "json_array",
+                        user_phone_numbers.phone_number,
+                        user_phone_numbers.verified,
+                        user_phone_numbers.receives_notifications,
+                        ExistsCriterion(
+                            Query.from_(suppressed_phone_numbers)
+                            .select(1)
+                            .where(
+                                suppressed_phone_numbers.phone_number
+                                == user_phone_numbers.phone_number
+                            )
+                        ),
+                    ),
+                ).as_("phones"),
+            )
+            .groupby(user_phone_numbers.user_id),
+            aggregated_phone_numbers.get_table_name(),
+        )
         .from_(users)
         .select(
             users.sub,
-            users.email,
-            users.email_verified,
-            users.phone_number,
-            users.phone_number_verified,
+            Coalesce(aggregated_email_addresses.emails, "[]"),
+            Coalesce(aggregated_phone_numbers.phones, "[]"),
             users.given_name,
             users.family_name,
             users.admin,
@@ -217,6 +270,10 @@ async def raw_read_users(
             users.created_at,
             Coalesce(last_seen_ats.last_seen_at, users.created_at).as_("last_seen_at"),
         )
+        .left_outer_join(aggregated_email_addresses)
+        .on(aggregated_email_addresses.user_id == users.id)
+        .left_outer_join(aggregated_phone_numbers)
+        .on(aggregated_phone_numbers.user_id == users.id)
         .left_outer_join(user_profile_pictures)
         .on(
             (user_profile_pictures.user_id == users.id)
@@ -281,9 +338,53 @@ async def raw_read_users(
             .where(filter.applied_to(utms.canonical_query_param, qargs))
         )
 
+    def email_term(filter: FilterTextItem, qargs: list) -> Term:
+        uea = user_email_addresses.as_("uea")
+        return ExistsCriterion(
+            Query.from_(uea)
+            .select(1)
+            .where(uea.user_id == users.id)
+            .where(filter.applied_to(uea.email, qargs))
+        )
+
+    def email_verified_term(filter: FilterItem[bool], qargs: list) -> Term:
+        uea = user_email_addresses.as_("uea")
+        return ExistsCriterion(
+            Query.from_(uea)
+            .select(1)
+            .where(uea.user_id == users.id)
+            .where(filter.applied_to(uea.verified, qargs))
+        )
+
+    def phone_term(filter: FilterTextItem, qargs: list) -> Term:
+        upn = user_phone_numbers.as_("upn")
+        return ExistsCriterion(
+            Query.from_(upn)
+            .select(1)
+            .where(upn.user_id == users.id)
+            .where(filter.applied_to(upn.phone_number, qargs))
+        )
+
+    def phone_verified_term(filter: FilterItem[bool], qargs: list) -> Term:
+        upn = user_phone_numbers.as_("upn")
+        return ExistsCriterion(
+            Query.from_(upn)
+            .select(1)
+            .where(upn.user_id == users.id)
+            .where(filter.applied_to(upn.verified, qargs))
+        )
+
     for key, filter in filters_to_apply:
         if key == "utm":
             query = query.where(utm_term(filter, qargs))
+        elif key == "email":
+            query = query.where(email_term(filter, qargs))
+        elif key == "email_verified":
+            query = query.where(email_verified_term(filter, qargs))
+        elif key == "phone_number":
+            query = query.where(phone_term(filter, qargs))
+        elif key == "phone_number_verified":
+            query = query.where(phone_verified_term(filter, qargs))
         else:
             query = query.where(filter.applied_to(pseudocolumn(key), qargs))
 
@@ -300,7 +401,7 @@ async def raw_read_users(
     response = await cursor.execute(query.get_sql(), qargs)
     items: List[User] = []
     for row in response.results or []:
-        image_file_uid: Optional[str] = row[9]
+        image_file_uid: Optional[str] = row[7]
         image_file_ref: Optional[ImageFileRef] = None
         if image_file_uid is not None:
             image_file_jwt = await img_file_auth.create_jwt(itgs, image_file_uid)
@@ -309,20 +410,54 @@ async def raw_read_users(
         items.append(
             User(
                 sub=row[0],
-                email=row[1],
-                email_verified=bool(row[2]),
-                phone_number=row[3],
-                phone_number_verified=bool(row[4]),
-                given_name=row[5],
-                family_name=row[6],
-                admin=bool(row[7]),
-                revenue_cat_id=row[8],
+                emails=parse_emails(row[1]),
+                phones=parse_phones(row[2]),
+                given_name=row[3],
+                family_name=row[4],
+                admin=bool(row[5]),
+                revenue_cat_id=row[6],
                 profile_picture=image_file_ref,
-                created_at=row[10],
-                last_seen_at=row[11],
+                created_at=row[8],
+                last_seen_at=row[9],
             )
         )
     return items
+
+
+def parse_emails(col: str) -> List[UserEmail]:
+    """parses the aggregated emails column from the users query into the list
+    of user emails it represents. we use json aggregation on this column since
+    the vast majority of users have 0 or 1 email, and this aggregation lends
+    itself well to those rows while degrading gracefully for users with more
+    than one email
+    """
+    return [
+        UserEmail(
+            address=row[0],
+            verified=bool(row[1]),
+            enabled=bool(row[2]),
+            suppressed=bool(row[3]),
+        )
+        for row in json.loads(col)
+    ]
+
+
+def parse_phones(col: str) -> List[UserPhone]:
+    """parses the aggregated phones column from the users query into the list
+    of user phones it represents. we use json aggregation on this column since
+    the vast majority of users have 0 or 1 phone, and this aggregation lends
+    itself well to those rows while degrading gracefully for users with more
+    than one phone
+    """
+    return [
+        UserPhone(
+            number=row[0],
+            verified=bool(row[1]),
+            enabled=bool(row[2]),
+            suppressed=bool(row[3]),
+        )
+        for row in json.loads(col)
+    ]
 
 
 def item_pseudocolumns(item: User) -> dict:
@@ -330,7 +465,6 @@ def item_pseudocolumns(item: User) -> dict:
     the keys of the sort options"""
     return {
         "sub": item.sub,
-        "email": item.email,
         "created_at": item.created_at,
         "last_seen_at": item.last_seen_at,
     }

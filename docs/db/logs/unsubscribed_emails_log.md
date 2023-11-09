@@ -15,7 +15,7 @@ should not send emails to
 
 - `id (integer primary key)`: Internal row identifier
 - `uid (text unique not null)`: Primary stable external row identifier;
-  uses the [uid prefix](../uid_prefixes.md) `uel`
+  uses the [uid prefix](../../uid_prefixes.md) `uel`
 - `link_code (text not null)`: the link code that was used, which was
   valid at the time and will generally correspond to a code within the
   `user_touches` table once the link is persisted, assuming it wasn't

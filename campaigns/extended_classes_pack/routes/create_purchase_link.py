@@ -97,7 +97,7 @@ async def create_purchase_link(
             return ALREADY_OWNED_RESPONSE
 
         try:
-            customer_id = await ensure_stripe_customer(itgs, auth_result.result.sub)
+            customer_id = await ensure_stripe_customer(itgs, auth_result)
         except UserSafeError as exc:
             return exc.response
 

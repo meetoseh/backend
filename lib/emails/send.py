@@ -4,7 +4,7 @@ import secrets
 from typing import Optional
 from pydantic import BaseModel, Field
 import pytz
-from lib.email.email_info import EmailAttempt
+from lib.emails.email_info import EmailAttempt
 from lib.shared.job_callback import JobCallback
 from itgs import Itgs
 import time

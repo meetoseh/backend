@@ -13,6 +13,8 @@ fields for the user.
 - `user_id (integer not null references users(id) on delete cascade)`: The id of the
   user which requested the verification
 - `phone_number (text not null)`: the phone number we attempted to verify
+- `enabled (boolean not null)`: true if the phone number should be enabled when the
+  verification completes, false otherwise.
 - `status (text not null)`: one of `approved`, `pending`, or `canceled`
 - `started_at (real not null)`: when we sent the initial verification request, in
   seconds since the unix epoch
@@ -32,6 +34,7 @@ CREATE TABLE phone_verifications (
     sid TEXT UNIQUE NOT NULL,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     phone_number TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL,
     status TEXT NOT NULL,
     started_at REAL NOT NULL,
     verification_attempts INTEGER NOT NULL,

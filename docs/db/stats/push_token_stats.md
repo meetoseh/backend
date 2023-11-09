@@ -8,6 +8,9 @@ notifications.
 
 These push tokens are stored in `user_push_tokens`.
 
+SEE ALSO: [contact_method_log](../logs/contact_method_log.md)
+SEE ALSO: [contact_method_stats](./contact_method_stats.md)
+
 ## Fields
 
 - `id (integer primary key)`: Internal row identifer

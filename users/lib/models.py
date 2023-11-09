@@ -1,6 +1,54 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import List, Optional
 from image_files.models import ImageFileRef
+
+
+class UserEmail(BaseModel):
+    address: str = Field(
+        description="An email address of the user. Not necessarily unique"
+    )
+    verified: bool = Field(
+        description=(
+            "True if we are fairly sure this user actually owns this email, false "
+            "if we have no reason to believe that's the case"
+        )
+    )
+    enabled: bool = Field(
+        description=(
+            "True if this email is eligible to receive passive notifications, "
+            "false otherwise"
+        )
+    )
+    suppressed: bool = Field(
+        description=(
+            "True if this email is suppressed from receiving any notifications, "
+            "false otherwise"
+        )
+    )
+
+
+class UserPhone(BaseModel):
+    number: str = Field(
+        description="A phone number of the user. Not necessarily unique"
+    )
+    verified: bool = Field(
+        description=(
+            "True if we are fairly sure this user actually owns this number, false "
+            "if we have no reason to believe that's the case"
+        )
+    )
+    enabled: bool = Field(
+        description=(
+            "True if this number is eligible to receive passive notifications, "
+            "false otherwise"
+        )
+    )
+    suppressed: bool = Field(
+        description=(
+            "True if this number is suppressed from receiving any notifications, "
+            "false otherwise"
+        )
+    )
 
 
 class User(BaseModel):
@@ -13,25 +61,11 @@ class User(BaseModel):
     sub: str = Field(
         description="The primary unique identifier for users, which is the subject of their JWTs"
     )
-    email: str = Field(
-        description="The user's primary email address. Not necessarily unique"
+    emails: List[UserEmail] = Field(
+        description="email addresses associated with this user"
     )
-    email_verified: bool = Field(
-        description=(
-            "True if we are fairly sure this user actually owns this email, false "
-            "if we have no reason to believe that's the case"
-        )
-    )
-    phone_number: Optional[str] = Field(
-        description=(
-            "The users primary phone number, if known, not necessarily unique."
-        )
-    )
-    phone_number_verified: Optional[bool] = Field(
-        description=(
-            "True if we are fairly sure this user actually owns this phone number, "
-            "false if we have no reason to believe that's the case"
-        )
+    phones: List[UserPhone] = Field(
+        description="phone numbers associated with this user"
     )
     given_name: Optional[str] = Field(description="The user's first name")
     family_name: Optional[str] = Field(description="The user's last name")

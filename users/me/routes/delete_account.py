@@ -4,6 +4,7 @@ from typing import List, Literal, Optional
 import pytz
 from auth import auth_id
 from error_middleware import handle_error
+from lib.contact_methods.contact_method_stats import contact_method_stats
 from lib.daily_reminders.registration_stats import (
     DailyReminderRegistrationStatsPreparer,
 )
@@ -264,8 +265,10 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
 
             await cleanup_user_daily_reminders(itgs, auth_result.result.sub)
             await cleanup_user_push_tokens(itgs, auth_result.result.sub)
-            await cleanup_klaviyo(itgs, auth_result.result.sub)
+            await cleanup_user_emails(itgs, auth_result.result.sub)
+            await cleanup_user_phones(itgs, auth_result.result.sub)
             await cleanup_siwo_email_log(itgs, auth_result.result.sub)
+            await cleanup_siwo_identities(itgs, auth_result.result.sub)
             await cursor.execute(
                 "DELETE FROM users WHERE sub=?", (auth_result.result.sub,)
             )
@@ -344,7 +347,9 @@ async def cleanup_user_daily_reminders(itgs: Itgs, sub: str) -> None:
 
 async def cleanup_user_push_tokens(itgs: Itgs, sub: str) -> None:
     """Cleans up any push tokens the user has, in particular this updates
-    our statistics for push tokens.
+    our statistics for push tokens. This does not bother writing to the
+    contact method log since the user is presumably being deleted and that
+    will cascade to the contact method log
 
     Args:
         itgs (Itgs): The integrations to (re)use
@@ -365,81 +370,91 @@ async def cleanup_user_push_tokens(itgs: Itgs, sub: str) -> None:
         (sub,),
     )
     if response.rows_affected is not None and response.rows_affected > 0:
+        now = time.time()
+        unix_date = unix_dates.unix_timestamp_to_unix_date(
+            now, tz=pytz.timezone("America/Los_Angeles")
+        )
         await notifications.push.lib.token_stats.increment_event(
             itgs,
             event="deleted_due_to_user_deletion",
-            now=time.time(),
+            now=now,
             amount=response.rows_affected,
         )
+        async with contact_method_stats(itgs) as stats:
+            stats.incr_deleted(
+                unix_date, channel="push", reason="account", amt=response.rows_affected
+            )
 
 
-async def cleanup_klaviyo(itgs: Itgs, sub: str) -> None:
-    """If the user has a klaviyo profile, their email is suppressed and we unsubscribe
-    them from any lists we added them to.
-
-    Args:
-        itgs (Itgs): The integrations to (re)use
-        sub (str): The sub of the user whose klaviyo profile will be cleaned up
+async def cleanup_user_emails(itgs: Itgs, sub: str) -> None:
+    """Deletes email addresses associated with the user with the given sub,
+    updating stats as appropriate. This doesn't bother inserting into the
+    contact method log since the user is presumably about to deleted which
+    will cascade to the contact method log
     """
     conn = await itgs.conn()
-    cursor = conn.cursor("weak")
-
+    cursor = conn.cursor("none")
     response = await cursor.execute(
         """
-        SELECT 
-            user_klaviyo_profiles.klaviyo_id,
-            user_klaviyo_profiles.email,
-            user_klaviyo_profiles.phone_number,
-            user_klaviyo_profile_lists.list_id
-        FROM user_klaviyo_profiles
-        LEFT OUTER JOIN user_klaviyo_profile_lists
-            ON user_klaviyo_profile_lists.user_klaviyo_profile_id = user_klaviyo_profiles.id
-        WHERE EXISTS (
-            SELECT 1 FROM users
-            WHERE users.id = user_klaviyo_profiles.user_id
-              AND users.sub = ?
-        )
+        DELETE FROM user_email_addresses
+        WHERE
+            EXISTS (
+                SELECT 1 FROM users
+                WHERE
+                    users.id = user_email_addresses.user_id
+                    AND users.sub = ?
+            )
         """,
         (sub,),
     )
 
-    if not response.results:
+    emails_deleted = 0 if response.rows_affected is None else response.rows_affected
+    if emails_deleted < 1:
         return
 
-    klaviyo_id: str = response.results[0][0]
-    email: str = response.results[0][1]
-    phone_number: str = response.results[0][2]
-    list_ids: List[str] = [row[3] for row in response.results if row[3] is not None]
-
-    klaviyo = await itgs.klaviyo()
-    try:
-        await klaviyo.suppress_email(email)
-    except Exception as e:
-        await handle_error(
-            e,
-            extra_info=(
-                f"failed to cleanup klaviyo account while deleting profile (suppress email); {sub=}, {klaviyo_id=}, {email=}, {phone_number=}, {list_ids=}"
-            ),
-        )
-    try:
-        for list_id in list_ids:
-            await klaviyo.remove_from_list(profile_id=klaviyo_id, list_id=list_id)
-    except Exception as e:
-        await handle_error(
-            e,
-            extra_info=(
-                f"failed to cleanup klaviyo account while deleting profile (remove from lists); {sub=}, {klaviyo_id=}, {email=}, {phone_number=}, {list_ids=}"
-            ),
+    now = time.time()
+    unix_date = unix_dates.unix_timestamp_to_unix_date(
+        now, tz=pytz.timezone("America/Los_Angeles")
+    )
+    async with contact_method_stats(itgs) as stats:
+        stats.incr_deleted(
+            unix_date, channel="email", reason="account", amt=emails_deleted
         )
 
-    try:
-        await klaviyo.request_profile_deletion(klaviyo_id)
-    except Exception as e:
-        await handle_error(
-            e,
-            extra_info=(
-                f"failed to cleanup klaviyo account while deleting profile (request profile deletion); {sub=}, {klaviyo_id=}, {email=}, {phone_number=}, {list_ids=}"
-            ),
+
+async def cleanup_user_phones(itgs: Itgs, sub: str) -> None:
+    """Deletes phone numbers associated with the user with the given sub,
+    updating stats as appropriate. This doesn't bother inserting into the
+    contact method log since the user is presumably about to deleted which
+    will cascade to the contact method log
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+    response = await cursor.execute(
+        """
+        DELETE FROM user_phone_numbers
+        WHERE
+            EXISTS (
+                SELECT 1 FROM users
+                WHERE
+                    users.id = user_phone_numbers.user_id
+                    AND users.sub = ?
+            )
+        """,
+        (sub,),
+    )
+
+    phones_deleted = 0 if response.rows_affected is None else response.rows_affected
+    if phones_deleted < 1:
+        return
+
+    now = time.time()
+    unix_date = unix_dates.unix_timestamp_to_unix_date(
+        now, tz=pytz.timezone("America/Los_Angeles")
+    )
+    async with contact_method_stats(itgs) as stats:
+        stats.incr_deleted(
+            unix_date, channel="phone", reason="account", amt=phones_deleted
         )
 
 
@@ -455,10 +470,37 @@ async def cleanup_siwo_email_log(itgs: Itgs, sub: str) -> None:
         DELETE FROM siwo_email_log
         WHERE
             EXISTS (
-                SELECT 1 FROM users
-                WHERE users.sub = ?
-                  AND users.email = siwo_email_log.email
-                  AND users.email_verified = 1
+                SELECT 1 FROM users, user_identities, direct_accounts
+                WHERE
+                    users.sub = ?
+                    AND user_identities.user_id = users.id
+                    AND user_identities.provider = 'Direct'
+                    AND user_identities.sub = direct_accounts.uid
+                    AND direct_accounts.email = siwo_email_log.email
+            )
+        """,
+        (sub,),
+    )
+
+
+async def cleanup_siwo_identities(itgs: Itgs, sub: str) -> None:
+    """If the user with the given sub exists, all associated sign in with
+    oseh identities are deleted
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor()
+
+    await cursor.execute(
+        """
+        DELETE FROM direct_accounts
+        WHERE
+            EXISTS (
+                SELECT 1 FROM users, user_identities
+                WHERE
+                    users.sub = ?
+                    AND users.id = user_identities.user_id
+                    AND user_identities.provider = 'Direct'
+                    AND user_identities.sub = direct_accounts.uid
             )
         """,
         (sub,),

@@ -388,10 +388,10 @@ async def get_emotion_pictures_from_db(itgs: Itgs, *, word: str) -> List[str]:
                                 AND emotion_users.created_at > ?
                         )
                         OR EXISTS (
-                            SELECT 1 FROM users
+                            SELECT 1 FROM user_email_addresses
                             WHERE 
-                                users.id = user_profile_pictures.user_id
-                                AND users.email IN {autofill_user_qmarks}
+                                user_email_addresses.user_id = user_profile_pictures.user_id
+                                AND user_email_addresses.email IN {autofill_user_qmarks}
                         )
                     )
             )

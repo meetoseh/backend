@@ -26,7 +26,6 @@ class User(BaseModel):
     sub: str = Field(description="The sub of the user")
     given_name: str = Field(description="The given name of the user")
     family_name: str = Field(description="The family name of the user")
-    email: str = Field(description="The email address of the user")
     created_at: float = Field(
         description="The time the user was created in seconds since the epoch"
     )
@@ -265,7 +264,6 @@ async def read_feedback_from_db_and_write_to_file(
                 users.sub,
                 users.given_name,
                 users.family_name,
-                users.email,
                 users.created_at,
                 journey_feedback.response,
                 journey_feedback.created_at,
@@ -309,11 +307,10 @@ async def read_feedback_from_db_and_write_to_file(
             row_user_sub: str = row[3]
             row_user_given_name: Optional[str] = row[4]
             row_user_family_name: Optional[str] = row[5]
-            row_user_email: Optional[str] = row[6]
-            row_user_created_at: float = row[7]
-            row_journey_feedback_response: int = int(row[8])
-            row_journey_feedback_created_at: float = row[9]
-            row_journey_feedback_version: int = row[10]
+            row_user_created_at: float = row[6]
+            row_journey_feedback_response: int = int(row[7])
+            row_journey_feedback_created_at: float = row[8]
+            row_journey_feedback_version: int = row[9]
 
             if current_journey_id != row_journey_id:
                 if current_journey_id is not None:
@@ -347,8 +344,6 @@ async def read_feedback_from_db_and_write_to_file(
             out.write(json.dumps(row_user_given_name).encode("utf-8"))
             out.write(b',"family_name":')
             out.write(json.dumps(row_user_family_name).encode("utf-8"))
-            out.write(b',"email":')
-            out.write(json.dumps(row_user_email).encode("utf-8"))
             out.write(b',"created_at":')
             out.write(str(row_user_created_at).encode("ascii"))
             out.write(b'},"liked":')

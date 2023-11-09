@@ -1,4 +1,5 @@
 import json
+import secrets
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
@@ -7,6 +8,7 @@ from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
 import pytz
+import time
 
 from users.lib.timezones import (
     TimezoneTechniqueSlug,
@@ -54,44 +56,38 @@ async def update_timezone(
         timezone_technique = convert_timezone_technique_slug_to_db(
             args.timezone_technique
         )
-
+        now = time.time()
         await cursor.executemany3(
             (
                 (
-                    "UPDATE users SET timezone = ?, timezone_technique = ? WHERE sub = ?",
+                    "INSERT INTO user_timezone_log ("
+                    " uid, user_id, timezone, source, style, guessed, created_at"
+                    ") "
+                    "SELECT"
+                    " ?, users.id, ?, ?, ?, ?, ? "
+                    "FROM users "
+                    "WHERE"
+                    " users.sub = ?"
+                    " AND (users.timezone IS NULL OR users.timezone <> ?)",
                     (
+                        f"oseh_utzl_{secrets.token_urlsafe(16)}",
                         args.timezone,
-                        timezone_technique,
+                        "explicit",
+                        timezone_technique.style,
+                        timezone_technique.guessed,
+                        now,
                         auth_result.result.sub,
+                        args.timezone,
                     ),
                 ),
                 (
-                    """
-                    UPDATE user_notification_settings
-                    SET
-                        timezone = ?,
-                        timezone_technique = ?
-                    WHERE
-                        EXISTS (
-                            SELECT 1 FROM users
-                            WHERE users.id = user_notification_settings.user_id
-                                AND users.sub = ?
-                        )
-                    """,
+                    "UPDATE users SET timezone = ? WHERE sub = ?",
                     (
                         args.timezone,
-                        timezone_technique,
                         auth_result.result.sub,
                     ),
                 ),
             ),
         )
 
-        jobs = await itgs.jobs()
-        await jobs.enqueue(
-            "runners.klaviyo.ensure_user",
-            user_sub=auth_result.result.sub,
-            timezone=args.timezone,
-            timezone_technique=args.timezone_technique,
-        )
         return Response(status_code=202)

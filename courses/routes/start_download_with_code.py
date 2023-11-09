@@ -8,8 +8,12 @@ from typing import Literal, Optional
 from courses.models.course_ref import CourseRef
 from courses.auth import create_jwt as create_course_jwt
 from itgs import Itgs
+from lib.shared.clean_for_slack import clean_for_non_code_slack, clean_for_slack
+from lib.shared.describe_user import enqueue_send_described_user_slack_message
 from models import StandardErrorResponse
 import socket
+import pytz
+import datetime
 
 
 router = APIRouter()
@@ -60,7 +64,6 @@ async def start_course_download_with_code(args: StartCourseDownloadWithCodeReque
                 courses.title,
                 courses.slug,
                 users.sub,
-                users.email,
                 visitors.uid,
                 course_download_links.created_at
             FROM course_download_links, courses
@@ -83,29 +86,43 @@ async def start_course_download_with_code(args: StartCourseDownloadWithCodeReque
         course_title: str = response.results[0][1]
         course_slug: str = response.results[0][2]
         user_sub: Optional[str] = response.results[0][3]
-        user_email: Optional[str] = response.results[0][4]
-        visitor_uid: Optional[str] = response.results[0][5]
-        code_created_at: str = response.results[0][6]
+        visitor_uid: Optional[str] = response.results[0][4]
+        code_created_at_raw: float = response.results[0][5]
 
-        slack = await itgs.slack()
-        identifier = (
-            f"{user_email} ({user_sub})"
-            if user_email is not None
-            else (
-                f"{visitor_uid=}"
-                if visitor_uid is not None
-                else "(no useful identifiers)"
-            )
+        code_created_at_pretty = (
+            datetime.datetime.utcfromtimestamp(code_created_at_raw)
+            .replace(tzinfo=pytz.utc)
+            .astimezone(pytz.timezone("America/Los_Angeles"))
+            .strftime("%a %b %d %Y, %I:%M%p")
         )
+
         msg = (
-            f"{socket.gethostname()} {identifier} requested download "
-            f"for {course_title} ({course_slug}) via code {args.code} "
-            f"created at {code_created_at}"
+            f"requested download for {clean_for_non_code_slack(course_title)} "
+            f"(`{clean_for_slack(course_slug)}`) via code `{clean_for_slack(args.code)}` "
+            f"created {clean_for_non_code_slack(code_created_at_pretty)}"
         )
-        if os.environ["ENVIRONMENT"] == "dev":
-            await slack.send_web_error_message(msg)
+
+        if user_sub is not None:
+            await enqueue_send_described_user_slack_message(
+                itgs,
+                message=f"{{name}} {msg}",
+                sub=user_sub,
+                channel="oseh_bot"
+                if os.environ["ENVIRONMENT"] != "dev"
+                else "web_error",
+            )
         else:
-            await slack.send_oseh_bot_message(msg)
+            slack = await itgs.slack()
+            if visitor_uid is not None:
+                msg = f"{socket.gethostname()} visitor `{clean_for_slack(visitor_uid)}` {msg}"
+            else:
+                msg = f"{socket.gethostname()} client with no useful identifiers {msg}"
+
+            if os.environ["ENVIRONMENT"] == "dev":
+                await slack.send_web_error_message(msg)
+            else:
+                await slack.send_oseh_bot_message(msg)
+
         course_jwt = await create_course_jwt(itgs, course_uid=course_uid, duration=60)
         return Response(
             content=CourseRef(uid=course_uid, jwt=course_jwt).json(),

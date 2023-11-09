@@ -7,6 +7,7 @@ from error_middleware import handle_contextless_error
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
 from auth import auth_any
+from loguru import logger
 
 
 router = APIRouter()
@@ -162,6 +163,9 @@ async def get_inapp_notification_show_at(
                 show_now = False
                 check_again_at = None
 
+        logger.info(
+            f"{__name__} responding with {show_now=} {check_again_at=} to {auth_result.result.sub=} with regard to {args.inapp_notification_uid=}"
+        )
         return Response(
             content=GetInappNotificationShowAtResponse(
                 show_now=show_now, next_show_at=check_again_at

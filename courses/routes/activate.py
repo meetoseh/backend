@@ -29,8 +29,6 @@ import socket
 #   side effect: revenue cat purchase created using the checkout session id
 #   side effect: based on the entitlements the user now has...
 #     row created in course_download_links
-#     klaviyo profile create/updated to include course download link
-#       this will trigger an email with the download link
 #   an arbitrary course the guest account has an entitlement to is returned
 
 # optional headers: authorization, visitor (both stored in the course download link)
@@ -355,30 +353,6 @@ async def activate_course(
                             sanitized_visitor,
                             row[0],
                         ),
-                    )
-
-                klaviyo = await itgs.klaviyo()
-                new_profile_id = await klaviyo.get_profile_id(email=email)
-                if new_profile_id is None:
-                    split_name = name.rsplit(" ", 1)
-                    given_name = split_name[0]
-                    family_name = split_name[1] if len(split_name) > 1 else ""
-                    new_profile_id = await klaviyo.create_profile(
-                        email=email,
-                        phone_number=None,
-                        external_id=new_rc_id,
-                        first_name=given_name,
-                        last_name=family_name,
-                        timezone=args.timezone,
-                        environment=os.environ["ENVIRONMENT"],
-                        course_links_by_slug=course_links,
-                    )
-                else:
-                    await klaviyo.update_profile(
-                        profile_id=new_profile_id,
-                        phone_number=None,
-                        course_links_by_slug=course_links,
-                        preserve_phone=True,
                     )
 
                 slack = await itgs.slack()

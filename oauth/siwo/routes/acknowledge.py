@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from typing import Literal, Optional, Tuple
 from typing_extensions import Annotated
 from error_middleware import handle_warning
-from lib.email.send import create_email_uid
+from lib.emails.send import create_email_uid
 from lib.shared.clean_for_slack import clean_for_slack
 from oauth.siwo.jwt.elevate import ELEVATE_ERRORS_BY_STATUS, auth_jwt, AuthResult
 from oauth.siwo.code.security_check import generate_code
@@ -266,7 +266,7 @@ async def is_suppressed_email(itgs: Itgs, *, email: str) -> bool:
     cursor = conn.cursor("none")
 
     response = await cursor.execute(
-        "SELECT 1 FROM suppressed_emails WHERE email_address=?",
+        "SELECT 1 FROM suppressed_emails WHERE email_address=? COLLATE NOCASE",
         (email,),
     )
 

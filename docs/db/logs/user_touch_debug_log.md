@@ -18,7 +18,7 @@ we don't include raw emails since that could get annoyingly large)
 
 - `id (integer primary key)`: Internal row identifier
 - `uid (text unique not null)`: Primary stable external row identifier. Uses the
-  [uid prefix](../uid_prefixes.md) `utbl`
+  [uid prefix](../../uid_prefixes.md) `utbl`
 - `user_id (integer not null references users(id) on delete cascade)`: the id of
   the user we tried to contact, included to ensure the related information is deleted
   if the users account is deleted

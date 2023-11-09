@@ -9,7 +9,7 @@ from lib.shared.job_callback import JobCallback
 from oauth.siwo.code.security_check import generate_code
 from oauth.siwo.lib.verify_email_stats_preparer import verify_stats
 from oauth.siwo.jwt.core import CORE_ERRORS_BY_STATUS, auth_jwt, INVALID_TOKEN_RESPONSE
-from lib.email.send import send_email
+from lib.emails.send import send_email
 from models import StandardErrorResponse
 from itgs import Itgs
 import unix_dates

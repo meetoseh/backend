@@ -1,10 +1,11 @@
 import io
+import json
 from typing import List, Optional, Tuple
 from fastapi import APIRouter
 from fastapi.requests import Request
 from fastapi.responses import Response
 import hmac
-from error_middleware import handle_error
+from error_middleware import handle_error, handle_warning
 from itgs import Itgs
 import time
 import os
@@ -13,6 +14,9 @@ import base64
 from starlette.datastructures import URL
 from loguru import logger
 import secrets
+from lib.contact_methods.contact_method_stats import contact_method_stats
+from lib.shared.clean_for_slack import clean_for_slack
+from lib.shared.describe_user import enqueue_send_described_user_slack_message
 import unix_dates
 import pytz
 
@@ -238,168 +242,343 @@ async def try_opt_in(itgs: Itgs, phone: str) -> bool:
     response = await cursor.execute(
         """
         SELECT
-            users.sub,
-            users.email,
-            users.phone_number_verified,
-            EXISTS (
-                SELECT 1 FROM user_daily_reminders
-                WHERE 
-                    user_daily_reminders.user_id = users.id
-                    AND user_daily_reminders.channel = 'sms'
-            ) AS b1
+            users.sub
         FROM users
         WHERE
-            users.phone_number = ?
+            EXISTS (
+                SELECT 1 FROM user_phone_numbers
+                WHERE 
+                    user_phone_numbers.user_id = users.id
+                    AND user_phone_numbers.phone_number = ?
+            )
         LIMIT 2
         """,
         (phone,),
     )
 
     if not response.results:
+        await handle_warning(
+            f"{__name__}:unknown_phone_number",
+            f"Could not opt in {phone} because it is not associated with any user",
+        )
         return False
 
     if len(response.results) > 1:
+        await handle_warning(
+            f"{__name__}:ambiguous_phone_number",
+            f"Could not opt in {phone} because it is associated with multiple users",
+        )
         return False
 
     user_sub: str = response.results[0][0]
-    user_email: str = response.results[0][1]
-    user_phone_number_verified: bool = bool(response.results[0][2])
-    user_has_daily_reminder: bool = bool(response.results[0][3])
 
-    if user_phone_number_verified and user_has_daily_reminder:
-        return False
-
+    verify_cml_uid = f"oseh_cml_{secrets.token_urlsafe(16)}"
+    enable_cml_uid = f"oseh_cml_{secrets.token_urlsafe(16)}"
+    cml_reason = json.dumps({"repo": "backend", "file": __name__, "reason": "START"})
     daily_reminder_uid = f"oseh_udr_{secrets.token_urlsafe(16)}"
     now = time.time()
+    unix_date = unix_dates.unix_timestamp_to_unix_date(
+        now, tz=pytz.timezone("America/Los_Angeles")
+    )
     response = await cursor.executemany3(
         (
             (
-                "UPDATE users SET phone_number_verified = 1 WHERE sub = ? AND phone_number = ?",
-                (user_sub, phone),
+                "INSERT INTO contact_method_log ("
+                " uid, user_id, channel, identifier, action, reason, created_at"
+                ") "
+                "SELECT"
+                " ?, users.id, 'phone', ?, 'verify', ?, ? "
+                "FROM users "
+                "WHERE"
+                " users.sub = ?"
+                " AND EXISTS ("
+                "  SELECT 1 FROM user_phone_numbers"
+                "  WHERE"
+                "   user_phone_numbers.user_id = users.id"
+                "   AND user_phone_numbers.phone_number = ?"
+                "   AND NOT user_phone_numbers.verified"
+                " )",
+                (
+                    verify_cml_uid,
+                    phone,
+                    cml_reason,
+                    now,
+                    user_sub,
+                    phone,
+                ),
             ),
             (
-                """
-                INSERT INTO user_daily_reminders (
-                    uid, user_id, channel, start_time, end_time, day_of_week_mask, created_at
-                )
-                SELECT
-                    ?, users.id, 'sms', 32400, 39600, 127, ?
-                FROM users
-                WHERE users.sub = ? AND users.phone_number = ?
-                """,
-                (daily_reminder_uid, now, user_sub, phone),
+                "INSERT INTO contact_method_log ("
+                " uid, user_id, channel, identifier, action, reason, created_at"
+                ") "
+                "SELECT"
+                " ?, users.id, 'phone', ?, 'enable_notifs', ?, ? "
+                "FROM users "
+                "WHERE"
+                " users.sub = ?"
+                " AND EXISTS ("
+                "  SELECT 1 FROM user_phone_numbers"
+                "  WHERE"
+                "   user_phone_numbers.user_id = users.id"
+                "   AND user_phone_numbers.phone_number = ?"
+                "   AND NOT user_phone_numbers.receives_notifications"
+                " )",
+                (
+                    enable_cml_uid,
+                    phone,
+                    cml_reason,
+                    now,
+                    user_sub,
+                    phone,
+                ),
             ),
+            (
+                "UPDATE user_phone_numbers "
+                "SET verified = 1, receives_notifications = 1 "
+                "WHERE"
+                " EXISTS ("
+                "  SELECT 1 FROM users"
+                "  WHERE"
+                "   users.id = user_phone_numbers.user_id"
+                "   AND users.sub = ?"
+                " )"
+                " AND user_phone_numbers.phone_number = ?",
+                (
+                    user_sub,
+                    phone,
+                ),
+            ),
+            (
+                "INSERT INTO user_daily_reminders ("
+                " uid, user_id, channel, start_time, end_time, day_of_week_mask, created_at"
+                ") "
+                "SELECT"
+                " ?,"
+                " users.id,"
+                " 'sms',"
+                " CASE"
+                "  WHEN settings.id IS NULL THEN 21600"
+                "  WHEN json_extract(settings.time_range, '$.type') = 'preset' THEN"
+                "   CASE json_extract(settings.time_range, '$.preset')"
+                "    WHEN 'afternoon' THEN 46800"
+                "    WHEN 'evening' THEN 61200"
+                "    ELSE 28800"
+                "   END"
+                "  WHEN json_extract(settings.time_range, '$.type') = 'explicit' THEN"
+                "   json_extract(settings.time_range, '$.start')"
+                "  ELSE 28800"
+                " END,"
+                " CASE"
+                "  WHEN settings.id IS NULL THEN 39600"
+                "  WHEN json_extract(settings.time_range, '$.type') = 'preset' THEN"
+                "   CASE json_extract(settings.time_range, '$.preset')"
+                "    WHEN 'afternoon' THEN 57600"
+                "    WHEN 'evening' THEN 61200"
+                "    ELSE 39600"
+                "   END"
+                "  WHEN json_extract(settings.time_range, '$.type') = 'explicit' THEN"
+                "   json_extract(settings.time_range, '$.end')"
+                "  ELSE 39600"
+                " END,"
+                " COALESCE(settings.day_of_week_mask, 127),"
+                " ? "
+                "FROM users "
+                "LEFT OUTER JOIN user_daily_reminder_settings AS settings "
+                "ON settings.id = ("
+                " SELECT s.id FROM user_daily_reminder_settings AS s"
+                " WHERE"
+                "  s.user_id = users.id"
+                "  AND (s.channel = 'sms' OR s.day_of_week_mask <> 0)"
+                " ORDER BY"
+                "  s.channel = 'sms' DESC,"
+                "  CASE json_extract(s.time_range, '$.type')"
+                "   WHEN 'explicit' THEN 0"
+                "   WHEN 'preset' THEN 1"
+                "   ELSE 2"
+                "  END ASC,"
+                "  (s.day_of_week_mask & 1 > 0) + (s.day_of_week_mask & 2 > 0) + (s.day_of_week_mask & 4 > 0) + (s.day_of_week_mask & 8 > 0) + (s.day_of_week_mask & 16 > 0) + (s.day_of_week_mask & 32 > 0) + (s.day_of_week_mask & 64 > 0) ASC,"
+                "  CASE s.channel"
+                "   WHEN 'sms' THEN 0"
+                "   WHEN 'push' THEN 1"
+                "   WHEN 'email' THEN 2"
+                "   ELSE 3"
+                "  END ASC"
+                "  LIMIT 1"
+                ") "
+                "WHERE"
+                " users.sub = ?"
+                " AND NOT EXISTS ("
+                "  SELECT 1 FROM user_daily_reminders"
+                "  WHERE"
+                "   user_daily_reminders.user_id = users.sub"
+                "   AND user_daily_reminders.channel = 'sms'"
+                " )"
+                " AND EXISTS ("
+                "  SELECT 1 FROM user_phone_numbers"
+                "  WHERE user_phone_numbers.user_id = users.id"
+                "   AND user_phone_numbers.phone_number = ?"
+                " )"
+                " AND (settings.day_of_week_mask IS NULL OR settings.day_of_week_mask <> 0)",
+                (
+                    daily_reminder_uid,
+                    now,
+                    user_sub,
+                    phone,
+                ),
+            ),
+            ("DELETE FROM suppressed_phone_numbers WHERE phone_number = ?", (phone,)),
         )
     )
 
-    if response[0].rows_affected != 1 and response[1].rows_affected != 1:
-        return False
+    def debug_info():
+        return f"\n\n```\n{clean_for_slack(repr(response))}\n```\n"
 
-    if response[1].rows_affected > 0:
-        stats = DailyReminderRegistrationStatsPreparer()
-        stats.incr_subscribed(
-            unix_dates.unix_timestamp_to_unix_date(
-                now, tz=pytz.timezone("America/Los_Angeles")
-            ),
-            "sms",
-            "sms_start",
+    affected = [r.rows_affected is not None and r.rows_affected > 0 for r in response]
+    if any(a and r.rows_affected != 1 for (a, r) in zip(affected, response)):
+        await handle_warning(
+            f"{__name__}:multiple_rows_affected",
+            f"Expected at most 1 row affected per query{debug_info()}",
         )
-        await stats.store(itgs)
 
-    try:
-        base_url = os.environ["ROOT_FRONTEND_URL"]
-        user_url = f"{base_url}/admin/user?sub={user_sub}"
+    (
+        verify_logged,
+        enable_logged,
+        phone_updated,
+        daily_reminder_created,
+        suppression_removed,
+    ) = affected
 
-        slack = await itgs.slack()
-        await slack.send_oseh_bot_message(
-            f"{user_email} ({phone}) opted into daily SMS reminders via START message. <view user|{user_url}>",
-            preview=f"{phone} sent START",
+    if not phone_updated and daily_reminder_created:
+        await handle_warning(
+            f"{__name__}:daily_reminder_created_without_phone_updated",
+            f"Expected phone number to be updated when daily reminder created{debug_info()}",
         )
-    except:
-        logger.exception("Failed to send START message to Slack")
 
-    return True
+    async with contact_method_stats(itgs) as stats:
+        if verify_logged:
+            logger.info(f"Verified {phone} via SMS start")
+            await stats.incr_verified(unix_date, channel="phone", reason="sms_start")
+        if enable_logged:
+            logger.info(f"Enabled {phone} via SMS start")
+            await stats.incr_enabled(unix_date, channel="phone", reason="sms_start")
+        if daily_reminder_created:
+            logger.info(f"Created daily reminder for {phone} via SMS start")
+            stats.stats.merge_with(
+                DailyReminderRegistrationStatsPreparer().incr_subscribed(
+                    unix_date, "sms", "sms_start"
+                )
+            )
+
+    if suppression_removed:
+        logger.info(f"Removed suppression on phone {phone} via SMS start")
+
+    if verify_logged or enable_logged or daily_reminder_created or suppression_removed:
+        await enqueue_send_described_user_slack_message(
+            itgs,
+            message=f"{{name}} opted into daily SMS reminders via START message from {phone}",
+            sub=user_sub,
+            channel="oseh_bot",
+        )
+
+        return True
+
+    return False
 
 
 async def try_opt_out(itgs: Itgs, phone: str) -> bool:
-    """Attempts to opt the given phone number out of daily sms notifications. This
-    only works if we can find a user with the given phone number which is
-    receiving notifications
-    """
+    """Suppresses the given phone number, if it's not already suppressed"""
     conn = await itgs.conn()
     cursor = conn.cursor()
 
-    response = await cursor.execute(
-        """
-        SELECT
-            users.sub,
-            users.email
-        FROM users
-        WHERE
-            users.phone_number = ?
-            AND users.phone_number_verified = 1
-            AND EXISTS (
-                SELECT 1 FROM user_daily_reminders
-                WHERE 
-                    user_daily_reminders.user_id = users.id
-                    AND user_daily_reminders.channel = 'sms'
-            )
-        ORDER by users.sub ASC
-        """,
-        (phone,),
-    )
-
-    users: List[Tuple[str, str, str]] = response.results or []
-
-    if not users:
-        return False
-
+    new_spn_uid = f"oseh_spn_{secrets.token_urlsafe(16)}"
     now = time.time()
-    response = await cursor.execute(
-        """
-        DELETE FROM user_daily_reminders
-        WHERE
-            EXISTS (
-                SELECT 1 FROM users
-                WHERE users.id = user_daily_reminders.user_id
-                  AND users.phone_number = ?
-                  AND users.phone_number_verified = 1
+    unix_date = unix_dates.unix_timestamp_to_unix_date(
+        now, tz=pytz.timezone("America/Los_Angeles")
+    )
+    response = await cursor.executemany3(
+        (
+            """
+            INSERT INTO suppressed_phone_numbers (
+                uid, phone_number, reason, reason_details, created_at
             )
-            AND user_daily_reminders.channel = 'sms'
-        """,
-        (phone,),
-    )
-
-    if response.rows_affected is None or response.rows_affected == 0:
-        return False
-
-    subscriptions_removed = response.rows_affected
-    stats = DailyReminderRegistrationStatsPreparer()
-    stats.incr_unsubscribed(
-        unix_dates.unix_timestamp_to_unix_date(
-            now, tz=pytz.timezone("America/Los_Angeles")
+            SELECT
+                ?, ?, 'Stop', '{}', ?
+            WHERE
+                NOT EXISTS (
+                    SELECT 1 FROM suppressed_phone_numbers AS spn
+                    WHERE spn.phone_number = ?
+                )
+            """,
+            (
+                new_spn_uid,
+                phone,
+                now,
+                phone,
+            ),
         ),
-        "sms",
-        "sms_stop",
-        amt=subscriptions_removed,
+        (
+            """
+            DELETE FROM user_daily_reminders
+            WHERE
+                user_daily_reminders.channel = 'sms'
+                AND EXISTS (
+                    SELECT 1 FROM user_phone_numbers
+                    WHERE
+                        user_phone_numbers.user_id = user_daily_reminders.user_id
+                        AND user_phone_numbers.phone_number = ?
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM user_phone_numbers
+                    WHERE
+                        user_phone_numbers.user_id = user_daily_reminders.user_id
+                        AND user_phone_numbers.phone_number <> ?
+                        AND user_phone_numbers.verified
+                        AND user_phone_numbers.receives_notifications
+                        AND NOT EXISTS (
+                            SELECT 1 FROM suppressed_phone_numbers
+                            WHERE
+                                suppressed_phone_numbers.phone_number = user_phone_numbers.phone_number
+                        )
+                )
+            """,
+            (
+                phone,
+                phone,
+            ),
+        ),
     )
-    await stats.store(itgs)
 
-    try:
-        base_url = os.environ["ROOT_FRONTEND_URL"]
-        user_urls = [f"{base_url}/admin/user?sub={user_sub}" for user_sub, _ in users]
-
-        users_list = "\n".join(
-            f"- <{user_url}|{user_email}>"
-            for (_, user_email), user_url in zip(users, user_urls)
+    affected = [r.rows_affected is not None and r.rows_affected > 0 for r in response]
+    suppressed, deleted = affected
+    if suppressed and response[0].rows_affected != 1:
+        await handle_warning(
+            f"{__name__}:try_opt_out:multiple_rows_affected",
+            f"Expected at most 1 suppressed phone number, got\n\n```\n{response=}\n```",
         )
 
-        slack = await itgs.slack()
-        await slack.send_oseh_bot_message(
-            f"{phone} sent STOP message, removed {subscriptions_removed} subscriptions. users:\n{users_list}",
-            preview=f"{phone} sent STOP",
+    if not suppressed and deleted:
+        await handle_warning(
+            f"{__name__}:try_opt_out:deleted_without_suppressed",
+            f"Expected suppressed phone number to be created when deleting reminders, got\n\n```\n{response=}\n```",
         )
-    except:
-        logger.exception("Failed to send STOP message to Slack")
+
+    if deleted:
+        await (
+            DailyReminderRegistrationStatsPreparer()
+            .incr_unsubscribed(
+                unix_date, "sms", "sms_stop", amt=response[1].rows_affected
+            )
+            .store(itgs)
+        )
+
+    if suppressed:
+        try:
+            slack = await itgs.slack()
+            await slack.send_oseh_bot_message(
+                f"{phone} sent STOP message, suppressed and deleted {response[1].rows_affected or 0} daily reminder registrations",
+                preview=f"{phone} sent STOP",
+            )
+        except:
+            logger.exception("Failed to send STOP message to Slack")
 
     return True

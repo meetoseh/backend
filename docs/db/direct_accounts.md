@@ -5,9 +5,13 @@ identity provider such as Sign in with Apple. The primary initial motivation
 for creating this was to provide a testing account for the Google and Apple
 to review the app.
 
-Currently the only way to create these records is via manually executing scripts
-to generate test accounts (e.g., `oauth.lib.create_account`). However, this is
-designed to allow signup functionality should we offer it in the future.
+The motivation for expanding this to a relatively complete email identity
+provider was when trying to understand an unusually high bounce rate on the
+login page we added a button with "continue another way", with the option for
+continue with email/continue with facebook, and then the user could fill out a
+form with their email address requesting to be notified when the feature was
+ready. A surprising amount of all users on that page tried to continue with
+email, and a large portion of those filled out the form!
 
 ## Fields
 

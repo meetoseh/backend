@@ -27,7 +27,6 @@ class User(BaseModel):
     """A user as it's referenced by inapp notification user"""
 
     sub: str = Field(description="The sub of the user")
-    email: str = Field(description="The email of the user")
 
 
 class InappNotificationUser(BaseModel):
@@ -183,7 +182,6 @@ async def raw_read_inapp_notification_users(
             inapp_notifications.uid,
             inapp_notifications.name,
             users.sub,
-            users.email,
             inapp_notification_users.platform,
             inapp_notification_users.created_at,
         )
@@ -228,10 +226,9 @@ async def raw_read_inapp_notification_users(
                 ),
                 user=User(
                     sub=row[3],
-                    email=row[4],
                 ),
-                platform=row[5],
-                created_at=row[6],
+                platform=row[4],
+                created_at=row[5],
             )
         )
     return items

@@ -1,6 +1,6 @@
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import Term
+from pypika.terms import Term, ExistsCriterion
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -50,13 +50,11 @@ class VipChatRequest(BaseModel):
 
 VIP_CHAT_REQUEST_SORT_OPTIONS = [
     SortItem[Literal["uid"], str],
-    SortItem[Literal["user_email"], str],
     SortItem[Literal["created_at"], float],
     SortItem[Literal["popup_seen_at"], float],
 ]
 VipChatRequestSortOption = Union[
     SortItemModel[Literal["uid"], str],
-    SortItemModel[Literal["user_email"], str],
     SortItemModel[Literal["created_at"], float],
     SortItemModel[Literal["popup_seen_at"], float],
 ]
@@ -71,7 +69,7 @@ class VipChatRequestFilter(BaseModel):
     )
     user_email: Optional[FilterTextItemModel] = Field(
         None,
-        description="The email address of the user who should recieve the chat request",
+        description="An email address of the user who should recieve the chat request",
     )
     user_name: Optional[FilterTextItemModel] = Field(
         None, description="The name of the user who should recieve the chat request"
@@ -185,6 +183,7 @@ async def raw_read_vip_chat_requests(
     vip_chat_requests = Table("vip_chat_requests")
     users = Table("users")
     added_by_users = users.as_("added_by_users")
+    user_email_addresses = Table("user_email_addresses")
 
     query: QueryBuilder = (
         Query.from_(vip_chat_requests)
@@ -193,12 +192,10 @@ async def raw_read_vip_chat_requests(
             users.sub,
             users.given_name,
             users.family_name,
-            users.email,
             users.created_at,
             added_by_users.sub,
             added_by_users.given_name,
             added_by_users.family_name,
-            added_by_users.email,
             added_by_users.created_at,
             vip_chat_requests.variant,
             vip_chat_requests.display_data,
@@ -220,7 +217,6 @@ async def raw_read_vip_chat_requests(
             "user_sub",
             "user_given_name",
             "user_family_name",
-            "user_email",
             "user_created_at",
         ):
             return users.field(key[5:])
@@ -232,7 +228,6 @@ async def raw_read_vip_chat_requests(
             "added_by_user_sub",
             "added_by_user_given_name",
             "added_by_user_family_name",
-            "added_by_user_email",
             "added_by_user_created_at",
         ):
             return added_by_users.field(key[14:])
@@ -240,7 +235,17 @@ async def raw_read_vip_chat_requests(
         raise ValueError(f"unknown key {key}")
 
     for key, filter in filters_to_apply:
-        query = query.where(filter.applied_to(pseudocolumn(key), qargs))
+        if key == "user_email":
+            query = query.where(
+                ExistsCriterion(
+                    Query.from_(user_email_addresses)
+                    .select(1)
+                    .where(user_email_addresses.user_id == users.id)
+                    .where(filter.applied_to(user_email_addresses.email, qargs))
+                )
+            )
+        else:
+            query = query.where(filter.applied_to(pseudocolumn(key), qargs))
 
     query = query.where(sort_criterion(sort, pseudocolumn, qargs))
 
@@ -260,25 +265,23 @@ async def raw_read_vip_chat_requests(
             sub=row[1],
             given_name=row[2],
             family_name=row[3],
-            email=row[4],
-            created_at=row[5],
+            created_at=row[4],
         )
         added_by_user = (
             None
-            if row[6] is None
+            if row[5] is None
             else User(
-                sub=row[6],
-                given_name=row[7],
-                family_name=row[8],
-                email=row[9],
-                created_at=row[10],
+                sub=row[5],
+                given_name=row[6],
+                family_name=row[7],
+                created_at=row[8],
             )
         )
-        variant: str = row[11]
-        raw_display_data: str = row[12]
-        reason: str = row[13]
-        created_at: float = row[14]
-        popup_seen_at: Optional[float] = row[15]
+        variant: str = row[9]
+        raw_display_data: str = row[10]
+        reason: str = row[11]
+        created_at: float = row[12]
+        popup_seen_at: Optional[float] = row[13]
 
         if variant != "phone-04102023":
             raise ValueError(f"unsupported {variant=}")
@@ -327,7 +330,6 @@ def item_pseudocolumns(item: VipChatRequest) -> dict:
     the keys of the sort options"""
     return {
         "uid": item.uid,
-        "user_email": item.user.email,
         "created_at": item.created_at,
         "popup_seen_at": item.popup_seen_at,
     }

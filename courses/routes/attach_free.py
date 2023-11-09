@@ -5,6 +5,8 @@ from pydantic import BaseModel, Field
 from typing import FrozenSet, Literal, Optional
 from courses.lib.get_external_course_from_row import get_external_course_from_row
 from error_middleware import handle_contextless_error, handle_error
+from lib.contact_methods.user_current_email import get_user_current_email
+from lib.shared.describe_user import enqueue_send_described_user_slack_message
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from courses.models.external_course import ExternalCourse
 from auth import auth_any
@@ -91,10 +93,12 @@ async def attach_free(
             itgs, visitor=visitor, source=args.source, seen_at=request_at
         )
 
+        user_email = await get_user_current_email(itgs, auth_result, default=None)
+
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
         response = await cursor.execute(
-            "SELECT revenue_cat_id, email, given_name, family_name FROM users WHERE sub=?",
+            "SELECT revenue_cat_id FROM users WHERE sub=?",
             (auth_result.result.sub,),
         )
         if not response.results:
@@ -112,9 +116,6 @@ async def attach_free(
             )
 
         revenue_cat_id: str = response.results[0][0]
-        user_email = response.results[0][1]
-        user_given_name = response.results[0][2]
-        user_family_name = response.results[0][3]
 
         if args.course_slug not in FREE_COURSE_SLUGS:
             return Response(
@@ -278,7 +279,7 @@ async def attach_free(
                             uid, course_id, code, stripe_checkout_session_id, payment_email, user_id, visitor_id, created_at
                         )
                         SELECT
-                            ?, courses.id, ?, NULL, users.email, users.id, visitors.id, ?
+                            ?, courses.id, ?, NULL, ?, users.id, visitors.id, ?
                         FROM courses, users
                         LEFT OUTER JOIN visitors ON visitors.uid = ?
                         WHERE
@@ -289,6 +290,7 @@ async def attach_free(
                         (
                             link_uid,
                             link_code,
+                            user_email,
                             request_at,
                             sanitized_visitor,
                             args.course_slug,
@@ -359,9 +361,11 @@ async def attach_free(
                 status_code=503,
             )
 
-        slack = await itgs.slack()
-        await slack.send_oseh_bot_message(
-            f"{socket.gethostname()} {user_given_name} {user_family_name} ({user_email} / {auth_result.result.sub}) attached free course {args.course_slug}"
+        await enqueue_send_described_user_slack_message(
+            itgs,
+            message=f"{{name}} attached free course {args.course_slug}",
+            sub=auth_result.result.sub,
+            channel="oseh_bot",
         )
         return Response(
             content=AttachFreeCourseResponse(

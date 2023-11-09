@@ -30,10 +30,6 @@ link tracking via `course_download_link_clicks`.
   - The backend verifies that session id and gets the basic user details from stripe
   - The backend creates a guest revenue cat account and creates the purchase on it,
     getting back the entitlements for the user.
-  - For each course the guest account is entitled to...
-    - The email address is upserted into klaviyo, setting the custom property
-      `course_link_{slug}` to `https://oseh.io/courses/download?code={code}`
-    - Put them beta subscribed
   - User logs in
   - Frontend again forwards the session id to the backend, now with their user jwt
   - Backend sends the purchase to revenue cat for the Oseh accounts revenue cat id,

@@ -101,7 +101,7 @@ async def analyze_personalization(
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
         if not auth_result.success:
-            return auth_result
+            return auth_result.error_response
 
         combinations_started_at = time.perf_counter()
         combinations = await get_instructor_category_and_biases(itgs, emotion=emotion)

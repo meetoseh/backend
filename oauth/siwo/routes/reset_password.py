@@ -4,7 +4,7 @@ from fastapi.responses import Response
 from typing import Optional
 from typing_extensions import Annotated
 from error_middleware import handle_warning
-from lib.email.send import send_email
+from lib.emails.send import send_email
 from lib.shared.clean_for_slack import clean_for_slack
 from lib.shared.job_callback import JobCallback
 from oauth.siwo.lib.authorize_stats_preparer import auth_stats
@@ -86,7 +86,7 @@ async def reset_password(
         uid: str = response.results[0][0]
 
         response = await cursor.execute(
-            "SELECT 1 FROM suppressed_emails WHERE email_address=?",
+            "SELECT 1 FROM suppressed_emails WHERE email_address=? COLLATE NOCASE",
             (auth_result.result.sub,),
         )
         if response.results:

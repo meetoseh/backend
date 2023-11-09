@@ -125,14 +125,19 @@ async def read_daily_reminders(authorization: Optional[str] = Header(None)):
                     user_daily_reminders.end_time,
                     user_daily_reminders.day_of_week_mask,
                     user_daily_reminders.created_at,
-                    users.phone_number
-                FROM user_daily_reminders
-                JOIN users ON users.id = user_daily_reminders.user_id
+                    user_phone_numbers.phone_number
+                FROM user_daily_reminders, users, user_phone_numbers
                 WHERE
                     users.sub = ?
+                    AND user_phone_numbers.user_id = users.id
+                    AND user_phone_numbers.verified
+                    AND user_phone_numbers.receives_notifications
+                    AND NOT EXISTS (
+                        SELECT 1 FROM suppressed_phone_numbers
+                        WHERE suppressed_phone_numbers.phone_number = user_phone_numbers.phone_number
+                    )
+                    AND users.id = user_daily_reminders.user_id
                     AND user_daily_reminders.channel = 'sms'
-                    AND users.phone_number IS NOT NULL
-                    AND users.phone_number_verified = 1
                 """,
                 (user_sub,),
             ),
@@ -144,17 +149,19 @@ async def read_daily_reminders(authorization: Optional[str] = Header(None)):
                     user_daily_reminders.end_time,
                     user_daily_reminders.day_of_week_mask,
                     user_daily_reminders.created_at,
-                    users.email
-                FROM user_daily_reminders
-                JOIN users ON users.id = user_daily_reminders.user_id
+                    user_email_addresses.email
+                FROM user_daily_reminders, users, user_email_addresses
                 WHERE
                     users.sub = ?
-                    AND user_daily_reminders.channel = 'email'
-                    AND users.email_verified = 1
+                    AND user_email_addresses.user_id = users.id
+                    AND user_email_addresses.verified
+                    AND user_email_addresses.receives_notifications
                     AND NOT EXISTS (
                         SELECT 1 FROM suppressed_emails 
-                        WHERE suppressed_emails.email_address = users.email
+                        WHERE suppressed_emails.email_address = user_email_addresses.email COLLATE NOCASE
                     )
+                    AND users.id = user_daily_reminders.user_id
+                    AND user_daily_reminders.channel = 'email'
                 """,
                 (user_sub,),
             ),
@@ -169,11 +176,12 @@ async def read_daily_reminders(authorization: Optional[str] = Header(None)):
                     user_push_tokens.uid,
                     user_push_tokens.platform,
                     user_push_tokens.created_at
-                FROM user_daily_reminders
-                JOIN user_push_tokens ON user_push_tokens.user_id = user_daily_reminders.user_id
-                JOIN users ON users.id = user_daily_reminders.user_id
+                FROM user_daily_reminders, users, user_push_tokens
                 WHERE
                     users.sub = ?
+                    AND user_push_tokens.user_id = users.id
+                    AND user_push_tokens.receives_notifications
+                    AND user_daily_reminders.user_id = users.id
                     AND user_daily_reminders.channel = 'push'
                 """,
                 (user_sub,),
@@ -198,7 +206,6 @@ async def read_daily_reminders(authorization: Optional[str] = Header(None)):
                 phone_number,
             ) in (sms_response.results or [])
         ]
-        assert len(sms) <= 1
 
         email = [
             DailyReminderEmailItem(
@@ -218,7 +225,6 @@ async def read_daily_reminders(authorization: Optional[str] = Header(None)):
                 email,
             ) in (email_response.results or [])
         ]
-        assert len(email) <= 1
 
         push_devices = [
             DailyReminderPushDevice(

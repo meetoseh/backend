@@ -3,10 +3,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
 from typing import Literal, Optional
-from error_middleware import handle_error
-from lib.daily_reminders.registration_stats import (
-    DailyReminderRegistrationStatsPreparer,
-)
+from error_middleware import handle_error, handle_warning
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from starlette.concurrency import run_in_threadpool
 from auth import auth_id
@@ -16,7 +13,6 @@ import secrets
 import time
 import phonenumbers
 import pytz
-import unix_dates
 from loguru import logger
 
 from users.lib.timezones import (
@@ -183,23 +179,25 @@ async def start_verify(
                 },
             )
 
-        uid = "oseh_pv_" + secrets.token_urlsafe(16)
+        uid = f"oseh_pv_{secrets.token_urlsafe(16)}"
+        user_timezone_log_uid = f"oseh_utzl_{secrets.token_urlsafe(16)}"
         timezone_technique = convert_timezone_technique_slug_to_db(
             args.timezone_technique
         )
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
+        now = time.time()
 
-        await cursor.executemany3(
+        response = await cursor.executemany3(
             (
                 (
                     """
                     INSERT INTO phone_verifications (
-                        uid, sid, user_id, phone_number, status, started_at, verification_attempts,
+                        uid, sid, user_id, phone_number, enabled, status, started_at, verification_attempts,
                         verified_at
                     )
                     SELECT
-                        ?, ?, users.id, ?, ?, ?, 0, NULL
+                        ?, ?, users.id, ?, ?, ?, ?, 0, NULL
                     FROM users
                     WHERE users.sub = ?
                     ON CONFLICT (sid) DO NOTHING
@@ -208,84 +206,68 @@ async def start_verify(
                         uid,
                         verification.sid,
                         args.phone_number,
+                        int(args.receive_notifications),
                         verification.status,
-                        time.time(),
+                        now,
                         auth_result.result.sub,
                     ),
                 ),
                 (
-                    "UPDATE users SET timezone = ?, timezone_technique = ? WHERE sub = ?",
+                    """
+                    INSERT INTO user_timezone_log (
+                        uid, user_id, timezone, source, style, guessed, created_at
+                    )
+                    SELECT
+                        ?, users.id, ?, ?, ?, ?, ?
+                    FROM users
+                    WHERE
+                        users.sub = ? AND (users.timezone IS NULL OR users.timezone <> ?)
+                    """,
                     (
+                        user_timezone_log_uid,
                         args.timezone,
-                        timezone_technique,
+                        "start_verify_phone",
+                        timezone_technique.style,
+                        int(timezone_technique.guessed),
+                        now,
                         auth_result.result.sub,
+                        args.timezone,
                     ),
+                ),
+                (
+                    "UPDATE users SET timezone = ? WHERE sub = ? AND (timezone IS NULL OR timezone <> ?)",
+                    (args.timezone, auth_result.result.sub, args.timezone),
                 ),
             ),
         )
 
-        if args.receive_notifications:
-            new_uns_uid = f"oseh_uns_{secrets.token_urlsafe(16)}"
-            await cursor.execute(
-                """
-                INSERT INTO user_notification_settings (
-                    uid, user_id, channel, preferred_notification_time, 
-                    timezone, timezone_technique, created_at
-                )
-                SELECT
-                    ?, users.id, ?, ?, ?, ?, ?
-                FROM users WHERE users.sub = ?
-                ON CONFLICT (user_id, channel)
-                DO UPDATE SET timezone = ?, timezone_technique = ?
-                """,
-                (
-                    new_uns_uid,
-                    "sms",
-                    "any",
-                    args.timezone,
-                    timezone_technique,
-                    time.time(),
-                    auth_result.result.sub,
-                    args.timezone,
-                    timezone_technique,
-                ),
+        affected = [
+            r.rows_affected is not None and r.rows_affected > 0 for r in response
+        ]
+        if any((a and r.rows_affected != 1 for a, r in zip(affected, response))):
+            await handle_warning(
+                f"{__name__}:multiple_rows_affected",
+                f"Strange response from start_verify for `{auth_result.result.sub=}`, `{args.phone_number=}`:\n\n```\n{response=}\n```",
             )
 
-            new_udr_uid = f"oseh_udr_{secrets.token_urlsafe(16)}"
-            udr_created_at = time.time()
-            response = await cursor.execute(
-                """
-                INSERT INTO user_daily_reminders (
-                    uid, user_id, channel, start_time, end_time, day_of_week_mask, created_at
-                )
-                SELECT
-                    ?, users.id, 'sms', 32400, 39600, 127, ?
-                FROM users 
-                WHERE 
-                    users.sub = ?
-                    AND NOT EXISTS (
-                        SELECT 1 FROM user_daily_reminders AS udr
-                        WHERE udr.user_id = users.id
-                          AND udr.channel = 'sms'
-                    )
-                """,
-                (
-                    new_udr_uid,
-                    udr_created_at,
-                    auth_result.result.sub,
-                ),
+        (
+            inserted_verification,
+            inserted_user_timezone_log,
+            updated_user_timezone,
+        ) = affected
+
+        if not inserted_verification:
+            await handle_warning(
+                f"{__name__}:duplicate_verification",
+                f"Duplicate verification for `{auth_result.result.sub=}`, `{args.phone_number=}`",
             )
 
-            if response.rows_affected == 1:
-                stats = DailyReminderRegistrationStatsPreparer()
-                stats.incr_subscribed(
-                    unix_dates.unix_timestamp_to_unix_date(
-                        udr_created_at, tz=pytz.timezone("America/Los_Angeles")
-                    ),
-                    "sms",
-                    "phone_verify_start",
-                )
-                await stats.store(itgs)
+        if inserted_user_timezone_log is not updated_user_timezone:
+            await handle_warning(
+                f"{__name__}:log_mismatch",
+                f"User timezone log mismatch for `{auth_result.result.sub=}`, `{args.phone_number=}`"
+                f"`{inserted_user_timezone_log=}`, `{updated_user_timezone=}`",
+            )
 
         return Response(
             status_code=201,

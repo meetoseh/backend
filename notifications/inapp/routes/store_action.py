@@ -1,12 +1,11 @@
 import json
-import os
 import secrets
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Optional
-from error_middleware import handle_contextless_error
+from error_middleware import handle_contextless_error, handle_warning
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
 from auth import auth_any
@@ -88,28 +87,27 @@ async def store_inapp_notification_action(
         )
 
         if response.rows_affected is None or response.rows_affected < 1:
-            silence_alert = False
-            if os.environ["ENVIRONMENT"] == "dev":
-                response = await cursor.execute(
-                    "SELECT 1 FROM "
-                    "inapp_notification_users, inapp_notification_actions, users "
-                    "WHERE "
-                    "inapp_notification_users.uid = ? "
-                    "AND inapp_notification_actions.inapp_notification_id = inapp_notification_users.inapp_notification_id "
-                    "AND inapp_notification_actions.slug = ? "
-                    "AND inapp_notification_users.user_id = users.id "
-                    "AND users.sub = ?",
-                    (
-                        args.inapp_notification_user_uid,
-                        args.action_slug,
-                        auth_result.result.sub,
-                    ),
-                )
-                silence_alert = not not response.results
+            response = await cursor.execute(
+                "SELECT 1 FROM "
+                "inapp_notification_users, inapp_notification_actions, users "
+                "WHERE "
+                "inapp_notification_users.uid = ? "
+                "AND inapp_notification_actions.inapp_notification_id = inapp_notification_users.inapp_notification_id "
+                "AND inapp_notification_actions.slug = ? "
+                "AND inapp_notification_users.user_id = users.id "
+                "AND users.sub = ?",
+                (
+                    args.inapp_notification_user_uid,
+                    args.action_slug,
+                    auth_result.result.sub,
+                ),
+            )
+            silence_alert = not not response.results
 
             if not silence_alert:
-                await handle_contextless_error(
-                    extra_info=f"Silently ignoring in-app notification action: insert checks failed; {args.inapp_notification_user_uid}, {args.action_slug}, {serd_extra}"
+                await handle_warning(
+                    f"{__name__}:ignoring",
+                    f"Silently ignoring in-app notification action: insert checks failed; {args.inapp_notification_user_uid}, {args.action_slug}, {serd_extra}",
                 )
 
         return Response(status_code=204)

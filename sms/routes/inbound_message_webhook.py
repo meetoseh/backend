@@ -497,7 +497,8 @@ async def try_opt_out(itgs: Itgs, phone: str) -> bool:
     )
     response = await cursor.executemany3(
         (
-            """
+            (
+                """
             INSERT INTO suppressed_phone_numbers (
                 uid, phone_number, reason, reason_details, created_at
             )
@@ -509,15 +510,15 @@ async def try_opt_out(itgs: Itgs, phone: str) -> bool:
                     WHERE spn.phone_number = ?
                 )
             """,
-            (
-                new_spn_uid,
-                phone,
-                now,
-                phone,
+                (
+                    new_spn_uid,
+                    phone,
+                    now,
+                    phone,
+                ),
             ),
-        ),
-        (
-            """
+            (
+                """
             DELETE FROM user_daily_reminders
             WHERE
                 user_daily_reminders.channel = 'sms'
@@ -541,11 +542,12 @@ async def try_opt_out(itgs: Itgs, phone: str) -> bool:
                         )
                 )
             """,
-            (
-                phone,
-                phone,
+                (
+                    phone,
+                    phone,
+                ),
             ),
-        ),
+        )
     )
 
     affected = [r.rows_affected is not None and r.rows_affected > 0 for r in response]

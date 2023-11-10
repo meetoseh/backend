@@ -38,6 +38,13 @@ class DailyReminderChannelSettings(BaseModel):
         unique_items=True,
         description="The days of the week that the user receives daily reminders",
     )
+    is_real: bool = Field(
+        description=(
+            "True if these are exactly what the stored settings are, false if they are inferred. "
+            "An example of an inferred setting is if the user set their push notification time "
+            "but has not set their SMS notification time, so we are inferring they are the same"
+        )
+    )
 
 
 class ReadDailyReminderSettingsResponse(BaseModel):
@@ -122,10 +129,12 @@ def get_implied_settings(
     be specified.
     """
     if channel in settings_by_channel:
+        real_settings = settings_by_channel[channel]
         return DailyReminderChannelSettings(
-            start=settings_by_channel[channel].time_range.effective_start(channel),
-            end=settings_by_channel[channel].time_range.effective_end(channel),
-            days=settings_by_channel[channel].days,
+            start=real_settings.time_range.effective_start(channel),
+            end=real_settings.time_range.effective_end(channel),
+            days=real_settings.days,
+            is_real=real_settings.time_range.preset is None,
         )
 
     best_match: Optional[RealDailyReminderChannelSettings] = None
@@ -165,10 +174,12 @@ def get_implied_settings(
             start=best_match.time_range.effective_start(channel),
             end=best_match.time_range.effective_end(channel),
             days=best_match.days,
+            is_real=False,
         )
     time_range = DailyReminderTimeRange(preset="unspecified")
     return DailyReminderChannelSettings(
         start=time_range.effective_start(channel),
         end=time_range.effective_end(channel),
         days=list(days_of_week),
+        is_real=False,
     )

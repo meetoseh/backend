@@ -85,13 +85,24 @@ particular inapp notification.
       "time": { "start": 0, "end": 0 },
       "days": ["string"],
       "next_channel": "string",
-      "error": false
+      "reason": "string",
+      "error": false,
+      "save_required": true
     }
     ```
-    where `next_channel` may be null
+    where reason is one of `"continue"`, `"tap_channel"`, or `"x_and_confirm"`.
+    `next_channel` may be null to indicate they left the notification.
+    `save_required` is true if the frontend determined it had to actually update
+    server-side settings, false if it could skip the request to make the ui snappier.
   - `tap_channel`: the user tapped on a channel button at the top to jump
     to it. has extra `{"channel": "string", "already_seen": false}`
-  - `x`: the user closed the screen using the x button at the top right
+  - `x`: the user closed the screen using the x button at the top right. has
+    extra `{"save_prompt": true}` where `save_prompt` is true if they were
+    prompted for if they want to save their existing settings and false otherwise.
+    If they hit yes `set_reminders` will be next with reason `x_and_confirm`,
+    if they hit no, `discard_changes` will be next
+  - `discard_changes`: the user hit x, was prompted to save their settings,
+    and chose to discard them instead
 
 - AI Journey (`oseh_ian_ncpainTP_XZJpWQ9ZIdGQA`) asks the user if they want to
   try an ai-generated journey. If they select yes, they go through the journey

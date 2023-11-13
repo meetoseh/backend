@@ -144,9 +144,13 @@ def get_implied_settings(
         if best_match is None:
             best_match = settings
             continue
-        if best_match.time_range.preset is None > settings.time_range.preset is None:
+        if (best_match.time_range.preset is None) > (
+            settings.time_range.preset is None
+        ):
             continue
-        if best_match.time_range.preset is None < settings.time_range.preset is None:
+        if (best_match.time_range.preset is None) < (
+            settings.time_range.preset is None
+        ):
             best_match = settings
             continue
         if len(settings.days) > len(best_match.days):

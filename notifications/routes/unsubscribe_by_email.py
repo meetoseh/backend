@@ -155,7 +155,7 @@ async def unsubscribe_by_email(
             )
 
         if result[2].rows_affected is not None and result[2].rows_affected > 0:
-            stats = (
+            await (
                 DailyReminderRegistrationStatsPreparer()
                 .incr_unsubscribed(
                     unix_dates.unix_timestamp_to_unix_date(

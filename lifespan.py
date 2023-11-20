@@ -49,9 +49,9 @@ async def top_level_lifespan_handler(app: FastAPI):
     assert _already_started is False
 
     _already_started = True
-    iters = [aiter(func()) for func in _registered_handlers]
+    iters = [func().__aiter__() for func in _registered_handlers]
     for iter in iters:
-        await anext(iter)
+        await iter.__anext__()
 
     yield
 
@@ -59,7 +59,7 @@ async def top_level_lifespan_handler(app: FastAPI):
 
     for iter in iters:
         try:
-            await anext(iter)
+            await iter.__anext__()
         except StopAsyncIteration:
             pass
         except Exception as e:

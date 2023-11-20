@@ -37,7 +37,7 @@ async def read_queued_info(
 
         counts = await typing_cast(
             Awaitable[List[Optional[bytes]]],
-            redis.hmget(b"daily_reminders:counts", b"sms" b"email" b"push"),  # type: ignore
+            redis.hmget(b"daily_reminders:counts", b"sms", b"email", b"push"),  # type: ignore
         )
 
         return Response(

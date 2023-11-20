@@ -1,6 +1,6 @@
 import io
 import json
-from typing import List, Optional, Tuple
+from typing import Optional
 from fastapi import APIRouter
 from fastapi.requests import Request
 from fastapi.responses import Response
@@ -154,6 +154,7 @@ async def inbound_message_webhook(request: Request):
             await handle_error(
                 e, extra_info=f"verified twilio inbound message {interpreted_body}"
             )
+            return
 
         sms_body_lower = sms_body.lower()
         is_opt_out = opt_out_type == "STOP" or any(
@@ -457,10 +458,10 @@ async def try_opt_in(itgs: Itgs, phone: str) -> bool:
     async with contact_method_stats(itgs) as stats:
         if verify_logged:
             logger.info(f"Verified {phone} via SMS start")
-            await stats.incr_verified(unix_date, channel="phone", reason="sms_start")
+            stats.incr_verified(unix_date, channel="phone", reason="sms_start")
         if enable_logged:
             logger.info(f"Enabled {phone} via SMS start")
-            await stats.incr_enabled(unix_date, channel="phone", reason="sms_start")
+            stats.incr_enabled(unix_date, channel="phone", reason="sms_start")
         if daily_reminder_created:
             logger.info(f"Created daily reminder for {phone} via SMS start")
             stats.stats.merge_with(
@@ -568,7 +569,7 @@ async def try_opt_out(itgs: Itgs, phone: str) -> bool:
         await (
             DailyReminderRegistrationStatsPreparer()
             .incr_unsubscribed(
-                unix_date, "sms", "sms_stop", amt=response[1].rows_affected
+                unix_date, "sms", "sms_stop", amt=response[1].rows_affected or 0
             )
             .store(itgs)
         )

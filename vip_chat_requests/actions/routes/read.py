@@ -13,8 +13,6 @@ from resources.filter_item import FilterItem, FilterItemModel
 from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
-from image_files.models import ImageFileRef
-import image_files.auth as img_file_auth
 from itgs import Itgs
 
 
@@ -71,7 +69,8 @@ class VipChatRequestActionFilter(BaseModel):
 
 class ReadVipChatRequestActionRequest(BaseModel):
     filters: VipChatRequestActionFilter = Field(
-        default_factory=VipChatRequestActionFilter, description="The filters to apply"
+        default_factory=lambda: VipChatRequestActionFilter.model_validate({}),
+        description="The filters to apply",
     )
     sort: Optional[List[VipChatRequestActionSortOption]] = Field(
         None, description="The sort options to apply"
@@ -150,7 +149,7 @@ async def read_vip_chat_request_actions(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -225,4 +224,4 @@ async def raw_read_vip_chat_request_actions(
 def item_pseudocolumns(item: VipChatRequestAction) -> dict:
     """returns the dictified item such that the keys in the return dict match
     the keys of the sort options"""
-    return item.dict()
+    return item.model_dump()

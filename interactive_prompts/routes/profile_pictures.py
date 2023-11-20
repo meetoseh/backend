@@ -4,7 +4,16 @@ import secrets
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Dict, List, Literal, NoReturn, Optional, Tuple, Union
+from typing import (
+    Dict,
+    List,
+    Literal,
+    NoReturn,
+    Optional,
+    Tuple,
+    Union,
+    cast as typing_cast,
+)
 from error_middleware import handle_contextless_error, handle_error
 from image_files.models import ImageFileRef
 import auth
@@ -75,7 +84,7 @@ NOT_FOUND = Response(
                 "time specified might be outside the range of the prompt."
             ),
         )
-        .json()
+        .model_dump_json()
         .encode("utf-8")
     ),
     status_code=404,
@@ -108,13 +117,13 @@ async def read_profile_pictures(
     """
     async with Itgs() as itgs:
         std_auth_result = await auth.auth_any(itgs, authorization)
-        if not std_auth_result.success:
+        if std_auth_result.result is None:
             return std_auth_result.error_response
 
         interactive_prompt_auth_result = await interactive_prompts.auth.auth_any(
             itgs, f"bearer {args.jwt}"
         )
-        if not interactive_prompt_auth_result.success:
+        if interactive_prompt_auth_result.result is None:
             return interactive_prompt_auth_result.error_response
 
         if interactive_prompt_auth_result.result.interactive_prompt_uid != args.uid:
@@ -162,7 +171,7 @@ async def read_profile_pictures(
                         for internal_ref in internal_refs
                     ]
                 )
-                .json()
+                .model_dump_json()
                 .encode("utf-8")
             ),
             headers={
@@ -291,7 +300,7 @@ async def get_standard_profile_pictures(
             itgs,
             interactive_prompt_uid,
             prompt_time,
-            encoded_pictures=res.json().encode("utf-8"),
+            encoded_pictures=res.model_dump_json().encode("utf-8"),
         )
         return res
 
@@ -366,7 +375,7 @@ async def get_standard_profile_pictures(
     new_data = await get_standard_profile_pictures_from_database(
         itgs, interactive_prompt_uid, prompt_time
     )
-    new_data_encoded = new_data.json().encode("utf-8")
+    new_data_encoded = new_data.model_dump_json().encode("utf-8")
     await set_standard_profile_pictures_to_redis(
         itgs, interactive_prompt_uid, prompt_time, encoded_pictures=new_data_encoded
     )
@@ -401,14 +410,17 @@ async def get_standard_profile_pictures_from_local_cache(
             local cache
     """
     local_cache = await itgs.local_cache()
-    raw = local_cache.get(
-        f"interactive_prompts:profile_pictures:{interactive_prompt_uid}:{prompt_time}".encode(
-            "ascii"
-        )
+    raw = typing_cast(
+        bytes,
+        local_cache.get(
+            f"interactive_prompts:profile_pictures:{interactive_prompt_uid}:{prompt_time}".encode(
+                "ascii"
+            )
+        ),
     )
     if raw is None:
         return None
-    return StandardUserProfilePictures.parse_raw(raw, content_type="application/json")
+    return StandardUserProfilePictures.model_validate_json(raw)
 
 
 async def set_standard_profile_pictures_to_local_cache(
@@ -480,9 +492,7 @@ async def get_standard_profile_pictures_from_redis(
     )
     if pictures is None:
         return None
-    return StandardUserProfilePictures.parse_raw(
-        pictures, content_type="application/json"
-    )
+    return StandardUserProfilePictures.model_validate_json(pictures)
 
 
 async def set_standard_profile_pictures_to_redis(
@@ -576,7 +586,7 @@ async def get_standard_profile_pictures_from_database(
     # (so leaking which ones are nearby isn't a problem).
 
     uid_offset = f"oseh_if_{secrets.token_urlsafe(16)}"
-    sort_dir = random.choice(["ASC", "DESC"])
+    sort_dir = random.choice(typing_cast(List[Literal["ASC", "DESC"]], ["ASC", "DESC"]))
     limit = 25
     query_str, qargs = _make_query(
         interactive_prompt_uid, prompt_time, uid_offset, sort_dir, limit
@@ -767,10 +777,10 @@ async def evict_standard_profile_pictures(
                 prompt_time=prompt_time,
                 min_checked_at=now,
                 have_updated=False,
+            ).model_dump_json()
+            msg = len(msg_body).to_bytes(4, "big", signed=False) + msg_body.encode(
+                "utf-8"
             )
-            msg = len(msg_body).to_bytes(
-                4, "big", signed=False
-            ) + msg_body.json().encode("utf-8")
             await pipe.publish(
                 b"ps:interactive_prompts:profile_pictures:push_cache", msg
             )
@@ -780,7 +790,7 @@ async def evict_standard_profile_pictures(
 async def push_standard_profile_pictures_to_local_caches(
     itgs: Itgs,
     interactive_prompt_uid: str,
-    prompt_time: float,
+    prompt_time: int,
     *,
     fetched_at: float,
     encoded_pictures: bytes,
@@ -791,7 +801,7 @@ async def push_standard_profile_pictures_to_local_caches(
     Args:
         itgs (Itgs): The integrations to (re)use
         interactive_prompt_uid (str): The UID of the interactive prompt
-        prompt_time (float): The time within the interactive prompt
+        prompt_time (int): The time within the interactive prompt
         fetched_at (float): The time at which the pictures were fetched
         encoded_pictures (bytes): The pictures, already json-encoded
     """
@@ -802,7 +812,7 @@ async def push_standard_profile_pictures_to_local_caches(
             min_checked_at=fetched_at,
             have_updated=True,
         )
-        .json()
+        .model_dump_json()
         .encode("utf-8")
     )
 
@@ -843,6 +853,7 @@ async def cache_push_loop() -> NoReturn:
     instances regarding standard profile pictures that have been updated and writing
     them to our internal cache.
     """
+    assert pps.instance is not None
     try:
         async with pps.PPSSubscription(
             pps.instance,
@@ -854,15 +865,14 @@ async def cache_push_loop() -> NoReturn:
                 first_part_len = int.from_bytes(
                     raw_message.read(4), "big", signed=False
                 )
-                first_part = (
-                    InteractivePromptProfilePicturesPushCachePubSubMessage.parse_raw(
-                        raw_message.read(first_part_len),
-                        content_type="application/json",
-                    )
+                first_part = InteractivePromptProfilePicturesPushCachePubSubMessage.model_validate_json(
+                    raw_message.read(first_part_len)
                 )
 
                 if first_part.have_updated:
                     updated_part = raw_message.read()
+                else:
+                    updated_part = b""
 
                 async with Itgs() as itgs:
                     if not first_part.have_updated:
@@ -885,7 +895,7 @@ async def cache_push_loop() -> NoReturn:
                         event.set()
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
-            return
+            return  # type: ignore
         await handle_error(e)
     finally:
         print("profile_pictures cache push loop exiting")

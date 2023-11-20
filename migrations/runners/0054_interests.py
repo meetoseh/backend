@@ -190,6 +190,7 @@ async def fill_visitor_interests(
         if not response.results:
             break
 
+        vis_uid = None
         for vis_uid, source_canonical_utm in response.results:
             interest_slug = canonical_utm_to_interest[source_canonical_utm]
             vint_uid = f"oseh_vi_{secrets.token_urlsafe(16)}"
@@ -267,6 +268,7 @@ async def fill_user_interests(itgs: Itgs):
         if not response.results:
             break
 
+        user_sub = None
         for user_sub, interest_slug, vint_uid in response.results:
             uint_uid = f"oseh_uint_{secrets.token_urlsafe(16)}"
             await cursor.execute(

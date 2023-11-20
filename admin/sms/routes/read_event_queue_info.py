@@ -61,9 +61,9 @@ async def read_event_queue_info(authorization: Optional[str] = Header(None)):
         redis = await itgs.redis()
 
         async with redis.pipeline(transaction=False) as pipe:
-            await pipe.llen(b"sms:event")
-            await pipe.lindex(b"sms:event", 0)
-            await pipe.lindex(b"sms:event", -1)
+            await pipe.llen(b"sms:event")  # type: ignore
+            await pipe.lindex(b"sms:event", 0)  # type: ignore
+            await pipe.lindex(b"sms:event", -1)  # type: ignore
             length, oldest_item_raw, newest_item_raw = await pipe.execute()
 
         if oldest_item_raw is not None:
@@ -99,7 +99,7 @@ async def read_event_queue_info(authorization: Optional[str] = Header(None)):
                 oldest_item_delay=oldest_item_delay,
                 newest_information_received_at=newest_information_received_at,
                 newest_item_delay=newest_item_delay,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

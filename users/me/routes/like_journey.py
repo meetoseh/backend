@@ -24,7 +24,7 @@ JOURNEY_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="journey_not_found",
         message="There is no journey with that uid, or its been deleted, or the user hasn't taken it before",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -34,7 +34,7 @@ ALREADY_LIKED_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
         type="already_liked",
         message="The user has already liked this journey",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -48,7 +48,7 @@ RACED_RESPONSE = Response(
             "Either the journey does not exist or you have already liked it. "
             "Retry in a bit for a better error message"
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -82,7 +82,7 @@ async def like_journey(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -162,6 +162,7 @@ async def like_journey(
                 args.journey_uid,
             ),
         )
+        assert response.results
         taken_class = bool(response.results[0][0])
         liked_class = bool(response.results[0][1])
 

@@ -3,11 +3,10 @@ import secrets
 from fastapi import APIRouter, Cookie
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
-from typing_extensions import Annotated
+from typing import Optional, Literal, Annotated, cast as typing_cast
 from error_middleware import handle_warning
 from models import StandardErrorResponse
-from oauth.siwo.lib.exchange_stats_preparer import exchange_stats
+from oauth.siwo.lib.exchange_stats_preparer import FailedReason, exchange_stats
 from oauth.siwo.jwt.core import CORE_ERRORS_BY_STATUS, auth_jwt, INVALID_TOKEN_RESPONSE
 from itgs import Itgs
 import unix_dates
@@ -31,7 +30,7 @@ NOT_FOR_OAUTH_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPE](
         type="not_for_oauth",
         message="The Core JWT you provided is valid, but cannot be exchanged for an Oauth code",
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Set-Cookie": "SIWO_Core=; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
@@ -65,12 +64,16 @@ async def exchange_for_code(
     exchange_unix_date = unix_dates.unix_timestamp_to_unix_date(exchange_at, tz=tz)
     async with Itgs() as itgs:
         auth_result = await auth_jwt(itgs, siwo_core, revoke=True)
-        if not auth_result.success:
+        if auth_result.result is None:
+            assert auth_result.error is not None
             async with exchange_stats(itgs) as stats:
                 stats.incr_attempted(unix_date=exchange_unix_date)
                 stats.incr_failed(
                     unix_date=exchange_unix_date,
-                    reason=f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    reason=typing_cast(
+                        FailedReason,
+                        f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    ),
                 )
             return auth_result.error.response
 
@@ -80,7 +83,9 @@ async def exchange_for_code(
         ):
             async with exchange_stats(itgs) as stats:
                 stats.incr_attempted(unix_date=exchange_unix_date)
-                stats.incr_failed(unix_date=exchange_unix_date, reason=b"incomplete")
+                stats.incr_failed(
+                    unix_date=exchange_unix_date, reason=b"bad_jwt:incomplete"
+                )
             return NOT_FOR_OAUTH_RESPONSE
 
         conn = await itgs.conn()
@@ -129,7 +134,7 @@ async def exchange_for_code(
             stats.incr_succeeded(unix_date=exchange_unix_date)
 
         return Response(
-            content=ExchangeForCodeResponse(code=code).json(),
+            content=ExchangeForCodeResponse(code=code).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Set-Cookie": "SIWO_Core=; Secure; HttpOnly; SameSite=Strict; Max-Age=0",

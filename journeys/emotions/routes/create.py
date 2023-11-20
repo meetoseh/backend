@@ -28,7 +28,7 @@ ERROR_503_TYPES = Literal["raced"]
 ERROR_JOURNEY_NOT_FOUND = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="journey_not_found", message="There is no journey with the provided uid"
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -37,7 +37,7 @@ ERROR_EMOTION_NOT_FOUND = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="emotion_not_found",
         message="There is no matching emotion; emotions must be created before they can be attached to journeys",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -46,7 +46,7 @@ ERROR_EMOTION_ALREADY_ATTACHED_TO_JOURNEY = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
         type="emotion_already_attached_to_journey",
         message="The emotion is already attached to the journey",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -59,7 +59,7 @@ ERROR_COULD_NOT_DETERMINE_FAILURE_REASON = Response(
             "emotion is already attached to the journey. However, it could not be "
             "determined which of these was the case."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -91,7 +91,7 @@ async def create_journey_emotion(
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -127,7 +127,7 @@ async def create_journey_emotion(
             """,
             (
                 je_uid,
-                creation_hint.json(),
+                creation_hint.model_dump_json(),
                 now,
                 args.journey_uid,
                 args.emotion,
@@ -144,7 +144,7 @@ async def create_journey_emotion(
                     emotion=args.emotion,
                     creation_hint=creation_hint,
                     created_at=now,
-                ).json(),
+                ).model_dump_json(),
                 status_code=201,
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
@@ -171,6 +171,7 @@ async def create_journey_emotion(
             ),
         )
 
+        assert response.results is not None, response
         emotion_exists = bool(response.results[0])
         journey_exists = bool(response.results[1])
         emotion_already_attached_to_journey = bool(response.results[2])

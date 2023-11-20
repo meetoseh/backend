@@ -94,7 +94,7 @@ async def siwo_check_reset_password_code(
     Raises:
         NoScriptError: If the script is not loaded into redis
     """
-    res = await redis.evalsha(SIWO_CHECK_RESET_PASSWORD_CODE_LUA_SCRIPT_HASH, 0, code)
+    res = await redis.evalsha(SIWO_CHECK_RESET_PASSWORD_CODE_LUA_SCRIPT_HASH, 0, code)  # type: ignore
     if res is redis:
         return None
     return parse_siwo_check_reset_password_code(res)

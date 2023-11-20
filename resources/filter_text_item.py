@@ -3,8 +3,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from .standard_text_operator import StandardTextOperator
 from pypika import Parameter
-from pypika.terms import Term
-from pypika import Criterion
+from pypika.terms import Term, ValueWrapper, BasicCriterion, Matching
 from db.utils import CaseInsensitiveCriterion, EscapeCriterion
 
 
@@ -18,7 +17,7 @@ class FilterTextItem:
     value: Optional[str]
     """The value to compare the pseudocolumn to"""
 
-    def applied_to(self, term: Term, qargs: list) -> Criterion:
+    def applied_to(self, term: Term, qargs: list) -> Term:
         """Returns the appropriate criterion for this filter item when the
         term is the pseudocolumn that the filter applies to.
 
@@ -66,7 +65,7 @@ class FilterTextItem:
             return CaseInsensitiveCriterion(term != p)
         elif self.operator == StandardTextOperator.GREATER_THAN:
             if self.value is None:
-                return Term.wrap_constant(False)
+                return ValueWrapper(False)
             qargs.append(self.value)
             return term > p
         elif self.operator == StandardTextOperator.GREATER_THAN_OR_EQUAL:
@@ -76,7 +75,7 @@ class FilterTextItem:
             return term >= p
         elif self.operator == StandardTextOperator.LESS_THAN:
             if self.value is None:
-                return Term.wrap_constant(False)
+                return ValueWrapper(False)
             qargs.append(self.value)
             return term < p
         elif self.operator == StandardTextOperator.LESS_THAN_OR_EQUAL:
@@ -86,15 +85,17 @@ class FilterTextItem:
             return term <= p
         elif self.operator == StandardTextOperator.LIKE_CASE_INSENSITIVE:
             if self.value is None:
-                return Term.wrap_constant(False)
+                return ValueWrapper(False)
             qargs.append(self.value)
-            return EscapeCriterion(term.like(p))
+            return EscapeCriterion(BasicCriterion(Matching.like, term, p))
 
         raise ValueError(f"Unsupported operator: {self.operator}")
 
     def to_model(self) -> "FilterTextItemModel":
         """Returns the pydantic representation"""
-        return FilterTextItemModel(operator=self.operator.value, value=self.value)
+        return FilterTextItemModel.model_validate(
+            {"operator": self.operator.value, "value": self.value}
+        )
 
 
 class FilterTextItemModel(BaseModel):

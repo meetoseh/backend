@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import List, Optional, Literal
+from pydantic import BaseModel, Field, StringConstraints
+from typing import List, Optional, Literal, Annotated
 from auth import auth_any
 from journeys.auth import auth_any as auth_journey_any
 from models import (
@@ -78,7 +78,9 @@ class FeedbackRequest(BaseModel):
     response: int = Field(
         description="The users response to the multiple choice part of the question, 1-indexed"
     )
-    feedback: Optional[constr(max_length=1000, strip_whitespace=True)] = Field(
+    feedback: Optional[
+        Annotated[str, StringConstraints(max_length=1000, strip_whitespace=True)]
+    ] = Field(
         description="If the user provided freeform feedback, that freeform feedback"
     )
 
@@ -113,11 +115,11 @@ async def give_feedback(
     """
     async with Itgs() as itgs:
         std_auth_result = await auth_any(itgs, authorization)
-        if not std_auth_result.success:
+        if std_auth_result.result is None:
             return std_auth_result.error_response
 
         journey_auth_result = await auth_journey_any(itgs, f"bearer {args.journey_jwt}")
-        if not journey_auth_result.success:
+        if journey_auth_result.result is None:
             return journey_auth_result.error_response
         if journey_auth_result.result.journey_uid != args.journey_uid:
             return AUTHORIZATION_UNKNOWN_TOKEN
@@ -128,7 +130,7 @@ async def give_feedback(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="version_not_found",
                     message="The indicated feedback question does not exist",
-                ).json(),
+                ).model_dump_json(),
                 status_code=404,
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
@@ -140,7 +142,7 @@ async def give_feedback(
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="invalid_response",
                     message="The indicated feedback question does not allow freeform feedback",
-                ).json(),
+                ).model_dump_json(),
                 status_code=409,
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
@@ -152,7 +154,7 @@ async def give_feedback(
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="invalid_response",
                     message="The indicated response is not valid for the given version",
-                ).json(),
+                ).model_dump_json(),
                 status_code=409,
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
@@ -189,7 +191,7 @@ async def give_feedback(
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="integrity_error", message="The feedback could not be saved"
-                ).json(),
+                ).model_dump_json(),
                 status_code=503,
                 headers={
                     "Content-Type": "application/json; charset=utf-8",

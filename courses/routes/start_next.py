@@ -43,7 +43,7 @@ NOT_FOUND_RESPONSE = Response(
         message=(
             "You either have not started that course or have already finished it."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -56,7 +56,7 @@ JOURNEY_GONE_RESPONSE = Response(
             "The journey was deleted between you requesting it and us starting it. "
             "Retry in a few seconds."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -67,7 +67,7 @@ FAILED_TO_START_RESPONSE = Response(
             "We failed to start the journey. This is probably a server error. "
             "Retry in a few seconds."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -99,7 +99,7 @@ async def start_next_journey_in_course(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()

@@ -44,7 +44,7 @@ async def read_my_courses(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -99,7 +99,7 @@ async def read_my_courses(
             entitlement = await users.lib.entitlements.get_entitlement(
                 itgs, user_sub=auth_result.result.sub, identifier=entitlement_iden
             )
-            if not entitlement.is_active:
+            if entitlement is None or not entitlement.is_active:
                 continue
             courses.append(
                 await get_external_course_from_row(
@@ -115,7 +115,7 @@ async def read_my_courses(
             )
 
         return Response(
-            content=ReadMyCoursesResponse(courses=courses).json(),
+            content=ReadMyCoursesResponse(courses=courses).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

@@ -18,10 +18,8 @@ from auth import auth_id
 from itgs import Itgs
 from loguru import logger
 from dataclasses import dataclass
-import users.lib.stats
 import unix_dates
 import pytz
-import socket
 import time
 import os
 
@@ -73,7 +71,7 @@ async def finish_verify(
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         redis = await itgs.redis()
@@ -90,7 +88,7 @@ async def finish_verify(
                 content=StandardErrorResponse[ERROR_429_TYPES](
                     type="too_many_verification_attempts",
                     message="Too many verification attempts have been made recently",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -120,7 +118,7 @@ async def finish_verify(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="phone_verification_not_found",
                     message="That phone verification does not exist, has a different code, or is already completed",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -147,7 +145,7 @@ async def finish_verify(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="phone_verification_not_found",
                     message="That phone verification does not exist, has a different code, or is already completed",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -411,7 +409,7 @@ async def finish_verify(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="phone_verification_not_found",
                     message="That phone verification does not exist, has a different code, or is already completed",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -541,7 +539,7 @@ async def finish_verify(
 
         return Response(
             status_code=201,
-            content=FinishVerifyResponse(verified_at=verified_at).json(),
+            content=FinishVerifyResponse(verified_at=verified_at).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

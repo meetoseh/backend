@@ -1,8 +1,7 @@
-import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import Literal, Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Literal, Optional, Annotated
 from auth import auth_admin
 from journeys.lib.read_one_external import evict_external_journey
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
@@ -13,9 +12,9 @@ router = APIRouter()
 
 
 class UpdateInstructorRequest(BaseModel):
-    name: constr(strip_whitespace=True, min_length=1) = Field(
-        description="The new display name for the instructor"
-    )
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1)
+    ] = Field(description="The new display name for the instructor")
     bias: float = Field(
         description=(
             "A non-negative number generally less than 1 that influences "
@@ -36,7 +35,7 @@ INSTRUCTOR_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="instructor_not_found",
         message="The instructor was not found or is deleted",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
 )
 
@@ -46,7 +45,7 @@ RACED_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_503_TYPES](
         type="raced",
         message="The instructor was updated by another request. Please try again.",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
 )
 
@@ -111,7 +110,9 @@ async def update_instructor(
 
         success_response = Response(
             status_code=200,
-            content=UpdateInstructorResponse(name=args.name, bias=args.bias).json(),
+            content=UpdateInstructorResponse(
+                name=args.name, bias=args.bias
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

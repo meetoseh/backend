@@ -56,12 +56,14 @@ class UpdateNotificationTimeArgs(BaseModel):
             "This field will be removed in a future release. If specified and time_range is not "
             "specified, used as a preset in time_range."
         ),
-        deprecated=True,
+        json_schema_extra={
+            "deprecated": True,
+        },
     )
     days_of_week: List[DayOfWeek] = Field(
-        default_factory=list(SORTED_DAYS_OF_WEEK_FOR_MASK),
+        default_factory=lambda: list(SORTED_DAYS_OF_WEEK_FOR_MASK),
         description="The days of the week to send notifications",
-        unique_items=True,
+        max_length=7,
     )
     time_range: DailyReminderTimeRange = Field(
         default=None,
@@ -81,8 +83,8 @@ class UpdateNotificationTimeArgs(BaseModel):
             return v
         notif_time = values.get("notification_time")
         if notif_time is not None and notif_time != "any":
-            return DailyReminderTimeRange(preset=notif_time)
-        return DailyReminderTimeRange(preset="unspecified")
+            return DailyReminderTimeRange(preset=notif_time, start=None, end=None)
+        return DailyReminderTimeRange(preset="unspecified", start=None, end=None)
 
     @validator("timezone")
     def validate_timezone(cls, v):
@@ -185,6 +187,7 @@ def _update_timezone(
     auth_result: AuthResult,
     now: float,
 ) -> List[_Query]:
+    assert auth_result.result is not None
     utzl_uid = f"oseh_utzl_{secrets.token_urlsafe(16)}"
     updated_timezone = None
 
@@ -263,6 +266,7 @@ def _update_settings_for_channel(
     now: float,
     unix_date: int,
 ) -> List[_Query]:
+    assert auth_result.result is not None
     logged = None
     deleted_reminders = None
     updated_reminders = None
@@ -373,7 +377,9 @@ def _update_settings_for_channel(
                 unix_date=unix_date,
                 channel=channel,
                 old_day_of_week_mask=127,
-                old_time_range=DailyReminderTimeRange(preset="unspecified"),
+                old_time_range=DailyReminderTimeRange(
+                    preset="unspecified", start=None, end=None
+                ),
                 new_day_of_week_mask=day_of_week_mask,
                 new_time_range=time_range,
             )

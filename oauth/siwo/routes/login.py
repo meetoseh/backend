@@ -5,8 +5,7 @@ from fastapi import APIRouter, Cookie
 from fastapi.datastructures import Headers
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
-from typing_extensions import Annotated
+from typing import Literal, Optional, Annotated, cast as typing_cast
 from error_middleware import handle_warning
 from itgs import Itgs
 from lib.shared.clean_for_slack import clean_for_slack
@@ -18,7 +17,11 @@ from oauth.siwo.jwt.login import (
     LOGIN_ERRORS_BY_STATUS,
     auth_jwt,
 )
-from oauth.siwo.lib.authorize_stats_preparer import auth_stats
+from oauth.siwo.lib.authorize_stats_preparer import (
+    LoginFailedReason,
+    LoginSucceededPrecondition,
+    auth_stats,
+)
 from oauth.siwo.lib.key_derivation import (
     create_new_key_derivation_method,
     is_satisfactory_key_derivation_method,
@@ -95,12 +98,16 @@ async def login(
     login_unix_date = unix_dates.unix_timestamp_to_unix_date(login_at, tz=tz)
     async with coarsen_time_with_sleeps(1), Itgs() as itgs:
         auth_result = await auth_jwt(itgs, siwo_login, revoke=False)
-        if not auth_result.success:
+        if auth_result.result is None:
+            assert auth_result.error is not None
             async with auth_stats(itgs) as stats:
                 stats.incr_login_attempted(unix_date=login_unix_date)
                 stats.incr_login_failed(
                     unix_date=login_unix_date,
-                    reason=f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    reason=typing_cast(
+                        LoginFailedReason,
+                        f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    ),
                 )
             return auth_result.error.response
 
@@ -133,7 +140,7 @@ async def login(
                         "You have attempted to log in too many times. Please wait "
                         f"{ratelimit_result.seconds_remaining} seconds before trying again."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=429,
             )
@@ -163,8 +170,8 @@ async def login(
             return INVALID_TOKEN_RESPONSE
 
         uid: str = response.results[0][0]
-        key_derivation_method = KeyDerivationMethod.parse_raw(
-            response.results[0][1], content_type="application/json"
+        key_derivation_method = KeyDerivationMethod.model_validate_json(
+            response.results[0][1]
         )
         correct_derived_password = base64.b64decode(response.results[0][2])
         email_verified_at: Optional[float] = response.results[0][3]
@@ -201,7 +208,10 @@ async def login(
                 stats.incr_login_attempted(unix_date=login_unix_date)
                 stats.incr_login_succeeded(
                     unix_date=login_unix_date,
-                    precondition=f"{used_code_str}:{verified_str}".encode("utf-8"),
+                    precondition=typing_cast(
+                        LoginSucceededPrecondition,
+                        f"{used_code_str}:{verified_str}".encode("utf-8"),
+                    ),
                 )
 
             redis = await itgs.redis()
@@ -210,7 +220,7 @@ async def login(
                     "utf-8"
                 ),
                 b"1",
-                exat=auth_result.result.exp + 61,
+                exat=int(auth_result.result.exp + 61),
             )
 
             core_jwt = await create_jwt(
@@ -220,7 +230,7 @@ async def login(
                 oseh_redirect_url=auth_result.result.oseh_redirect_url,
                 oseh_client_id=auth_result.result.oseh_client_id,
                 duration=7200,
-                iat=login_at,
+                iat=int(login_at),
             )
             await release_concurrency_key(
                 itgs, jti=auth_result.result.jti, ratelimit_result=ratelimit_result
@@ -229,7 +239,7 @@ async def login(
                 content=LoginResponse(
                     email_verified=(email_verified_at is not None)
                     or auth_result.result.hidden_state.used_code
-                ).json(),
+                ).model_dump_json(),
                 headers=Headers(
                     raw=[
                         (b"content-type", b"application/json; charset=utf-8"),
@@ -282,7 +292,7 @@ async def login(
             content=StandardErrorResponse[ERROR_409_TYPE](
                 type="incorrect_password",
                 message="The password you provided was incorrect",
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=409,
         )
@@ -331,7 +341,7 @@ async def maybe_update_key_derivation_method(
     await cursor.execute(
         "UPDATE direct_accounts SET key_derivation_method = ?, derived_password = ? WHERE uid = ?",
         (
-            new_key_derivation_method.json(),
+            new_key_derivation_method.model_dump_json(),
             new_derived_password_b64,
             uid,
         ),
@@ -426,6 +436,13 @@ async def release_concurrency_key(
     if ratelimit_result.concurrency_lock_id is None:
         return
 
+    lock_id = (
+        ratelimit_result.concurrency_lock_id
+        if isinstance(
+            ratelimit_result.concurrency_lock_id, (bytes, bytearray, memoryview)
+        )
+        else ratelimit_result.concurrency_lock_id.encode("utf-8")
+    )
     concurrency_key = f"sign_in_with_oseh:login_attempt_in_progress:{jti}".encode(
         "utf-8"
     )
@@ -433,7 +450,5 @@ async def release_concurrency_key(
     redis = await itgs.redis()
     await run_with_prep(
         lambda force: ensure_del_if_match_script_exists(redis, force=force),
-        lambda: del_if_match(
-            redis, concurrency_key, ratelimit_result.concurrency_lock_id
-        ),
+        lambda: del_if_match(redis, concurrency_key, lock_id),
     )

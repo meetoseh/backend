@@ -9,10 +9,8 @@ from itgs import Itgs
 from journeys.routes.read import raw_read_journeys
 import secrets
 import time
-from resources.filter_item import FilterItem
 
 from resources.filter_text_item import FilterTextItem
-from resources.standard_operator import StandardOperator
 from resources.standard_text_operator import StandardTextOperator
 
 
@@ -69,7 +67,7 @@ async def create_introductory_journey(
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -97,7 +95,7 @@ async def create_introductory_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_not_found",
                     message="There is no journey with that uid",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -107,7 +105,7 @@ async def create_introductory_journey(
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="journey_deleted",
                     message="The journey has been deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -140,7 +138,7 @@ async def create_introductory_journey(
                     journey=journey,
                     user_sub=auth_result.result.sub,
                     created_at=now,
-                ).json(),
+                ).model_dump_json(),
                 status_code=201,
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
@@ -149,6 +147,6 @@ async def create_introductory_journey(
             content=StandardErrorResponse[ERROR_409_TYPES](
                 type="journey_already_introductory",
                 message="The journey is already introductory",
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )

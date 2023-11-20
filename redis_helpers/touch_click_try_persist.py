@@ -1,4 +1,4 @@
-from typing import Literal, Optional, List, Union
+from typing import Literal, Optional, List, Union, cast as typing_cast
 import hashlib
 import time
 import redis.asyncio.client
@@ -91,7 +91,7 @@ async def touch_click_try_persist(
     Raises:
         NoScriptError: If the script is not loaded into redis
     """
-    res = await redis.evalsha(TOUCH_CLICK_TRY_PERSIST_LUA_SCRIPT_HASH, 0, score, code)
+    res = await redis.evalsha(TOUCH_CLICK_TRY_PERSIST_LUA_SCRIPT_HASH, 0, score, code)  # type: ignore
     if res is redis:
         return None
     return touch_click_try_persist_parse_result(res)
@@ -109,4 +109,8 @@ def touch_click_try_persist_parse_result(res) -> TouchClickTryPersistResult:
         return TouchClickTryPersistResult(False, "persisting", None)
     if res[0] == -1:
         return TouchClickTryPersistResult(False, "already_queued", None)
-    return TouchClickTryPersistResult(True, None, TouchLink.from_redis_mapping(res[1]))
+    return TouchClickTryPersistResult(
+        True,
+        None,
+        TouchLink.from_redis_mapping(typing_cast(List[Union[str, bytes]], res[1])),
+    )

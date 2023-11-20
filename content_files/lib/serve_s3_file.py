@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Dict, Generator, Optional, Union
+from typing import Dict, Generator, Optional, Union, Protocol, cast as typing_cast
 from itgs import Itgs
 from fastapi.responses import Response, StreamingResponse
 from temp_files import temp_file
@@ -15,7 +15,15 @@ from concurrently filling the local cache (which is a waste of time and resource
 """
 
 
-def read_in_parts(f: io.BytesIO) -> Generator[bytes, None, None]:
+class SyncReadable(Protocol):
+    def read(self, n: int) -> bytes:
+        ...
+
+    def close(self) -> None:
+        ...
+
+
+def read_in_parts(f: SyncReadable) -> Generator[bytes, None, None]:
     """Convenience generator for reading from the given io.BytesIO in chunks"""
     try:
         chunk = f.read(8192)
@@ -115,8 +123,9 @@ async def serve_s3_file_from_cache(
     returns None.
     """
     local_cache = await itgs.local_cache()
-    cached_data: Optional[Union[io.BytesIO, bytes]] = local_cache.get(
-        f"s3_files:{file.uid}".encode("utf-8"), read=True
+    cached_data = typing_cast(
+        Optional[Union[io.BytesIO, bytes]],
+        local_cache.get(f"s3_files:{file.uid}".encode("utf-8"), read=True),
     )
     if cached_data is None:
         return None
@@ -125,7 +134,7 @@ async def serve_s3_file_from_cache(
         "Content-Type": file.content_type,
         "Content-Length": str(file.file_size),
     }
-    if isinstance(cached_data, (bytes, bytearray)):
+    if isinstance(cached_data, (bytes, bytearray, memoryview)):
         return Response(content=cached_data, headers=headers)
 
     return StreamingResponse(content=read_in_parts(cached_data), headers=headers)

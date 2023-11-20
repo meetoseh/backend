@@ -1,9 +1,12 @@
+from typing import Literal, Optional
 import pem
 import io
 import cryptography.x509
 import cryptography.hazmat.primitives
 import cryptography.exceptions
-from cryptography.hazmat.primitives.asymmetric import padding
+import cryptography.hazmat.primitives.asymmetric.padding
+import cryptography.hazmat.primitives.asymmetric.rsa
+import cryptography.hazmat.primitives.hashes
 import logging
 
 
@@ -11,8 +14,9 @@ def verify_signature(
     body_json: dict,
     decoded_signature: bytes,
     signing_certificate: pem.Certificate,
-    keys: list
-) -> str:
+    signature_version: Literal["1", "2"],
+    keys: list,
+) -> Optional[str]:
     """Verifies that the given message body, already interpreted as JSON and
     determined to be a dict, is protected by the given signature, where the
     signature was signed by the private key associated with the given
@@ -46,24 +50,31 @@ def verify_signature(
             continue
 
         canonical_message.write(key)
-        canonical_message.write('\n')
+        canonical_message.write("\n")
         canonical_message.write(str(val))
-        canonical_message.write('\n')
+        canonical_message.write("\n")
 
     protected_message = str(canonical_message.getvalue())
     pem_certificate = signing_certificate.as_bytes()
     parsed_certificate = cryptography.x509.load_pem_x509_certificate(pem_certificate)
     public_key = parsed_certificate.public_key()
 
+    assert isinstance(
+        public_key, cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey
+    ), f"unknown amazon public key format: {type(public_key)}"
+
     try:
         public_key.verify(
             decoded_signature,
             protected_message.encode(),
-            padding.PKCS1v15(),
-            cryptography.hazmat.primitives.hashes.SHA1()
+            cryptography.hazmat.primitives.asymmetric.padding.PKCS1v15(),
+            {
+                "1": cryptography.hazmat.primitives.hashes.SHA1(),
+                "2": cryptography.hazmat.primitives.hashes.SHA256(),
+            }[signature_version],
         )
     except cryptography.exceptions.InvalidSignature:
-        logging.warning('Signature verification failed', exc_info=True)
-        return 'Invalid Signature'
+        logging.warning("Signature verification failed", exc_info=True)
+        return "Invalid Signature"
 
     return None

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Dict, Optional
+from typing import Optional
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
@@ -54,7 +54,7 @@ async def read_queued_info(
                 length=response[0],
                 oldest=response[1][0][1] if response[1] else None,
                 overdue=response[2],
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

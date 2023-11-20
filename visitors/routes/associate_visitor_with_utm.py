@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Optional, Annotated
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE
 from auth import auth_any
@@ -16,18 +16,28 @@ import time
 
 
 class AssociateVisitorWithUtmRequest(BaseModel):
-    utm_source: constr(strip_whitespace=True, min_length=1, max_length=255) = Field()
+    utm_source: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+    ] = Field()
     utm_medium: Optional[
-        constr(strip_whitespace=True, min_length=1, max_length=255)
+        Annotated[
+            str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+        ]
     ] = Field(None)
     utm_campaign: Optional[
-        constr(strip_whitespace=True, min_length=1, max_length=255)
+        Annotated[
+            str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+        ]
     ] = Field(None)
     utm_term: Optional[
-        constr(strip_whitespace=True, min_length=1, max_length=255)
+        Annotated[
+            str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+        ]
     ] = Field(None)
     utm_content: Optional[
-        constr(strip_whitespace=True, min_length=1, max_length=255)
+        Annotated[
+            str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+        ]
     ] = Field(None)
 
 
@@ -80,7 +90,7 @@ async def associate_visitor_with_utm(
             seen_at=clicked_at,
         )
 
-        if auth_result.success:
+        if auth_result.result is not None:
             await push_visitor_user_association(
                 itgs,
                 visitor_uid=sanitized_visitor,
@@ -100,7 +110,7 @@ async def associate_visitor_with_utm(
         )
         return Response(
             status_code=202,
-            content=CreateVisitorResponse(uid=sanitized_visitor).json(),
+            content=CreateVisitorResponse(uid=sanitized_visitor).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -140,7 +150,7 @@ async def push_visitor_utm_association(
             utm_content=utm_content,
             clicked_at=clicked_at,
         )
-        .json()
+        .model_dump_json()
         .encode("utf-8")
     )
     await push_visitor_association(

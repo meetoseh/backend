@@ -70,8 +70,9 @@ async def up(itgs: Itgs):
             (last_id, last_id, block_size),
         )
 
+        row_id = None
         for row in response.results or []:
-            row_id: int = row[0]
+            row_id = row[0]
             stripe_checkout_session_id: Optional[str] = row[1]
             if stripe_checkout_session_id is None:
                 continue
@@ -80,7 +81,13 @@ async def up(itgs: Itgs):
                 checkout_session = stripe.checkout.Session.retrieve(
                     stripe_checkout_session_id, api_key=stripe_sk
                 )
-                payment_email: str = checkout_session.customer_details.email
+                if (
+                    checkout_session.customer_details is None
+                    or checkout_session.customer_details.email is None
+                ):
+                    payment_email = "anonymous@example.com"
+                else:
+                    payment_email = checkout_session.customer_details.email
                 await cursor.execute(
                     """
                     UPDATE course_download_links

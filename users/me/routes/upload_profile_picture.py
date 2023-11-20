@@ -21,7 +21,7 @@ TOO_MANY_REQUESTS = Response(
     content=StandardErrorResponse[ERROR_429_TYPES](
         type="too_many_requests",
         message="You are doing that too frequently. Try again in a little bit.",
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
     },
@@ -50,7 +50,7 @@ async def upload_profile_picture(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         redis = await itgs.redis()
@@ -75,7 +75,7 @@ async def upload_profile_picture(
             failure_job_kwargs=dict(),
         )
         return Response(
-            content=res.json(),
+            content=res.model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )

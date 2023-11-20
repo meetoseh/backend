@@ -260,19 +260,19 @@ async def siwo_acknowledge_elevation(
     midnight_next_day = unix_dates.unix_date_to_timestamp(
         acknowledged_unix_date + 1, tz=tz
     )
-    res = await redis.evalsha(
+    res = await redis.evalsha(  # type: ignore
         SIWO_ACKNOWLEDGE_ELEVATION_LUA_SCRIPT_HASH,
         0,
-        email,
-        str(delay).encode("utf-8"),
-        str(acknowledged_at).encode("utf-8"),
-        code_to_send,
-        code_to_store,
-        email_uid,
-        email_log_entry_uid,
-        reason,
-        str(acknowledged_unix_date).encode("utf-8"),
-        str(midnight_next_day).encode("utf-8"),
+        email,  # type: ignore
+        str(delay).encode("utf-8"),  # type: ignore
+        str(acknowledged_at).encode("utf-8"),  # type: ignore
+        code_to_send,  # type: ignore
+        code_to_store,  # type: ignore
+        email_uid,  # type: ignore
+        email_log_entry_uid,  # type: ignore
+        reason,  # type: ignore
+        str(acknowledged_unix_date).encode("utf-8"),  # type: ignore
+        str(midnight_next_day).encode("utf-8"),  # type: ignore
     )
     if res is redis:
         return None

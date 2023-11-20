@@ -1,6 +1,6 @@
 import json
 import secrets
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Sequence, Tuple, cast as typing_cast
 from error_middleware import handle_contextless_error
 from itgs import Itgs
 from dataclasses import dataclass
@@ -46,8 +46,8 @@ async def get_emotion_choice_information(itgs: Itgs, *, word: str) -> EmotionCho
     """
     redis = await itgs.redis()
 
-    result = await redis.hmget(
-        b"emotion_users:choices", word.encode("utf-8"), b"__total"
+    result = await redis.hmget(  # type: ignore
+        b"emotion_users:choices", word.encode("utf-8"), b"__total"  # type: ignore
     )
 
     votes_for_word = int(result[0]) if result[0] is not None else 0
@@ -88,8 +88,8 @@ async def on_choose_word(
 
     async with redis.pipeline(transaction=True) as pipe:
         pipe.multi()
-        await pipe.hincrby(key, word.encode("utf-8"), 1)
-        await pipe.hincrby(key, b"__total", 1)
+        await pipe.hincrby(key, word.encode("utf-8"), 1)  # type: ignore
+        await pipe.hincrby(key, b"__total", 1)  # type: ignore
         await pipe.execute()
 
     conn = await itgs.conn()
@@ -98,7 +98,7 @@ async def on_choose_word(
     emotion_user_uid = f"oseh_eu_{secrets.token_urlsafe(16)}"
 
     now = time.time()
-    queries: List[Tuple[str, List[Any]]] = [
+    queries: List[Tuple[str, Sequence[Any]]] = [
         (
             """
             INSERT INTO emotion_users (
@@ -300,7 +300,7 @@ async def get_emotion_pictures_from_cache(
     """
     cache = await itgs.local_cache()
     key = f"emotion_users:pictures:{word}".encode("utf-8")
-    raw = cache.get(key)
+    raw = typing_cast(Optional[bytes], cache.get(key))
     if raw is None:
         return None
     return json.loads(raw)

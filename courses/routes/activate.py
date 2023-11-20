@@ -84,7 +84,7 @@ INVALID_CHECKOUT_SESSION_RESPONSE = Response(
             "That checkout session is either already used, expired, or does not "
             "provide any course entitlements."
         ),
-    ).json(),
+    ).model_dump_json(),
     status_code=404,
     headers={"Content-Type": "application/json; charset=utf-8"},
 )
@@ -97,7 +97,7 @@ CONCURRENT_REQUEST_RESPONSE = Response(
             "Another request is currently processing this checkout session. "
             "Please try again in a few seconds."
         ),
-    ).json(),
+    ).model_dump_json(),
     status_code=503,
     headers={
         "Content-Type": "application/json; charset=utf-8",
@@ -228,7 +228,7 @@ async def activate_course(
                         content=ActivateCourseResponse(
                             course=course,
                             visitor_uid=sanitized_visitor,
-                        ).json(),
+                        ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                         status_code=200,
                     )
@@ -241,13 +241,16 @@ async def activate_course(
                     revenue_cat_id=new_rc_id,
                     stripe_checkout_session_id=args.checkout_session_id,
                 )
-                email: str = checkout_session.customer_details.email
-                name: str = checkout_session.customer_details.name
+                email: Optional[str] = None
+                name: Optional[str] = None
+                if checkout_session.customer_details is not None:
+                    email = checkout_session.customer_details.email
+                    name = checkout_session.customer_details.name
                 await revenue_cat.set_customer_attributes(
                     revenue_cat_id=new_rc_id,
                     attributes={
-                        "$email": email,
-                        "$displayName": name,
+                        **({"$email": email} if email is not None else {}),
+                        **({"$displayName": name} if name is not None else {}),
                         "environment": os.environ["ENVIRONMENT"],
                         "guestInfo": json.dumps(
                             {
@@ -274,7 +277,7 @@ async def activate_course(
                         content=ActivateCourseResponse(
                             course=None,
                             visitor_uid=sanitized_visitor,
-                        ).json(),
+                        ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                         status_code=200,
                     )
@@ -348,8 +351,12 @@ async def activate_course(
                             args.checkout_session_id,
                             email,
                             request_at,
-                            auth_result.result.sub if auth_result.success else None,
-                            auth_result.result.sub if auth_result.success else None,
+                            auth_result.result.sub
+                            if auth_result.result is not None
+                            else None,
+                            auth_result.result.sub
+                            if auth_result.result is not None
+                            else None,
                             sanitized_visitor,
                             row[0],
                         ),
@@ -363,7 +370,7 @@ async def activate_course(
                     content=ActivateCourseResponse(
                         course=best_course,
                         visitor_uid=sanitized_visitor,
-                    ).json(),
+                    ).model_dump_json(),
                     headers={"Content-Type": "application/json; charset=utf-8"},
                     status_code=200,
                 )

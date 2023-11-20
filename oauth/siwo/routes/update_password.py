@@ -3,8 +3,7 @@ import socket
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
-from typing_extensions import Annotated
+from typing import Literal, Optional, Annotated, cast as typing_cast
 from error_middleware import handle_warning
 from lib.shared.clean_for_slack import clean_for_slack
 from models import StandardErrorResponse
@@ -23,7 +22,10 @@ from redis_helpers.siwo_update_password_ratelimit import (
 from timing_attacks import coarsen_time_with_sleeps
 from oauth.siwo.jwt.login import LoginJWTHiddenState, create_jwt as create_login_jwt
 from csrf import check_csrf
-from oauth.siwo.lib.authorize_stats_preparer import auth_stats
+from oauth.siwo.lib.authorize_stats_preparer import (
+    PasswordUpdateFailedReason,
+    auth_stats,
+)
 import time
 import unix_dates
 import pytz
@@ -70,7 +72,7 @@ BAD_CODE_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_403_TYPE](
         type="bad_code",
         message="The code is invalid or expired. Make sure the url is correct and try again.",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=403,
 )
@@ -80,7 +82,7 @@ INTEGRITY_ERROR_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPE](
         type="integrity",
         message="The corresponding sign in with oseh identity has been deleted",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -90,7 +92,7 @@ RATELIMIT_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_429_TYPE](
         type="ratelimit",
         message="Try again later or contact support at hi@oseh.com if the problem persists",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=429,
 )
@@ -128,12 +130,16 @@ async def update_password(
     update_unix_date = unix_dates.unix_timestamp_to_unix_date(update_at, tz=tz)
     async with coarsen_time_with_sleeps(1), Itgs() as itgs:
         csrf_result = await check_csrf(itgs, args.csrf)
-        if not csrf_result.success:
+        if csrf_result.result is None:
+            assert csrf_result.error is not None
             async with auth_stats(itgs) as stats:
                 stats.incr_password_update_attempted(unix_date=update_unix_date)
                 stats.incr_password_update_failed(
                     unix_date=update_unix_date,
-                    reason=f"csrf:{csrf_result.error.reason}".encode("utf-8"),
+                    reason=typing_cast(
+                        PasswordUpdateFailedReason,
+                        f"csrf:{csrf_result.error.reason}".encode("utf-8"),
+                    ),
                 )
             return csrf_result.error.response
 
@@ -144,6 +150,7 @@ async def update_password(
             ),
             lambda: siwo_update_password_ratelimit(redis, update_at),
         )
+        assert ratelimit_result is not None
         if not ratelimit_result.acceptable:
             async with auth_stats(itgs) as stats:
                 stats.incr_password_update_attempted(unix_date=update_unix_date)
@@ -158,12 +165,17 @@ async def update_password(
             ),
             lambda: siwo_check_reset_password_code(redis, args.code.encode("utf-8")),
         )
+        assert code_result is not None
         if not code_result.valid:
+            assert code_result.error is not None
             async with auth_stats(itgs) as stats:
                 stats.incr_password_update_attempted(unix_date=update_unix_date)
                 stats.incr_password_update_failed(
                     unix_date=update_unix_date,
-                    reason=f"bad_code:{code_result.error.category}".encode("utf-8"),
+                    reason=typing_cast(
+                        PasswordUpdateFailedReason,
+                        f"bad_code:{code_result.error.category}".encode("utf-8"),
+                    ),
                 )
             return BAD_CODE_RESPONSE
 
@@ -185,7 +197,7 @@ async def update_password(
                 (
                     "UPDATE direct_accounts SET key_derivation_method=?, derived_password=? WHERE uid=?",
                     (
-                        key_derivation_method.json(),
+                        key_derivation_method.model_dump_json(),
                         base64.b64encode(derived_password).decode("utf-8"),
                         code_result.identity_uid,
                     ),
@@ -283,7 +295,7 @@ async def update_password(
                 preview="SIWO Password updated",
             )
         return Response(
-            content=UpdatePasswordResponse(email=email).json(),
+            content=UpdatePasswordResponse(email=email).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Set-Cookie": f"SIWO_Login={login_jwt}; Secure; HttpOnly; SameSite=Strict",

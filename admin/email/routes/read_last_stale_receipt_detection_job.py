@@ -53,12 +53,12 @@ async def read_last_stale_receipt_detection_job(
             return auth_result.error_response
         redis = await itgs.redis()
         result = await redis.hmget(
-            b"stats:email_events:stale_receipt_job",
-            b"started_at",
-            b"finished_at",
-            b"running_time",
-            b"abandoned",
-            b"stop_reason",
+            b"stats:email_events:stale_receipt_job",  # type: ignore
+            b"started_at",  # type: ignore
+            b"finished_at",  # type: ignore
+            b"running_time",  # type: ignore
+            b"abandoned",  # type: ignore
+            b"stop_reason",  # type: ignore
         )
 
         if result[0] is None or result[1] is None:
@@ -73,7 +73,7 @@ async def read_last_stale_receipt_detection_job(
                 stop_reason=result[4].decode("utf-8")
                 if isinstance(result[4], bytes)
                 else result[4],
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

@@ -1,19 +1,24 @@
 import os
 import hmac
-from typing import Literal, Optional, Tuple
+from typing import Literal, Optional, Tuple, Union
 from itgs import Itgs
+from enum import Enum
 
 
-NOT_SET = object()
+class _NotSetEnum(Enum):
+    NotSet = 0
+
+
+NOT_SET = _NotSetEnum.NotSet
 
 
 async def check_client(
     itgs: Itgs,
     *,
     client_id: str,
-    client_secret: str = NOT_SET,
-    redirect_uri: str = NOT_SET
-) -> Tuple[str, Optional[Literal["secret", "url", "unknown"]]]:
+    client_secret: Union[str, Literal[NOT_SET]] = NOT_SET,
+    redirect_uri: Union[str, Literal[NOT_SET]] = NOT_SET
+) -> Tuple[bool, Optional[Literal["secret", "url", "unknown"]]]:
     """Checks if the given client id is valid and matches the given secret (if
     provided) and redirect uri (if provided)
     """

@@ -3,17 +3,8 @@ import time
 from fastapi import APIRouter, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, ValidationError
-from pydantic.generics import GenericModel
-from typing import (
-    Any,
-    Dict,
-    Generic,
-    List,
-    Literal,
-    Optional,
-    TypeVar,
-    Union,
-)
+from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar, Union
+from typing_extensions import TypedDict
 from urllib.parse import parse_qs
 from itgs import Itgs
 import os
@@ -62,23 +53,29 @@ class OauthTokenResponse(BaseModel):
 TypeT = TypeVar("TypeT")
 
 
-class ErrorDict(BaseModel):
-    loc: List[Union[int, str]] = Field(
-        description="A JSON Pointer to the field in error",
-    )
-    msg: str = Field(
-        description="A human-readable message describing the error",
-    )
-    type: str = Field(
-        description="A short machine-readable string identifying the error type",
-    )
-    ctx: Optional[Dict[str, Any]] = Field(
-        None,
-        description="A dictionary containing additional information about the error, optional",
-    )
+# COPIED FROM pydantic-core to extend from typing_extensions
+class ErrorDetails(TypedDict):
+    type: str
+    """
+    The type of error that occurred, this is an identifier designed for
+    programmatic use that will change rarely or never.
+
+    `type` is unique for each error message, and can hence be used as an identifier to build custom error messages.
+    """
+    loc: List[Union[int, str]]
+    """Tuple of strings and ints identifying where in the schema the error occurred."""
+    msg: str
+    """A human readable error message."""
+    input: Any
+    """The input data at this `loc` that caused the error."""
+    ctx: Optional[Dict[str, Any]]
+    """
+    Values which are required to render the error message, and could hence be useful in rendering custom error messages.
+    Also useful for passing custom error data forward.
+    """
 
 
-class OauthTokenErrorResponse(GenericModel, Generic[TypeT]):
+class OauthTokenErrorResponse(BaseModel, Generic[TypeT]):
     error: TypeT = Field(
         description="The error code, see https://connect2id.com/products/server/docs/api/token#token-error",
     )
@@ -88,7 +85,7 @@ class OauthTokenErrorResponse(GenericModel, Generic[TypeT]):
     error_uri: str = Field(
         description="A URI identifying a human-readable web page with information about the error"
     )
-    errors: Optional[List[ErrorDict]] = Field(
+    errors: Optional[List[ErrorDetails]] = Field(
         None, description="If validation errors are present, they will be returned here"
     )
 
@@ -99,7 +96,8 @@ WRONG_CONTENT_TYPE_RESPONSE = Response(
         error="invalid_request",
         error_description="Bad request: Invalid Content-Type (expected application/x-www-form-urlencoded)",
         error_uri="https://datatracker.ietf.org/doc/html/rfc6749#section-5.2",
-    ).json(),
+        errors=None,
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
     },
@@ -111,7 +109,8 @@ NOT_UTF8_RESPONSE = Response(
         error="invalid_request",
         error_description="Bad request: Failed to parse as utf-8",
         error_uri="https://datatracker.ietf.org/doc/html/rfc6749#section-5.2",
-    ).json(),
+        errors=None,
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
     },
@@ -123,7 +122,8 @@ NOT_URLENCODED_RESPONSE = Response(
         error="invalid_request",
         error_description="Bad request: Failed to interpret as application/x-www-form-urlencoded",
         error_uri="https://datatracker.ietf.org/doc/html/rfc6749#section-5.2",
-    ).json(),
+        errors=None,
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
     },
@@ -135,7 +135,8 @@ INVALID_GRANT_RESPONSE = Response(
         error="invalid_grant",
         error_description="Bad request: Invalid or expired authorization code",
         error_uri="https://datatracker.ietf.org/doc/html/rfc6749#section-5.2",
-    ).json(),
+        errors=None,
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
     },
@@ -152,7 +153,8 @@ INVALID_CLIENT_RESPONSE = Response(
             "does not match the client_id"
         ),
         error_uri="https://datatracker.ietf.org/doc/html/rfc6749#section-5.2",
-    ).json(),
+        errors=None,
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
     },
@@ -165,7 +167,8 @@ SERVER_ERROR_RESPONSE = Response(
         error="server_error",
         error_description="Internal server error: An unexpected error occurred that prevented the server from fulfilling the request",
         error_uri="https://oseh.io/status",
-    ).json(),
+        errors=None,
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
     },
@@ -180,7 +183,7 @@ SERVER_ERROR_RESPONSE = Response(
         "requestBody": {
             "content": {
                 "application/x-www-form-urlencoded": {
-                    "schema": OauthTokenRequest.schema(),
+                    "schema": OauthTokenRequest.model_json_schema(),
                 }
             }
         },
@@ -215,21 +218,21 @@ async def oauth_token(raw_request: Request):
     except:
         return NOT_URLENCODED_RESPONSE
 
-    converted_single_values = dict(
+    converted_single_values_d = dict(
         (key, value[0] if len(value) == 1 else value)
         for key, value in parsed_data.items()
     )
 
     try:
-        request = OauthTokenRequest.parse_obj(converted_single_values)
+        request = OauthTokenRequest.model_validate(converted_single_values_d)
     except ValidationError as e:
         return Response(
             content=OauthTokenErrorResponse[ERROR_400_TYPES](
                 error="invalid_request",
                 error_description=f"Bad request: unprocessable content",
                 error_uri="https://datatracker.ietf.org/doc/html/rfc6749#section-5.2",
-                errors=e.errors(),
-            ).json(),
+                errors=e.errors(),  # type: ignore
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
             },
@@ -282,7 +285,7 @@ async def oauth_token(raw_request: Request):
         algorithm="HS256",
     )
     return Response(
-        content=OauthTokenResponse(id_token=id_token).json(),
+        content=OauthTokenResponse(id_token=id_token).model_dump_json(),
         headers={
             "Content-Type": "application/json; charset=utf-8",
         },

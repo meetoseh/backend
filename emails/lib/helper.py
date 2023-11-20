@@ -17,7 +17,7 @@ async def handle_event(itgs: Itgs, event: EmailEvent):
     webhook_earliest_key = b"stats:email_webhooks:daily:earliest"
     event_queue_key = b"email:event"
 
-    enc_event = event.json().encode("utf-8")
+    enc_event = event.model_dump_json().encode("utf-8")
 
     redis = await itgs.redis()
 
@@ -28,10 +28,10 @@ async def handle_event(itgs: Itgs, event: EmailEvent):
         async with redis.pipeline() as pipe:
             pipe.multi()
             await set_if_lower(pipe, webhook_earliest_key, today)
-            await pipe.hincrby(webhook_stats_key, b"received", 1)
-            await pipe.hincrby(webhook_stats_key, b"verified", 1)
-            await pipe.hincrby(webhook_stats_key, b"accepted", 1)
-            await pipe.rpush(event_queue_key, enc_event)
+            await pipe.hincrby(webhook_stats_key, b"received", 1)  # type: ignore
+            await pipe.hincrby(webhook_stats_key, b"verified", 1)  # type: ignore
+            await pipe.hincrby(webhook_stats_key, b"accepted", 1)  # type: ignore
+            await pipe.rpush(event_queue_key, enc_event)  # type: ignore
             await pipe.execute()
 
     await run_with_prep(prepare, execute)

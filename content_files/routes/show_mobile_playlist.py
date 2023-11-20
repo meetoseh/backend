@@ -1,7 +1,7 @@
 import tempfile
 from typing import Literal, Optional, Set, Union
 from fastapi import APIRouter, Header
-from fastapi.responses import Response, JSONResponse, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from itgs import Itgs
 from models import (
     AUTHORIZATION_UNKNOWN_TOKEN,
@@ -11,6 +11,7 @@ from models import (
 from starlette.concurrency import run_in_threadpool
 from urllib.parse import urlencode
 import content_files.auth
+import content_files.helper
 from content_files.lib.serve_s3_file import read_in_parts
 import rqdb.result
 import io
@@ -145,8 +146,9 @@ async def show_ios_playlist(
 
     async with Itgs() as itgs:
         auth_result = await content_files.auth.auth_any(itgs, token)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
+        assert token is not None
 
         if auth_result.result.content_file_uid != uid:
             return AUTHORIZATION_UNKNOWN_TOKEN
@@ -155,15 +157,16 @@ async def show_ios_playlist(
             itgs, uid, token[len("bearer ") :] if presign else None
         )
         if playlist is None:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="not_found",
                     message="There is no content file with the given UID with relevant exports. It may still be processing or have been deleted",
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
-        if isinstance(playlist, (bytes, bytearray)):
+        if isinstance(playlist, (bytes, bytearray, memoryview)):
             return Response(
                 content=playlist,
                 status_code=200,
@@ -179,7 +182,7 @@ async def show_ios_playlist(
 
 async def get_cached_mobile_playlist(
     itgs: Itgs, uid: str, jwt: Optional[str]
-) -> Optional[Union[bytes, io.BytesIO]]:
+) -> Optional[Union[bytes, io.BytesIO, content_files.helper.M3UPresigner]]:
     """Fetches the mobile playlist for the content file with the given
     uid from the cache, if it is in the cache, otherwise returns None.
 
@@ -197,7 +200,9 @@ async def get_cached_mobile_playlist(
 
 
 async def set_cached_mobile_playlist(
-    itgs: Itgs, uid: str, playlist: Union[bytes, io.BytesIO]
+    itgs: Itgs,
+    uid: str,
+    playlist: Union[bytes, io.BytesIO, tempfile.SpooledTemporaryFile[bytes]],
 ) -> None:
     """Stores the mobile playlist for the content file with the given uid in the
     cache. This can work with either a bytes object or a BytesIO-like object.
@@ -207,7 +212,7 @@ async def set_cached_mobile_playlist(
     """
     local_cache = await itgs.local_cache()
 
-    is_bytesio_like = not isinstance(playlist, (bytes, bytearray))
+    is_bytesio_like = not isinstance(playlist, (bytes, bytearray, memoryview))
     local_cache.set(
         f"content_files:playlists:mobile:{uid}".encode("utf-8"),
         playlist,
@@ -218,7 +223,7 @@ async def set_cached_mobile_playlist(
 
 async def get_raw_mobile_playlist_from_db(
     itgs: Itgs, uid: str, consistency: Literal["none", "weak", "strong"] = "none"
-) -> Optional[Union[bytes, io.BytesIO]]:
+) -> Optional[Union[bytes, io.BytesIO, tempfile.SpooledTemporaryFile[bytes]]]:
     """Fetches the mobile playlist for the content file with the given uid
     from the database. This does not perform presigning, and it may return
     a bytes-io like object if doing so might be advantageous.
@@ -275,10 +280,11 @@ async def get_raw_mobile_playlist_from_db(
 
 def _encode_db_response(
     uid: str, duration: float, response: rqdb.result.ResultItem
-) -> io.BytesIO:
+) -> tempfile.SpooledTemporaryFile[bytes]:
     """Implementation detail of get_raw_mobile_playlist_from_db, created so it
     can be targeted for run_in_threadpool
     """
+    assert response.results
     result = tempfile.SpooledTemporaryFile(max_size=1024 * 512, mode="w+b")
     result.write(b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-INDEPENDENT-SEGMENTS\n")
 
@@ -310,7 +316,14 @@ def _encode_db_response(
 
 async def get_mobile_playlist(
     itgs: Itgs, uid: str, jwt: Optional[str]
-) -> Optional[Union[bytes, io.BytesIO]]:
+) -> Optional[
+    Union[
+        bytes,
+        io.BytesIO,
+        tempfile.SpooledTemporaryFile[bytes],
+        content_files.helper.M3UPresigner,
+    ]
+]:
     """Fetches the mobile playlist for the content file with the given uid
     from the cache, if it is in the cache, otherwise fetches it from the
     database and stores it in the cache.
@@ -327,13 +340,13 @@ async def get_mobile_playlist(
         return None
 
     await set_cached_mobile_playlist(itgs, uid, playlist)
-    if not isinstance(playlist, (bytes, bytearray)):
+    if not isinstance(playlist, (bytes, bytearray, memoryview)):
         playlist.seek(0)
 
     if jwt is None:
         return playlist
 
-    if isinstance(playlist, (bytes, bytearray)):
+    if isinstance(playlist, (bytes, bytearray, memoryview)):
         playlist = io.BytesIO(playlist)
 
     return content_files.helper.M3UPresigner(

@@ -1,5 +1,4 @@
 from typing import List
-from itgs import Itgs
 from dataclasses import dataclass
 import math
 from functools import cmp_to_key
@@ -18,9 +17,9 @@ class ComparableInstructorCategory:
     """The score for the combination after all adjustments"""
 
 
-def compare_combination(
+def compare_combination_raw(
     a: ComparableInstructorCategory, b: ComparableInstructorCategory
-) -> int:
+) -> float:
     """Returns a negative number if a is better than b, a positive number if b is
     better than a, and zero if they are equal. This produces a partial ordering
     of a list of such combinations.
@@ -37,6 +36,15 @@ def compare_combination(
     return math.copysign(1, b.adjusted_score) - math.copysign(1, a.adjusted_score)
 
 
+def compare_combination_clean(
+    a: ComparableInstructorCategory, b: ComparableInstructorCategory
+) -> int:
+    """Returns -1 if a is better than b, 1 if b is better than a, and 0 if they are
+    equal. This produces a partial ordering of a list of such combinations.
+    """
+    return int(math.copysign(1, compare_combination_raw(a, b)))
+
+
 def find_best_combination_index(
     combinations: List[ComparableInstructorCategory],
 ) -> int:
@@ -46,7 +54,7 @@ def find_best_combination_index(
     best = 0
     ties = 0
     for i in range(1, len(combinations)):
-        cmp = compare_combination(combinations[i], combinations[best])
+        cmp = compare_combination_raw(combinations[i], combinations[best])
         if cmp < 0:
             best = i
             ties = 0
@@ -89,4 +97,4 @@ def sort_by_descending_preference(
     Args:
         combinations: The list of combinations to sort
     """
-    combinations.sort(key=cmp_to_key(compare_combination))
+    combinations.sort(key=cmp_to_key(compare_combination_clean))

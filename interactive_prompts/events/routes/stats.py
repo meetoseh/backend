@@ -1,5 +1,17 @@
 import time
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, TypeVar
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Protocol,
+    TypeVar,
+    cast as typing_cast,
+)
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, JSONResponse
 from pydantic import BaseModel, Field
@@ -115,7 +127,7 @@ async def get_interactive_prompt_stats(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         if uid != auth_result.result.interactive_prompt_uid:
@@ -131,7 +143,7 @@ async def get_interactive_prompt_stats(
                         "Although your authorization was valid, the prompt with "
                         "the given uid was not found: it may have been deleted"
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -158,14 +170,14 @@ async def get_interactive_prompt_stats(
                         "The bin you requested was not found; the interactive prompt only has "
                         f"{interactive_prompt_meta.bins} bins"
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
         parts = await asyncio.gather(
             get_likes(itgs, uid, bin),
             get_users(itgs, uid, bin),
-            get_for_prompt(itgs, uid, bin, interactive_prompt_meta.prompt),
+            get_for_prompt(itgs, uid, bin, prompt=interactive_prompt_meta.prompt),
         )
 
         result = dict()
@@ -179,7 +191,7 @@ async def get_interactive_prompt_stats(
         return Response(
             InteractivePromptStatsResponse(
                 prompt_time=bin * bin_width, bin_width=bin_width, **result
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -216,6 +228,7 @@ async def get_single_from_tree(itgs: Itgs, uid: str, bin: int, category: str) ->
         """,
         [uid, category, *indices],
     )
+    assert response.results is not None, response
     return response.results[0][0] or 0
 
 
@@ -251,10 +264,23 @@ async def get_by_category_from_tree(
         """,
         [uid, category, *indices],
     )
-    return dict(response.results or [])
+    assert response.results is not None, response
+
+    result: Dict[int, int] = dict()
+    for category_value, val in response.results:
+        result[category_value] = val
+
+    return dict(result or [])
 
 
-TCallable = TypeVar("TCallable", bound=Callable)
+class StatsFuncInner(Protocol):
+    def __call__(
+        self, itgs: Itgs, uid: str, bin: int, *args, **kwargs
+    ) -> Awaitable[Dict[str, Any]]:
+        ...
+
+
+TCallable = TypeVar("TCallable", bound=StatsFuncInner)
 
 
 def stats_func(func: TCallable) -> TCallable:
@@ -286,13 +312,16 @@ def stats_func(func: TCallable) -> TCallable:
             nonlocal clear_future
             async with lock:
                 now = time.time()
-                if cached_time is None or now > cached_time + cache_time_seconds:
+                if (
+                    cached_value is None
+                    or cached_time is None
+                    or now > cached_time + cache_time_seconds
+                ):
                     cached_value = await func(itgs, uid, bin, *args, **kwargs)
                     cached_time = now
                     if clear_future is not None:
                         clear_future.cancel()
                     clear_future = asyncio.create_task(clear_cache())
-
                 return cached_value
 
         return wrapper
@@ -306,7 +335,9 @@ def stats_func(func: TCallable) -> TCallable:
         del handler_and_cleaner_for_uid_bin[(uid, bin)]
 
     @functools.wraps(func)
-    async def general_wrapper(itgs: Itgs, uid: str, bin: int, *args, **kwargs):
+    async def general_wrapper(
+        itgs: Itgs, uid: str, bin: int, *args, **kwargs
+    ) -> Dict[str, Any]:
         key = (uid, bin)
         if key not in handler_and_cleaner_for_uid_bin:
             handler = handler_for_fixed_uid_bin()
@@ -320,25 +351,31 @@ def stats_func(func: TCallable) -> TCallable:
         handler_and_cleaner_for_uid_bin[key] = (handler, cleaner)
         return await handler(itgs, uid, bin, *args, **kwargs)
 
-    return general_wrapper
+    return typing_cast(TCallable, general_wrapper)
 
 
 @stats_func
-async def get_users(itgs: Itgs, uid: str, bin: int) -> Dict[str, Any]:
+async def get_users(itgs: Itgs, uid: str, bin: int, *args, **kwargs) -> Dict[str, Any]:
+    assert not args
+    assert not kwargs
     res = await get_single_from_tree(itgs, uid, bin, "users")
     return {"users": res}
 
 
 @stats_func
-async def get_likes(itgs: Itgs, uid: str, bin: int) -> Dict[str, Any]:
+async def get_likes(itgs: Itgs, uid: str, bin: int, *args, **kwargs) -> Dict[str, Any]:
+    assert not args
+    assert not kwargs
     res = await get_single_from_tree(itgs, uid, bin, "likes")
     return {"likes": res}
 
 
 @stats_func
 async def get_for_prompt(
-    itgs: Itgs, uid: str, bin: int, prompt: Prompt
+    itgs: Itgs, uid: str, bin: int, *args, prompt: Prompt, **kwargs
 ) -> Dict[str, Any]:
+    assert not args
+    assert not kwargs
     if prompt.style == "numeric":
         return {
             "numeric_active": await get_by_category_from_tree(

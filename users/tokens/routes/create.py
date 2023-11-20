@@ -2,7 +2,7 @@ import secrets
 import time
 from typing import Literal, Optional
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_id
 from itgs import Itgs
@@ -28,12 +28,12 @@ class CreateUserTokenResponse(BaseModel):
     token: str = Field(description="The shared secret to use to identify in the future")
     name: str = Field(description="The human-readable name for identifying this")
     created_at: float = Field(
-        name="Created at",
+        title="Created at",
         description="When the token was created in seconds since the unix epoch",
     )
     expires_at: Optional[float] = Field(
         None,
-        name="Expires at",
+        title="Expires at",
         description="When the token will expire in seconds since the unix epoch",
     )
 
@@ -65,7 +65,7 @@ async def create_user_token(
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
         new_token = "oseh_ut_" + secrets.token_urlsafe(48)
         uid = "oseh_ut_uid_" + secrets.token_urlsafe(16)
@@ -112,20 +112,22 @@ async def create_user_token(
             ),
         )
         if response.rows_affected is not None and response.rows_affected > 0:
-            return JSONResponse(
+            return Response(
                 content=CreateUserTokenResponse(
                     uid=uid,
                     token=new_token,
                     name=args.name,
                     created_at=now,
                     expires_at=args.expires_at,
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=201,
             )
-        return JSONResponse(
+        return Response(
             content=StandardErrorResponse[ERROR_409_TYPE](
                 type="too_many_unexpired_tokens",
                 message="can't have more than 100 unexpired user tokens",
-            ).dict(),
+            ).model_dump_json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=409,
         )

@@ -8,17 +8,25 @@ phone number can be provided, such as a stripe payment form.
 """
 from itgs import Itgs
 from auth import AuthResult
-from typing import Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Union
 from pypika import Query, Parameter, Table
 from pypika.terms import ExistsCriterion
-
+from enum import Enum
 from lib.contact_methods.user_primary_phone import primary_phone_join_clause
 
-NotSet = object()
+
+class _NotSetEnum(Enum):
+    NotSet = 0
+
+
+NOT_SET = _NotSetEnum.NotSet
 
 
 async def get_user_current_phone(
-    itgs: Itgs, auth_result: AuthResult, *, default: Optional[str] = NotSet
+    itgs: Itgs,
+    auth_result: AuthResult,
+    *,
+    default: Union[str, None, Literal[_NotSetEnum.NotSet]] = NOT_SET
 ) -> Optional[str]:
     """Gets the users current phone number in E.164 format. It's possible that
     the authorization method doesn't provide a phone number and there are none
@@ -31,7 +39,7 @@ async def get_user_current_phone(
         default (Optional[str], optional): the default phone number to use if
             none is found. Defaults to NotSet, meaning a ValueError will be raised
     """
-    if not auth_result.success:
+    if auth_result.result is None:
         raise ValueError("auth_result must be successful")
 
     if auth_result.result.claims is None:
@@ -44,7 +52,9 @@ async def get_user_current_phone(
     return phone
 
 
-async def _fallback_to_primary(itgs: Itgs, sub: str, default: Union[str, None, object]):
+async def _fallback_to_primary(
+    itgs: Itgs, sub: str, default: Union[str, None, Literal[_NotSetEnum.NotSet]]
+):
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 
@@ -66,7 +76,7 @@ async def _fallback_to_primary(itgs: Itgs, sub: str, default: Union[str, None, o
     )
 
     if not response.results:
-        if default is NotSet:
+        if default is NOT_SET:
             raise ValueError("No phone number found for user")
         return default
 

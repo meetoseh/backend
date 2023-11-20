@@ -68,7 +68,7 @@ async def set_if_lower(
     Raises:
         NoScriptError: If the script is not loaded into redis
     """
-    res = await redis.evalsha(SET_IF_LOWER_LUA_SCRIPT_HASH, 1, key, val)
+    res = await redis.evalsha(SET_IF_LOWER_LUA_SCRIPT_HASH, 1, key, val)  # type: ignore
     if res is redis:
         return None
     return bool(res)

@@ -43,7 +43,7 @@ async def create_instructor_profile_picture(
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         res = await start_upload(
@@ -58,7 +58,7 @@ async def create_instructor_profile_picture(
             failure_job_kwargs=dict(),
         )
         return Response(
-            content=res.json(),
+            content=res.model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )

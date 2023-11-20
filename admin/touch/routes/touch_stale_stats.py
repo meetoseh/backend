@@ -1,8 +1,9 @@
 import asyncio
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import List, Optional
 import admin.lib.read_daily_stats as read_daily_stats
+from lifespan import lifespan_handler
 from models import STANDARD_ERRORS_BY_CODE
 
 
@@ -22,10 +23,10 @@ class PartialTouchStaleStatsItem(BaseModel):
 
 class PartialTouchStaleStats(BaseModel):
     today: PartialTouchStaleStatsItem = Field(
-        default_factory=PartialTouchStaleStatsItem
+        default_factory=lambda: PartialTouchStaleStatsItem.model_validate({})
     )
     yesterday: PartialTouchStaleStatsItem = Field(
-        default_factory=PartialTouchStaleStatsItem
+        default_factory=lambda: PartialTouchStaleStatsItem.model_validate({})
     )
 
 
@@ -82,6 +83,7 @@ async def read_partial_touch_send_stats(authorization: Optional[str] = Header(No
 _background_tasks = []
 
 
-@router.on_event("startup")
-def register_background_tasks():
-    _background_tasks.append(asyncio.create_task(route.background_task()))
+@lifespan_handler
+async def register_background_tasks():
+    task = asyncio.create_task(route.background_task())
+    yield

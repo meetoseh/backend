@@ -59,7 +59,7 @@ async def attach_course(
     request_at = time.time()
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -76,7 +76,7 @@ async def attach_course(
                         "does not appear to exist. If you believe this is an error, "
                         "try again in a few seconds then contact support."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )

@@ -1,5 +1,5 @@
 import json
-from typing import Literal, NoReturn, Optional
+from typing import Literal, NoReturn, Optional, cast as typing_cast
 from pydantic import BaseModel, Field
 from error_middleware import handle_error
 from interactive_prompts.models.prompt import Prompt
@@ -72,12 +72,13 @@ async def read_interactive_prompt_meta_from_cache(
             because there is no interactive prompt with that uid.
     """
     cache = await itgs.local_cache()
-    raw = cache.get(
-        f"interactive_prompts:{interactive_prompt_uid}:meta".encode("utf-8")
+    raw = typing_cast(
+        Optional[bytes],
+        cache.get(f"interactive_prompts:{interactive_prompt_uid}:meta".encode("utf-8")),
     )
     if raw is None:
         return None
-    return InteractivePromptMeta.parse_raw(raw, content_type="application/json")
+    return InteractivePromptMeta.model_validate_json(raw)
 
 
 async def write_interactive_prompt_meta_to_cache(
@@ -93,7 +94,7 @@ async def write_interactive_prompt_meta_to_cache(
     cache = await itgs.local_cache()
     cache.set(
         f"interactive_prompts:{interactive_prompt_uid}:meta".encode("utf-8"),
-        meta.json().encode("utf-8"),
+        meta.model_dump_json().encode("utf-8"),
         tag="collab",
         expire=86400,
     )
@@ -176,6 +177,7 @@ async def cache_push_loop() -> NoReturn:
     """Uses the perpetual pub sub to listen for any interactive prompts whose
     meta information should be evicted from the cache
     """
+    assert pps.instance is not None
     try:
         async with pps.PPSSubscription(
             pps.instance, "ps:interactive_prompts:meta:push_cache", "ipm-cpl"
@@ -192,7 +194,7 @@ async def cache_push_loop() -> NoReturn:
                     )
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
-            return
+            return  # type: ignore
         await handle_error(e)
     finally:
         print(

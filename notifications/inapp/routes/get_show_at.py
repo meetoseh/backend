@@ -66,7 +66,7 @@ async def get_inapp_notification_show_at(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -108,7 +108,7 @@ async def get_inapp_notification_show_at(
             return Response(
                 content=GetInappNotificationShowAtResponse(
                     show_now=False, next_show_at=None
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=200,
             )
@@ -158,6 +158,7 @@ async def get_inapp_notification_show_at(
                     args.inapp_notification_uid,
                 ),
             )
+            assert response.results, response
             num_seen: int = response.results[0][0]
             if num_seen >= maximum_repetitions:
                 show_now = False
@@ -169,7 +170,7 @@ async def get_inapp_notification_show_at(
         return Response(
             content=GetInappNotificationShowAtResponse(
                 show_now=show_now, next_show_at=check_again_at
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

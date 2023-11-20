@@ -1,7 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
-from image_files.models import ImageFileRef
-from journeys.models.minimal_journey import MinimalJourneyInstructor, MinimalJourney
+from journeys.models.minimal_journey import MinimalJourney
 
 
 class MinimalCourse(BaseModel):

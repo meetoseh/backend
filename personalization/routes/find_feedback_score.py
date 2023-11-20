@@ -5,8 +5,8 @@ from typing import List, Optional
 from models import STANDARD_ERRORS_BY_CODE
 from personalization.routes.find_combinations import Instructor, Category
 from personalization.lib.s01_find_combinations import get_instructor_category_and_biases
-from personalization.lib.s03a_find_feedback import find_feedback
-from personalization.lib.s03b_feedback_score import map_to_feedback_score
+from personalization.lib.s03a_find_feedback import find_feedback_with_debug
+from personalization.lib.s03b_feedback_score import map_to_feedback_score_with_debug
 from auth import auth_admin
 from itgs import Itgs
 import time
@@ -108,9 +108,9 @@ async def find_feedback_score(
 
         combinations = await get_instructor_category_and_biases(itgs, emotion=emotion)
         started_at = time.perf_counter()
-        feedback = await find_feedback(itgs, user_sub=user_sub, debug=True)
-        feedback_scores = await map_to_feedback_score(
-            itgs, combinations=combinations, feedback=feedback, debug=True
+        feedback = await find_feedback_with_debug(itgs, user_sub=user_sub)
+        feedback_scores = await map_to_feedback_score_with_debug(
+            itgs, combinations=combinations, feedback=feedback
         )
         computation_time = time.perf_counter() - started_at
 
@@ -161,7 +161,7 @@ async def find_feedback_score(
                     for raw, score in zip(combinations, feedback_scores)
                 ],
                 computation_time=computation_time,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=60, stale-while-revalidate=60, stale-if-error=86400",

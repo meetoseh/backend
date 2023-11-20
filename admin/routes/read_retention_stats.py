@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional, Union, cast as typing_cast
 from content_files.lib.serve_s3_file import read_in_parts
 from models import STANDARD_ERRORS_BY_CODE
 from auth import auth_admin
@@ -131,8 +131,11 @@ async def get_retention_stats_from_local_cache(
     data and hardware factors.
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(
-        f"retention_stats:{unix_date}:{period}".encode("utf-8"), read=True
+    return typing_cast(
+        Union[bytes, io.BytesIO, None],
+        local_cache.get(
+            f"retention_stats:{unix_date}:{period}".encode("utf-8"), read=True
+        ),
     )
 
 
@@ -274,10 +277,12 @@ async def get_retention_stats_from_source(
         async with redis.pipeline() as pipe:
             for redis_unix_date in range(earliest_available_unix_date, end_unix_date):
                 for retained_s in ("true", "false"):
-                    await pipe.scard(
-                        f"stats:retention:{period}:{retained_s}:{redis_unix_date}"
+                    await pipe.scard(  # type: ignore
+                        f"stats:retention:{period}:{retained_s}:{redis_unix_date}".encode(
+                            "utf-8"
+                        )  # type: ignore
                     )
-            data = await pipe.execute()
+            data = await pipe.execute()  # type: ignore
 
         for redis_unix_date, retained_raw_idx, unretained_raw_idx in zip(
             range(earliest_available_unix_date, end_unix_date),
@@ -339,6 +344,6 @@ async def get_retention_stats(
         )
 
     chart = await get_retention_stats_from_source(itgs, unix_date, period)
-    encoded = chart.json().encode("utf-8")
+    encoded = chart.model_dump_json().encode("utf-8")
     await set_retention_stats_in_local_cache(itgs, unix_date, period, encoded)
     return Response(content=encoded, headers=HEADERS, status_code=200)

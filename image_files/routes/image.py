@@ -1,8 +1,8 @@
 import io
-from typing import Dict, Generator, Literal, Optional, TypedDict
-import aiofiles
+from typing import Generator, Literal, Optional, cast as typing_cast
+from typing_extensions import TypedDict
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import Response
 from image_files.auth import auth_any
 from itgs import Itgs
 from models import (
@@ -10,9 +10,7 @@ from models import (
     StandardErrorResponse,
     STANDARD_ERRORS_BY_CODE,
 )
-import asyncio
 import json
-from temp_files import temp_file
 from content_files.lib.serve_s3_file import serve_s3_file, ServableS3File
 
 router = APIRouter()
@@ -71,12 +69,12 @@ async def get_image(
     )
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, token)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         ife_metadata = await get_ife_metadata(itgs, uid)
         if ife_metadata is None:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPE](
                     type="not_found",
                     message=(
@@ -84,7 +82,8 @@ async def get_image(
                         "just created, it may take a few seconds to be available. otherwise, "
                         "the image was probably deleted."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
@@ -116,8 +115,9 @@ async def get_ife_metadata(
     This returns None if the metadata was not in the cache or the database
     """
     local_cache = await itgs.local_cache()
-    raw_bytes = local_cache.get(
-        f"image_files:exports:{image_file_export_uid}".encode("utf-8")
+    raw_bytes = typing_cast(
+        Optional[bytes],
+        local_cache.get(f"image_files:exports:{image_file_export_uid}".encode("utf-8")),
     )
     if raw_bytes is not None:
         return json.loads(raw_bytes)

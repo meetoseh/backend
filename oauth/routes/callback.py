@@ -56,6 +56,19 @@ async def callback(
                 status_code=302,
             )
 
+        if state_info.merging_with_user_sub is not None:
+            merge_info = await oauth.lib.exchange.use_standard_merge_exchange(
+                itgs, code, PROVIDER_TO_SETTINGS[state_info.provider], state_info
+            )
+            return RedirectResponse(
+                url=f"{state_info.redirect_uri}/#"
+                + urlencode(
+                    {
+                        "merge_token": merge_info.merge_jwt,
+                    }
+                )
+            )
+
         response = await oauth.lib.exchange.use_standard_exchange(
             itgs, code, PROVIDER_TO_SETTINGS[state_info.provider], state_info
         )

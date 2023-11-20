@@ -82,9 +82,9 @@ async def verify_and_revoke_code(
             redis, email.encode("utf-8"), code.encode("utf-8"), now
         ),
     )
-
     assert result is not None
     if result[0] == "valid":
+        assert result[1] is not None, result
         return AuthResult(
             SuccessfulAuthResult(
                 acknowledged_at=result[1].acknowledged_at,

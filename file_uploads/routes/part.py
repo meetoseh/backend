@@ -3,9 +3,9 @@ import os
 import secrets
 import time
 from fastapi import APIRouter, UploadFile, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Literal, Optional, cast as typing_cast
 from file_uploads.auth import auth_any
 from itgs import Itgs
 from models import (
@@ -71,7 +71,7 @@ async def upload_part(
 
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, token)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         if auth_result.result.file_upload_uid != uid:
@@ -100,7 +100,7 @@ async def upload_part(
             (part, uid, now),
         )
         if not response.results:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPE](
                     type="upload_aborted_or_completed",
                     message=(
@@ -108,16 +108,17 @@ async def upload_part(
                         "that the upload has already finished, i.e., it's either been aborted it it "
                         "finished successfully."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
-        start_byte: Optional[int] = response.results[0][0]
-        end_byte: Optional[int] = response.results[0][1]
-        s3_file_id: Optional[int] = response.results[0][2]
+        start_byte = typing_cast(Optional[int], response.results[0][0])
+        end_byte = typing_cast(Optional[int], response.results[0][1])
+        s3_file_id = typing_cast(Optional[int], response.results[0][2])
 
         if start_byte is None or end_byte is None:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPE](
                     type="part_does_not_exist",
                     message=(
@@ -125,19 +126,21 @@ async def upload_part(
                         "decides how the parts are split up, and the parts and corresponding byte ranges "
                         "should have been returned from the same endpoint you used to get the JWT."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
         if s3_file_id is not None:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_409_TYPE](
                     type="part_already_uploaded",
                     message=(
                         "The referenced part has already been uploaded. This is likely a duplicate "
                         "request."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
 
@@ -145,7 +148,7 @@ async def upload_part(
         file_size = file.file.tell()
         file.file.seek(0)
         if end_byte - start_byte != file_size:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_409_TYPE](
                     type="part_does_not_match",
                     message=(
@@ -155,7 +158,8 @@ async def upload_part(
                         f"a file with {file_size} bytes, but the server expected {end_byte - start_byte} "
                         f"bytes for this part; bytes [{start_byte}, {end_byte})."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
         files = await itgs.files()
@@ -246,7 +250,7 @@ async def upload_part(
                 files.delete(bucket=files.default_bucket, key=key),
             )
             await redis.zrem("files:purgatory", purgatory_key)
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_409_TYPE](
                     type="part_already_uploaded",
                     message=(
@@ -254,7 +258,8 @@ async def upload_part(
                         "that part completed. The part from this request was discarded. This is likely "
                         "a duplicate request."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
 
@@ -265,8 +270,10 @@ async def upload_part(
             and response.items[2].rows_affected > 0
         )
         if not upload_is_complete:
-            return JSONResponse(
-                content=FileUploadPartResponse(done=False).dict(), status_code=202
+            return Response(
+                content=FileUploadPartResponse(done=False).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=202,
             )
 
         response = await cursor.execute(
@@ -284,6 +291,8 @@ async def upload_part(
 
         jobs = await itgs.jobs()
         await jobs.enqueue(success_job_name, **success_job_kwargs)
-        return JSONResponse(
-            content=FileUploadPartResponse(done=True).dict(), status_code=202
+        return Response(
+            content=FileUploadPartResponse(done=True).model_dump_json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            status_code=202,
         )

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 import admin.lib.read_daily_stats as read_daily_stats
+from lifespan import lifespan_handler
 from models import STANDARD_ERRORS_BY_CODE
 
 
@@ -151,10 +152,10 @@ class PartialSiwoAuthorizeStatsItem(BaseModel):
 
 class PartialSiwoAuthorizeStats(BaseModel):
     today: PartialSiwoAuthorizeStatsItem = Field(
-        default_factory=PartialSiwoAuthorizeStatsItem
+        default_factory=lambda: PartialSiwoAuthorizeStatsItem.model_validate({})
     )
     yesterday: PartialSiwoAuthorizeStatsItem = Field(
-        default_factory=PartialSiwoAuthorizeStatsItem
+        default_factory=lambda: PartialSiwoAuthorizeStatsItem.model_validate({})
     )
 
 
@@ -236,6 +237,7 @@ async def read_partial_siwo_authorize_stats(
 _background_tasks = []
 
 
-@router.on_event("startup")
-def register_background_tasks():
-    _background_tasks.append(asyncio.create_task(route.background_task()))
+@lifespan_handler
+async def register_background_tasks():
+    task = asyncio.create_task(route.background_task())
+    yield

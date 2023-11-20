@@ -155,7 +155,8 @@ class JourneyFilter(BaseModel):
 
 class ReadJourneyRequest(BaseModel):
     filters: JourneyFilter = Field(
-        default_factory=JourneyFilter, description="the filters to apply"
+        default_factory=lambda: JourneyFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[JourneySortOption]] = Field(
         None, description="the sort order to apply"
@@ -223,7 +224,7 @@ async def read_journeys(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

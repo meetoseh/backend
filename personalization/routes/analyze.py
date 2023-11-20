@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 from models import STANDARD_ERRORS_BY_CODE
 from personalization.routes.find_combinations import (
     Instructor,
@@ -22,8 +22,12 @@ from personalization.routes.find_feedback_score import (
     FindFeedbackScoreRow,
     FindFeedbackScoreResponse,
 )
-from personalization.lib.s03a_find_feedback import find_feedback
-from personalization.lib.s03b_feedback_score import map_to_feedback_score
+from personalization.lib.s03a_find_feedback import (
+    find_feedback_with_debug,
+)
+from personalization.lib.s03b_feedback_score import (
+    map_to_feedback_score_with_debug,
+)
 from personalization.routes.find_adjusted_scores import (
     FindAdjustedScoresItem,
     FindAdjustedScoresResponse,
@@ -36,17 +40,18 @@ from personalization.routes.find_best_categories import (
 )
 from personalization.lib.s05_compare_combinations import (
     ComparableInstructorCategory,
-    compare_combination,
+    compare_combination_clean as compare_combination,
     sort_by_descending_preference,
 )
 from personalization.routes.find_best_journeys import (
     FindBestJourneyItem,
     FindBestJourneyResponse,
 )
-from personalization.lib.s06_journey_for_combination import get_journeys_for_combination
+from personalization.lib.s06_journey_for_combination import (
+    get_journeys_for_combination_with_debug,
+)
 from auth import auth_admin
 from itgs import Itgs
-import asyncio
 import time
 
 
@@ -100,7 +105,7 @@ async def analyze_personalization(
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         combinations_started_at = time.perf_counter()
@@ -152,9 +157,9 @@ async def analyze_personalization(
         )
 
         feedback_score_started_at = time.perf_counter()
-        feedback = await find_feedback(itgs, user_sub=user_sub, debug=True)
-        feedback_scores = await map_to_feedback_score(
-            itgs, combinations=combinations, feedback=feedback, debug=True
+        feedback = await find_feedback_with_debug(itgs, user_sub=user_sub)
+        feedback_scores = await map_to_feedback_score_with_debug(
+            itgs, combinations=combinations, feedback=feedback
         )
         feedback_score_finished_at = time.perf_counter()
         feedback_score_response = FindFeedbackScoreResponse(
@@ -286,14 +291,13 @@ async def analyze_personalization(
         )
 
         best_journeys_started_at = time.perf_counter()
-        journeys = await get_journeys_for_combination(
+        journeys = await get_journeys_for_combination_with_debug(
             itgs,
             category_uid=sorted_combinations[0].category_uid,
             instructor_uid=sorted_combinations[0].instructor_uid,
             emotion=emotion,
             user_sub=auth_result.result.sub,
             limit=limit,
-            debug=True,
         )
         best_journeys_finished_at = time.perf_counter()
 
@@ -318,7 +322,7 @@ async def analyze_personalization(
                 find_adjusted_scores=adjusted_score_response,
                 find_best_categories=best_categories_response,
                 find_best_journeys=best_journeys_response,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=60, stale-while-revalidate=60, stale-if-error=86400",

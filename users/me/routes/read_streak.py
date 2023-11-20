@@ -1,9 +1,8 @@
-from error_middleware import handle_error
 from itgs import Itgs
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Sequence, cast as typing_cast
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE
 import time
@@ -14,7 +13,7 @@ import pytz
 DayOfWeek = Literal[
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
 ]
-days_of_week = [
+days_of_week: Sequence[DayOfWeek] = [
     "Monday",
     "Tuesday",
     "Wednesday",
@@ -54,7 +53,7 @@ async def read_streak(authorization: Optional[str] = Header(None)):
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         redis = await itgs.redis()
@@ -80,7 +79,7 @@ async def read_streak(authorization: Optional[str] = Header(None)):
                     goal_days_per_week=goal_days_per_week,
                     checked_at=int(now),
                 )
-                .json()
+                .model_dump_json()
                 .encode("utf-8")
             )
             await redis.set(
@@ -139,7 +138,7 @@ async def read_days_of_week_from_db(
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 
-    tz = pytz.FixedOffset(-480)
+    tz = typing_cast(pytz.BaseTzInfo, pytz.FixedOffset(-480))
     unix_date_today = unix_dates.unix_timestamp_to_unix_date(now, tz=tz)
     unix_end_of_day = unix_dates.unix_date_to_timestamp(unix_date_today + 1, tz=tz)
 
@@ -201,7 +200,7 @@ async def read_streak_from_db(itgs: Itgs, *, user_sub: str, now: float) -> int:
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 
-    tz = pytz.FixedOffset(-480)
+    tz = typing_cast(pytz.BaseTzInfo, pytz.FixedOffset(-480))
     unix_date_today = unix_dates.unix_timestamp_to_unix_date(now, tz=tz)
     unix_end_of_day = unix_dates.unix_date_to_timestamp(unix_date_today + 1, tz=tz)
 

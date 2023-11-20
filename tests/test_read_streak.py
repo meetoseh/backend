@@ -1,9 +1,9 @@
 try:
-    import helper
+    import helper  # type: ignore
 except:
-    import tests.helper
+    import tests.helper  # type: ignore
 
-from typing import Optional
+from typing import Literal, Optional, Union
 import unittest
 from itgs import Itgs
 import asyncio
@@ -14,6 +14,7 @@ import secrets
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import json
+from enum import Enum
 
 
 @asynccontextmanager
@@ -92,7 +93,11 @@ class TempJourney:
     available_at: Optional[float]
 
 
-_sent = object()
+class _NotSetEnum(Enum):
+    NotSet = 0
+
+
+_sent = _NotSetEnum.NotSet
 
 
 @asynccontextmanager
@@ -101,7 +106,7 @@ async def temp_journey(
     *,
     prompt_uid: str,
     created_at: Optional[float] = None,
-    available_at: Optional[float] = _sent,
+    available_at: Union[float, Literal[_NotSetEnum.NotSet], None] = _sent,
 ):
     if created_at is None:
         created_at = time.time()
@@ -312,7 +317,7 @@ if os.environ["ENVIRONMENT"] != "test":
                     await create_prompt_event(
                         itgs,
                         user_sub=user_sub,
-                        prompt=prompt,
+                        prompt_uid=prompt,
                         join_at=one_week_ago,
                         leave_at=one_week_ago + 1,
                     )

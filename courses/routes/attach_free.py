@@ -1,4 +1,3 @@
-import socket
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -86,7 +85,7 @@ async def attach_free(
     request_at = time.time()
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         sanitized_visitor = await get_or_create_unsanitized_visitor(
@@ -110,7 +109,7 @@ async def attach_free(
                         "does not appear to exist. If you believe this is an error, "
                         "try again in a few seconds then contact support."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
@@ -125,7 +124,7 @@ async def attach_free(
                         "The course you are attempting to attach does not appear to be "
                         "available for free at this time."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -141,7 +140,7 @@ async def attach_free(
                     message=(
                         "The course you are attempting to attach does not appear to exist."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -169,12 +168,13 @@ async def attach_free(
                 identifier=course_entitlement,
                 force=True,
             )
+            assert existing_entitlement is not None
         except Exception as exc:
             await handle_error(
                 exc,
                 extra_info=(
                     f"failed to fetch entitlement {course_entitlement} (for course {args.course_slug}) "
-                    f"for user {auth_result.result.sub}",
+                    f"for user {auth_result.result.sub}"
                 ),
             )
             return Response(
@@ -184,7 +184,7 @@ async def attach_free(
                         "An error occurred while connecting to one of our services. "
                         "Try again in a few seconds."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "60",
@@ -199,7 +199,7 @@ async def attach_free(
                     message=(
                         "You already have that course attached and available for viewing."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
@@ -217,7 +217,7 @@ async def attach_free(
                     exc,
                     extra_info=(
                         f"failed to create entitlement {course_entitlement} (for course {args.course_slug}) "
-                        f"for user {auth_result.result.sub} (lifetime promotional)",
+                        f"for user {auth_result.result.sub} (lifetime promotional)"
                     ),
                 )
                 return Response(
@@ -227,7 +227,7 @@ async def attach_free(
                             "An error occurred while connecting to one of our services. "
                             "Try again in a few seconds."
                         ),
-                    ).json(),
+                    ).model_dump_json(),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
                         "Retry-After": "60",
@@ -315,7 +315,7 @@ async def attach_free(
                             "An error occurred while connecting to one of our services. "
                             "Try again in a few seconds."
                         ),
-                    ).json(),
+                    ).model_dump_json(),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
                         "Retry-After": "60",
@@ -353,7 +353,7 @@ async def attach_free(
                         "An error occurred while connecting to one of our services. "
                         "Try again in a few seconds."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "60",
@@ -380,7 +380,7 @@ async def attach_free(
                     circle_image_uid=response.results[0][6],
                 ),
                 visitor_uid=sanitized_visitor,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
             },

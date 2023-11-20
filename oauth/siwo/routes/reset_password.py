@@ -47,7 +47,8 @@ async def reset_password(
     reset_unix_date = unix_dates.unix_timestamp_to_unix_date(reset_at, tz=tz)
     async with coarsen_time_with_sleeps(1), Itgs() as itgs:
         auth_result = await auth_login_jwt(itgs, siwo_login, revoke=True)
-        if not auth_result.success:
+        if auth_result.result is None:
+            assert auth_result.error is not None
             async with auth_stats(itgs) as stats:
                 stats.incr_password_reset_attempted(unix_date=reset_unix_date)
                 stats.incr_password_reset_failed(
@@ -117,6 +118,7 @@ async def reset_password(
                 reset_at=reset_at,
             ),
         )
+        assert part1_result is not None
         if not part1_result.success:
             await handle_warning(
                 f"{__name__}:password_reset_ratelimit",
@@ -135,7 +137,7 @@ async def reset_password(
                 )
             return INVALID_TOKEN_RESPONSE
 
-        email_to_send_length = await redis.llen("email:to_send")
+        email_to_send_length = await redis.llen(b"email:to_send")  # type: ignore
         if email_to_send_length > 5_000:
             await handle_warning(
                 f"{__name__}:email_queue_full",
@@ -151,8 +153,8 @@ async def reset_password(
 
         async with redis.pipeline() as pipe:
             pipe.multi()
-            await pipe.hset(
-                f"sign_in_with_oseh:reset_password_codes:{code}".encode("utf-8"),
+            await pipe.hset(  # type: ignore
+                f"sign_in_with_oseh:reset_password_codes:{code}".encode("utf-8"),  # type: ignore
                 mapping={
                     b"identity_uid": uid.encode("utf-8"),
                     b"code_uid": code_uid.encode("utf-8"),

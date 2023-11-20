@@ -13,7 +13,7 @@ router = APIRouter()
 class CreatePushTokenRequest(BaseModel):
     push_token: str = Field(
         description="The Expo Push Token on the logged in device",
-        regex=r"^ExponentPushToken\[[a-zA-Z0-9-_]+\]$",
+        pattern=r"^ExponentPushToken\[[a-zA-Z0-9-_]+\]$",
         min_length=20,
         max_length=63,
     )
@@ -22,7 +22,7 @@ class CreatePushTokenRequest(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "push_token": "ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]",
                 "platform": "ios",
@@ -47,7 +47,7 @@ async def create_push_token(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         jobs = await itgs.jobs()

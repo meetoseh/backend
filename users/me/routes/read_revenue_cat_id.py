@@ -60,7 +60,7 @@ async def read_revenue_cat_id(authorization: Optional[str] = Header(None)):
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         resp_or_rc_id = await get_revenue_cat_id(itgs, auth_result.result.sub)
@@ -69,7 +69,9 @@ async def read_revenue_cat_id(authorization: Optional[str] = Header(None)):
 
         revenue_cat_id: str = resp_or_rc_id
         return Response(
-            content=ReadRevenueCatIdResponse(revenue_cat_id=revenue_cat_id).json(),
+            content=ReadRevenueCatIdResponse(
+                revenue_cat_id=revenue_cat_id
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",
@@ -93,7 +95,7 @@ async def get_revenue_cat_id(itgs: Itgs, user_sub: str) -> Union[str, Response]:
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="not_found",
                     message="despite valid authorization, the user was not found. it may have been deleted.",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "10",

@@ -1,15 +1,19 @@
-import random
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
-from typing import Optional, Literal
+from typing import Optional, Literal, cast as typing_cast
 from error_middleware import handle_warning
 from lib.shared.clean_for_slack import clean_for_slack
 from models import StandardErrorResponse
 from itgs import Itgs
 from oauth.siwo.code.security_check import verify_and_revoke_code
-from oauth.siwo.lib.authorize_stats_preparer import auth_stats
+from oauth.siwo.lib.authorize_stats_preparer import (
+    CheckElevatedReason,
+    CheckFailedReason,
+    CheckSucceededReason,
+    auth_stats,
+)
 from oauth.lib.clients import check_client
 from oauth.siwo.jwt.elevate import (
     ElevateJWTHiddenState,
@@ -127,7 +131,9 @@ async def check(args: CheckAccountArgs, visitor: Optional[str] = Header(None)):
                 stats.incr_check_attempts(unix_date=check_unix_date)
                 stats.incr_check_failed(
                     unix_date=check_unix_date,
-                    reason=f"bad_client:{client_error}".encode("utf-8"),
+                    reason=typing_cast(
+                        CheckFailedReason, f"bad_client:{client_error}".encode("utf-8")
+                    ),
                 )
             return Response(
                 content=StandardErrorResponse[ERROR_400_TYPE](
@@ -135,18 +141,22 @@ async def check(args: CheckAccountArgs, visitor: Optional[str] = Header(None)):
                     message=(
                         "The provided client id and redirect uri do not match those on record"
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=400,
             )
 
         csrf_result = await check_csrf(itgs, args.csrf)
         if not csrf_result.success:
+            assert csrf_result.error is not None, csrf_result
             async with auth_stats(itgs) as stats:
                 stats.incr_check_attempts(unix_date=check_unix_date)
                 stats.incr_check_failed(
                     unix_date=check_unix_date,
-                    reason=f"bad_csrf:{csrf_result.error.reason}".encode("utf-8"),
+                    reason=typing_cast(
+                        CheckFailedReason,
+                        f"bad_csrf:{csrf_result.error.reason}".encode("utf-8"),
+                    ),
                 )
             return csrf_result.error.response
 
@@ -179,21 +189,26 @@ async def check_with_security_code(
     check_at: float,
     check_unix_date: int,
 ) -> Response:
+    assert args.security_check_code is not None
     code_result = await verify_and_revoke_code(
         itgs, code=args.security_check_code, email=args.email, now=check_at
     )
     if not code_result.success:
+        assert code_result.error is not None
         async with auth_stats(itgs) as stats:
             stats.incr_check_attempts(unix_date=check_unix_date)
             stats.incr_check_failed(
                 unix_date=check_unix_date,
-                reason=f"bad_code:{code_result.error.reason}".encode("utf-8"),
+                reason=typing_cast(
+                    CheckFailedReason,
+                    f"bad_code:{code_result.error.reason}".encode("utf-8"),
+                ),
             )
         return Response(
             content=StandardErrorResponse[ERROR_400_TYPE](
                 type="bad_security_check_code",
                 message="The security check code is invalid",
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=400,
         )
@@ -218,7 +233,8 @@ async def check_with_security_code(
         (args.email,),
     )
     exists = not not response.results
-    name = None if not exists else response.results[0][0]
+    name = None if not response.results else response.results[0][0]
+    assert code_result.result is not None, code_result
     login_jwt = await create_login_jwt(
         itgs,
         sub=args.email,
@@ -238,7 +254,7 @@ async def check_with_security_code(
             reason=b"code_provided",
         )
     return Response(
-        content=CheckAccountResult(exists=exists, name=name).json(),
+        content=CheckAccountResult(exists=exists, name=name).model_dump_json(),
         headers={
             "Content-Type": "application/json; charset=utf-8",
             "Set-Cookie": f"SIWO_Login={login_jwt}; Secure; HttpOnly; SameSite=Strict",
@@ -265,7 +281,7 @@ async def check_without_security_code(
             now=check_at,
         ),
     )
-
+    assert first_check_result is not None
     acceptable = first_check_result.acceptable
     elevate_reason = first_check_result.reason
 
@@ -314,10 +330,24 @@ async def check_without_security_code(
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
         response = await cursor.execute(
-            "SELECT 1 FROM direct_accounts WHERE email=?",
+            "SELECT users.given_name "
+            "FROM direct_accounts "
+            "LEFT OUTER JOIN users ON EXISTS ("
+            " SELECT 1 FROM user_identities"
+            " WHERE"
+            "  user_identities.user_id = users.id"
+            "  AND user_identities.provider = 'Direct'"
+            "  AND user_identities.sub = direct_accounts.uid"
+            ") "
+            "WHERE direct_accounts.email=?",
             (args.email,),
         )
         exists = not not response.results
+        name = (
+            None
+            if not response.results
+            else typing_cast(Optional[str], response.results[0][0])
+        )
         login_jwt = await create_login_jwt(
             itgs,
             sub=args.email,
@@ -334,10 +364,13 @@ async def check_without_security_code(
                 unix_date=check_unix_date,
                 reason=b"normal"
                 if elevate_reason is None
-                else f"{elevate_reason}:{override_reason}".encode("utf-8"),
+                else typing_cast(
+                    CheckSucceededReason,
+                    f"{elevate_reason}:{override_reason}".encode("utf-8"),
+                ),
             )
         return Response(
-            content=CheckAccountResult(exists=exists).json(),
+            content=CheckAccountResult(exists=exists, name=name).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Set-Cookie": f"SIWO_Login={login_jwt}; Secure; HttpOnly; SameSite=Strict",
@@ -345,6 +378,7 @@ async def check_without_security_code(
             status_code=200,
         )
 
+    assert elevate_reason is not None
     logger.info(f"Sign in with Oseh - Check {args.email} - Elevated ({elevate_reason})")
     elevate_jwt = await create_elevate_jwt(
         itgs,
@@ -359,7 +393,7 @@ async def check_without_security_code(
         stats.incr_check_attempts(unix_date=check_unix_date)
         stats.incr_check_elevated(
             unix_date=check_unix_date,
-            reason=elevate_reason.encode("utf-8"),
+            reason=typing_cast(CheckElevatedReason, elevate_reason.encode("utf-8")),
         )
     return Response(
         headers={
@@ -372,7 +406,7 @@ async def check_without_security_code(
 
 async def is_malicious_visitor(
     itgs: Itgs, visitor: str, email: str, check_at: float
-) -> None:
+) -> bool:
     redis = await itgs.redis()
     key = f"sign_in_with_oseh:check_account_attempts:visitor:{visitor}".encode("utf-8")
     conn = await itgs.conn()
@@ -404,7 +438,7 @@ async def is_malicious_visitor(
             "SELECT COUNT(*) FROM batch WHERE EXISTS (SELECT 1 FROM direct_accounts WHERE direct_accounts.email = batch.email AND direct_accounts.created_at > ?)",
             (*recent_email_addresses, check_at - 86400),
         )
-
+        assert response.results
         created_recently += response.results[0][0]
 
     if created_recently < 3:
@@ -426,7 +460,7 @@ async def is_malicious_visitor(
             b"1",
             ex=86400,
         )
-        await pipe.execute()
+        await pipe.execute()  # type: ignore
 
     return True
 

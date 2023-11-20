@@ -63,15 +63,15 @@ async def read_todays_push_token_stats(authorization: Optional[str] = Header(Non
         redis = await itgs.redis()
 
         fetched_at = time.time()
-        result = await redis.hmget(
-            f"stats:push_tokens:daily:{unix_date}".encode("ascii"),
-            b"created",
-            b"reassigned",
-            b"refreshed",
-            b"deleted_due_to_user_deletion",
-            b"deleted_due_to_unrecognized_ticket",
-            b"deleted_due_to_unrecognized_receipt",
-            b"deleted_due_to_token_limit",
+        result = await redis.hmget(  # type: ignore
+            f"stats:push_tokens:daily:{unix_date}".encode("ascii"),  # type: ignore
+            b"created",  # type: ignore
+            b"reassigned",  # type: ignore
+            b"refreshed",  # type: ignore
+            b"deleted_due_to_user_deletion",  # type: ignore
+            b"deleted_due_to_unrecognized_ticket",  # type: ignore
+            b"deleted_due_to_unrecognized_receipt",  # type: ignore
+            b"deleted_due_to_token_limit",  # type: ignore
         )
 
         return Response(
@@ -92,7 +92,7 @@ async def read_todays_push_token_stats(authorization: Optional[str] = Header(Non
                     result[6] if result[6] is not None else 0
                 ),
                 checked_at=fetched_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 import admin.lib.read_daily_stats as read_daily_stats
 from models import STANDARD_ERRORS_BY_CODE
+from lifespan import lifespan_handler
 
 
 router = APIRouter()
@@ -76,13 +77,13 @@ class PartialDailyReminderStatsItem(BaseModel):
 
 class PartialDailyReminderStats(BaseModel):
     today: PartialDailyReminderStatsItem = Field(
-        default_factory=PartialDailyReminderStatsItem
+        default_factory=lambda: PartialDailyReminderStatsItem.model_validate({})
     )
     yesterday: PartialDailyReminderStatsItem = Field(
-        default_factory=PartialDailyReminderStatsItem
+        default_factory=lambda: PartialDailyReminderStatsItem.model_validate({})
     )
     two_days_ago: PartialDailyReminderStatsItem = Field(
-        default_factory=PartialDailyReminderStatsItem
+        default_factory=lambda: PartialDailyReminderStatsItem.model_validate({})
     )
 
 
@@ -151,9 +152,7 @@ async def read_partial_daily_reminder_stats(
     return await route.partial_handler(authorization)
 
 
-_background_tasks = []
-
-
-@router.on_event("startup")
-def register_background_tasks():
-    _background_tasks.append(asyncio.create_task(route.background_task()))
+@lifespan_handler
+async def register_background_tasks():
+    task = asyncio.create_task(route.background_task())
+    yield

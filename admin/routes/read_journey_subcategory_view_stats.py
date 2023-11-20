@@ -2,7 +2,7 @@ import itertools
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Dict, List, NoReturn, Optional, Union
+from typing import Dict, List, NoReturn, Optional, Union, cast as typing_cast
 from auth import auth_admin
 from error_middleware import handle_error
 from models import STANDARD_ERRORS_BY_CODE
@@ -131,8 +131,11 @@ async def get_journey_subcategory_view_stats_from_local_cache(
     a file-like object depending on its size and hardware factors.
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(
-        f"journey_subcategory_view_stats:{unix_date}".encode("utf-8"), read=True
+    return typing_cast(
+        Union[bytes, io.BytesIO, None],
+        local_cache.get(
+            f"journey_subcategory_view_stats:{unix_date}".encode("utf-8"), read=True
+        ),
     )
 
 
@@ -177,6 +180,7 @@ async def listen_available_responses_forever() -> NoReturn:
     """Listens for available responses from other backend instances and stores
     them in the local cache.
     """
+    assert pps.instance is not None
     tz = pytz.timezone("America/Los_Angeles")
     try:
         async with Itgs() as itgs:
@@ -192,7 +196,7 @@ async def listen_available_responses_forever() -> NoReturn:
                     )
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
-            return
+            return  # type: ignore
         await handle_error(e)
     finally:
         print("journey subcategory view stats loop exiting")
@@ -210,11 +214,11 @@ async def get_journey_subcategory_view_stats_from_source(
     total_views_by_subcategory: Dict[str, int] = {}
     total_unique_views_by_subcategory: Dict[str, int] = {}
 
-    raw = await redis.hgetall(b"stats:interactive_prompt_sessions:bysubcat:total_views")
+    raw = await redis.hgetall(b"stats:interactive_prompt_sessions:bysubcat:total_views")  # type: ignore
     for subcategory, total in raw.items():
         total_views_by_subcategory[str(subcategory, "utf-8")] = int(total)
 
-    raw = await redis.hgetall(b"stats:interactive_prompt_sessions:bysubcat:total_users")
+    raw = await redis.hgetall(b"stats:interactive_prompt_sessions:bysubcat:total_users")  # type: ignore
     for subcategory, total in raw.items():
         total_unique_views_by_subcategory[str(subcategory, "utf-8")] = int(total)
 
@@ -229,10 +233,10 @@ async def get_journey_subcategory_view_stats_from_source(
     if earliest_unrotated_unix_date < unix_date:
         async with redis.pipeline() as pipe:
             for missing_unix_date in range(earliest_unrotated_unix_date, unix_date):
-                await redis.hgetall(
+                await redis.hgetall(  # type: ignore
                     f"stats:interactive_prompt_sessions:bysubcat:total_views:{missing_unix_date}".encode(
                         "utf-8"
-                    )
+                    )  # type: ignore
                 )
             data = await pipe.execute()
 
@@ -253,7 +257,7 @@ async def get_journey_subcategory_view_stats_from_source(
                 await redis.scard(
                     f"stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs".encode(
                         "utf-8"
-                    )
+                    )  # type: ignore
                 )
 
             data = await pipe.execute()
@@ -296,11 +300,12 @@ async def get_journey_subcategory_view_stats_from_source(
 
         for task in done:
             subcat = pending_subcategories.pop(task)
-            if task.exception() is not None:
-                logger.opt(exception=task.exception()).exception(
+            exc = task.exception()
+            if exc is not None:
+                logger.opt(exception=exc).exception(
                     f"Error while fetching chart for {subcat=}"
                 )
-                raise task.exception()
+                raise exc
             charts_by_subcategory[subcat] = await task
 
     items = [
@@ -392,11 +397,11 @@ async def _get_chart_for_subcategory_from_source(
         redis = await itgs.redis()
         async with redis.pipeline() as pipe:
             for redis_unix_date in range(expected_next_unix_date, end_unix_date):
-                await redis.hget(
+                await redis.hget(  # type: ignore
                     f"stats:interactive_prompt_sessions:bysubcat:total_views:{redis_unix_date}".encode(
                         "utf-8"
-                    ),
-                    subcategory.encode("utf-8"),
+                    ),  # type: ignore
+                    subcategory.encode("utf-8"),  # type: ignore
                 )
             data = await pipe.execute()
 
@@ -411,7 +416,7 @@ async def _get_chart_for_subcategory_from_source(
                 await redis.scard(
                     f"stats:interactive_prompt_sessions:{subcategory}:{redis_unix_date}:subs".encode(
                         "utf-8"
-                    )
+                    )  # type: ignore
                 )
             data = await pipe.execute()
 
@@ -463,6 +468,6 @@ async def get_journey_subcategory_view_stats(
         )
 
     data = await get_journey_subcategory_view_stats_from_source(itgs, unix_date, tz=tz)
-    encoded = data.json().encode("utf-8")
+    encoded = data.model_dump_json().encode("utf-8")
     await notify_backend_instances_of_response(itgs, unix_date, encoded)
     return Response(content=encoded, headers=HEADERS, status_code=200)

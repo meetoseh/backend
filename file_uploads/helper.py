@@ -157,7 +157,7 @@ async def start_upload(
         "SELECT id FROM s3_file_uploads WHERE uid=?",
         (s3_file_upload_uid,),
     )
-
+    assert response.results
     s3_file_upload_id: int = response.results[0][0]
 
     qmarks_1 = "(?,?,?,?,?)"

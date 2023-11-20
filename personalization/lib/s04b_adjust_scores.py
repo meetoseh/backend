@@ -1,6 +1,6 @@
-from typing import List
+from typing import List, Sequence
 from itgs import Itgs
-from personalization.lib.s03b_feedback_score import FeedbackScore
+from personalization.lib.s03b_feedback_score import FeedbackScoreProtocol
 from dataclasses import dataclass
 
 
@@ -13,7 +13,10 @@ class AdjustedFeedbackScore:
 
 
 async def map_to_adjusted_scores(
-    itgs: Itgs, *, unadjusted: List[FeedbackScore], times_seen_today: List[int]
+    itgs: Itgs,
+    *,
+    unadjusted: Sequence[FeedbackScoreProtocol],
+    times_seen_today: List[int]
 ) -> List[AdjustedFeedbackScore]:
     """Maps the given unadjusted feedback scores to adjusted feedback scores
     using the given number of times they've seen the instructor/category
@@ -36,7 +39,7 @@ async def map_to_adjusted_scores(
 
 
 def adjust_score(
-    unadjusted: FeedbackScore, times_seen_today: int
+    unadjusted: FeedbackScoreProtocol, times_seen_today: int
 ) -> AdjustedFeedbackScore:
     """Adjusts a single score"""
     if unadjusted.score < 0:

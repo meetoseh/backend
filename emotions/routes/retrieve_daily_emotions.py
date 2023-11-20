@@ -116,7 +116,7 @@ async def retrieve_daily_emotions(
 
             selected_emotions = list(
                 np.random.choice(
-                    options, size=args.num_emotions, replace=False, p=weights
+                    np.array(options), size=args.num_emotions, replace=False, p=weights
                 )
             )
 
@@ -133,7 +133,9 @@ async def retrieve_daily_emotions(
                 selected_emotions[remove_idx] = lookup["sleepy"].emotion
 
         return Response(
-            content=RetrieveDailyEmotionsResponse(items=selected_emotions).json(),
+            content=RetrieveDailyEmotionsResponse(
+                items=selected_emotions
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

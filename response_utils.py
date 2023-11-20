@@ -1,8 +1,19 @@
 from fastapi.responses import Response, StreamingResponse
+from typing import Literal, Optional, overload
 import io
 
 
+@overload
+async def response_to_bytes(response: Literal[None]) -> None:
+    ...
+
+
+@overload
 async def response_to_bytes(response: Response) -> bytes:
+    ...
+
+
+async def response_to_bytes(response: Optional[Response]) -> Optional[bytes]:
     """Converts a fastapi response object to the corresponding bytes. This supports
     standard responses, the text responses, and streaming responses.
 
@@ -35,4 +46,4 @@ async def cleanup_response(response: Response) -> None:
     if isinstance(response, StreamingResponse) and hasattr(
         response.body_iterator, "aclose"
     ):
-        await response.body_iterator.aclose()  # noqa
+        await response.body_iterator.aclose()  # type: ignore

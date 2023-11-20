@@ -8,7 +8,7 @@ import unix_dates
 import pytz
 
 
-async def on_instructor_created(itgs: Itgs, *, created_at: str) -> None:
+async def on_instructor_created(itgs: Itgs, *, created_at: float) -> None:
     """Updates the appropriate instructor related statistics for when an
     instructor is created.
 

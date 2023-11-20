@@ -34,7 +34,7 @@ async def create_journey_background_image(
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         res = await start_upload(
@@ -46,7 +46,7 @@ async def create_journey_background_image(
             failure_job_kwargs=dict(),
         )
         return Response(
-            content=res.json(),
+            content=res.model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )

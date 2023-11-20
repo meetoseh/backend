@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import Literal, Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Literal, Optional, Annotated
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -11,12 +11,12 @@ router = APIRouter()
 
 
 class UpdateNameArgs(BaseModel):
-    given_name: constr(strip_whitespace=True, min_length=1, max_length=255) = Field(
-        description="the new given name"
-    )
-    family_name: constr(strip_whitespace=True, min_length=1, max_length=255) = Field(
-        description="the new family name"
-    )
+    given_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+    ] = Field(description="the new given name")
+    family_name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+    ] = Field(description="the new family name")
 
 
 class UpdateNameResponse(BaseModel):
@@ -41,7 +41,7 @@ async def update_name(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -55,7 +55,7 @@ async def update_name(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="integrity",
                     message="Another update occurred while this request was being processed. Please try again.",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "5",

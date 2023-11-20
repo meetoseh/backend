@@ -27,7 +27,7 @@ async def on_post_login(
     args: PostLoginNotificationRequest,
     visitor: Optional[str] = Header(None),
     authorization: Optional[str] = Header(None),
-) -> None:
+):
     """Should be called after an on_click event if the user logs in right
     after to update the user which clicked the link. Knowing that users
     are/aren't sharing links improves our ability to send security alerts.
@@ -36,7 +36,7 @@ async def on_post_login(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         await click_link(

@@ -89,7 +89,8 @@ class VipChatRequestFilter(BaseModel):
 
 class ReadVipChatRequestRequest(BaseModel):
     filters: VipChatRequestFilter = Field(
-        default_factory=VipChatRequestFilter, description="The filters to apply"
+        default_factory=lambda: VipChatRequestFilter.model_validate({}),
+        description="The filters to apply",
     )
     sort: Optional[List[VipChatRequestSortOption]] = Field(
         None, description="The sort order to apply"
@@ -168,7 +169,7 @@ async def read_vip_chat_requests(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -286,9 +287,17 @@ async def raw_read_vip_chat_requests(
         if variant != "phone-04102023":
             raise ValueError(f"unsupported {variant=}")
 
-        parsed_display_data = Phone04102023VariantInternal.parse_raw(
-            raw_display_data, content_type="application/json"
+        parsed_display_data = Phone04102023VariantInternal.model_validate_json(
+            raw_display_data
         )
+        assert parsed_display_data.background_image_uid is not None
+        assert parsed_display_data.image_uid is not None
+        assert parsed_display_data.phone_number is not None
+        assert parsed_display_data.text_prefill is not None
+        assert parsed_display_data.image_caption is not None
+        assert parsed_display_data.title is not None
+        assert parsed_display_data.message is not None
+        assert parsed_display_data.cta is not None
 
         items.append(
             VipChatRequest(

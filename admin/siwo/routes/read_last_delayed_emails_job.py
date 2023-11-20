@@ -53,14 +53,14 @@ async def read_last_delayed_emails_job(authorization: Optional[str] = Header(Non
             return auth_result.error_response
 
         redis = await itgs.redis()
-        result = await redis.hmget(
-            b"stats:sign_in_with_oseh:send_delayed_job",
-            b"started_at",
-            b"finished_at",
-            b"running_time",
-            b"attempted",
-            b"moved",
-            b"stop_reason",
+        result = await redis.hmget(  # type: ignore
+            b"stats:sign_in_with_oseh:send_delayed_job",  # type: ignore
+            b"started_at",  # type: ignore
+            b"finished_at",  # type: ignore
+            b"running_time",  # type: ignore
+            b"attempted",  # type: ignore
+            b"moved",  # type: ignore
+            b"stop_reason",  # type: ignore
         )
         logger.debug(f"send delayed job stats: {result=}")
 
@@ -75,7 +75,7 @@ async def read_last_delayed_emails_job(authorization: Optional[str] = Header(Non
                 attempted=int(result[3]),
                 moved=int(result[4]),
                 stop_reason=result[5].decode("utf-8"),
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

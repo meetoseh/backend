@@ -14,6 +14,8 @@ async def _listen_forever():
     """Subscribes to the redis channel updates:backend and upon
     recieving a message, calls /home/ec2-user/update_webapp.sh
     """
+    assert pps.instance is not None
+
     async with Itgs() as itgs:
         await release_update_lock_if_held(itgs)
 
@@ -66,7 +68,7 @@ async def release_update_lock_if_held(itgs: Itgs):
         return
 
     redis = await itgs.redis()
-    await redis.eval(DELETE_IF_MATCH_SCRIPT, 1, b"updates:backend:lock", our_identifier)
+    await redis.eval(DELETE_IF_MATCH_SCRIPT, 1, b"updates:backend:lock", our_identifier)  # type: ignore
     local_cache.delete(b"updater-lock-key")
 
 
@@ -78,7 +80,7 @@ def do_update():
             stdin=None,
             stdout=None,
             stderr=None,
-            preexec_fn=os.setpgrp,
+            preexec_fn=os.setpgrp,  # type: ignore
         )
     else:
         subprocess.Popen(
@@ -92,6 +94,8 @@ async def listen_forever():
     """Subscribes to the redis channel updates:backend and upon
     recieving a message, calls /home/ec2-user/update_webapp.sh
     """
+    assert pps.instance is not None
+
     if os.path.exists("updater.lock"):
         return
     with open("updater.lock", "w") as f:

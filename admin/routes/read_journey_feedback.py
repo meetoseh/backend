@@ -2,7 +2,7 @@ import io
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional, Union
+from typing import List, Literal, Optional, Union, cast as typing_cast
 from auth import auth_admin
 from journeys.routes.read import Journey, raw_read_journeys
 from models import STANDARD_ERRORS_BY_CODE
@@ -130,7 +130,7 @@ async def read_journey_feedback(
                         req_unix_date
                     ).isoformat(),
                     retrieved_at=now,
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=200,
             )
@@ -165,7 +165,7 @@ async def read_feedback_for_date(
     if not force:
         cached = await read_feedback_from_cache(itgs, unix_date=unix_date)
         if cached is not None:
-            if isinstance(cached, bytes):
+            if isinstance(cached, (bytes, bytearray, memoryview)):
                 return Response(content=cached, headers=headers, status_code=200)
             return StreamingResponse(
                 content=read_in_parts(cached), headers=headers, status_code=200
@@ -207,11 +207,11 @@ async def read_feedback_from_cache(
     """
     key = f"journey_feedback:{unix_date}".encode("ascii")
     cache = await itgs.local_cache()
-    return cache.get(key, read=True)
+    return typing_cast(Union[bytes, io.BytesIO, None], cache.get(key, read=True))
 
 
 async def write_feedback_to_cache(
-    itgs: Itgs, *, unix_date: int, feedback: io.BytesIO
+    itgs: Itgs, *, unix_date: int, feedback: io.BufferedReader
 ) -> None:
     """Writes the given serialized feedback to the cache for the given
     date. Caches expire after 15 minutes, to ensure jwts are still
@@ -228,7 +228,7 @@ async def write_feedback_to_cache(
 
 
 async def read_feedback_from_db_and_write_to_file(
-    itgs: Itgs, *, unix_date: int, now: float, out: io.BytesIO
+    itgs: Itgs, *, unix_date: int, now: float, out: io.BufferedWriter
 ) -> None:
     """Fetches the feedback for the given date from the database and
     writes it to the given file-like object.
@@ -333,7 +333,7 @@ async def read_feedback_from_db_and_write_to_file(
                 )
                 assert len(raw_journeys) == 1
                 out.write(b'{"journey":')
-                out.write(raw_journeys[0].json().encode("utf-8"))
+                out.write(raw_journeys[0].model_dump_json().encode("utf-8"))
                 out.write(b',"feedback":[')
             else:
                 out.write(b",")

@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from models import (
     STANDARD_ERRORS_BY_CODE,
     StandardErrorResponse,
@@ -52,19 +52,20 @@ async def get_content_file_export_part(
 
     async with Itgs() as itgs:
         auth_result = await content_files.auth.auth_any(itgs, token)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         meta = await content_files.helper.get_cfep_metadata(itgs, uid)
         if meta is None:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="not_found",
                     message=(
                         "the content file export part with that uid does not exist; it may "
                         "still be processing or have been deleted"
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 

@@ -62,17 +62,17 @@ async def read_last_check_job(authorization: Optional[str] = Header(None)):
         redis = await itgs.redis()
         async with redis.pipeline() as pipe:
             pipe.multi()
-            await pipe.hmget(
-                b"stats:push_receipts:check_job",
-                b"last_started_at",
-                b"last_finished_at",
-                b"last_running_time",
-                b"last_num_checked",
-                b"last_num_succeeded",
-                b"last_num_failed_permanently",
-                b"last_num_failed_transiently",
-            )
-            await pipe.llen(b"push:push_tickets:purgatory")
+            await pipe.hmget(  # type: ignore
+                b"stats:push_receipts:check_job",  # type: ignore
+                b"last_started_at",  # type: ignore
+                b"last_finished_at",  # type: ignore
+                b"last_running_time",  # type: ignore
+                b"last_num_checked",  # type: ignore
+                b"last_num_succeeded",  # type: ignore
+                b"last_num_failed_permanently",  # type: ignore
+                b"last_num_failed_transiently",  # type: ignore
+            )  # type: ignore
+            await pipe.llen(b"push:push_tickets:purgatory")  # type: ignore
             result, num_in_purgatory = await pipe.execute()
 
         if result[0] is None or result[1] is None:
@@ -88,7 +88,7 @@ async def read_last_check_job(authorization: Optional[str] = Header(None)):
                 num_failed_permanently=int(result[5]),
                 num_failed_transiently=int(result[6]),
                 num_in_purgatory=num_in_purgatory,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

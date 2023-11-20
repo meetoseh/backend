@@ -40,8 +40,8 @@ async def read_log_queue_info(authorization: Optional[str] = Header(None)):
         to_log_key = b"touch:to_log"
 
         async with redis.pipeline(transaction=False) as pipe:
-            await pipe.llen(to_log_key)
-            await pipe.lindex(to_log_key, 0)
+            await pipe.llen(to_log_key)  # type: ignore
+            await pipe.lindex(to_log_key, 0)  # type: ignore
             length, oldest_item = await pipe.execute()
 
         if oldest_item is not None:
@@ -53,7 +53,7 @@ async def read_log_queue_info(authorization: Optional[str] = Header(None)):
             content=ReadLogQueueInfoResponse(
                 length=length,
                 oldest_queued_at=oldest_queued_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

@@ -4,7 +4,7 @@ from resources.filter_item import FilterItem
 from resources.filter_text_item import FilterTextItem
 from resources.sort_dir import SortDir
 from resources.sort_item import SortItem
-from pypika.terms import Term, Criterion
+from pypika.terms import Term, ValueWrapper, ComplexCriterion, Boolean
 
 
 def flattened_filters(
@@ -57,7 +57,7 @@ def flattened_filters(
 
 def sort_criterion(
     sort: List[SortItem], pseudocolumn: Callable[[str], Term], args: List[Any]
-) -> Criterion:
+) -> Term:
     """Determines the correct criterion for the given sort. This returns
     a criterion which restricts the result to only those that were requested
     based on the pagination token that the user provided by means of the sort.
@@ -74,14 +74,14 @@ def sort_criterion(
             is intended for parametrized queries
 
     Returns:
-        Criterion: The criterion for pagination
+        Term: The criterion for pagination
     """
     if all(s.after is None for s in sort):
-        return Term.wrap_constant(True)
+        return ValueWrapper(True)
 
     terms = [pseudocolumn(s.key) for s in sort]
 
-    res: Criterion = None
+    res: Optional[Term] = None
     # in sqlite, null values are always considered less than non-null values.
     # we must handle them specially. In ascending order, we can replace the
     # expression "col > NULL" with "col IS NOT NULL" and "col = NULL" with
@@ -94,13 +94,15 @@ def sort_criterion(
 
     for idx, (sort_item, term) in enumerate(zip(sort, terms)):
         # equal on all previous sort items and after the current one
-        filter: Criterion = None
+        filter: Optional[Term] = None
         if sort_item.after is not None:
-            filter = sort_item.after_filter().applied_to(term, args)
+            after_filter = sort_item.after_filter()
+            assert after_filter is not None, sort_item
+            filter = after_filter.applied_to(term, args)
         elif sort_item.dir == SortDir.ASCENDING:
             filter = sort_item.not_equal_filter().applied_to(term, args)
         elif sort_item.dir in (SortDir.ASCENDING_EQUAL, SortDir.DESCENDING_EQUAL):
-            filter = Term.wrap_constant(True)
+            filter = ValueWrapper(True)
         elif sort_item.dir == SortDir.DESCENDING:
             # nothing is after null in a descending sort
             continue
@@ -109,11 +111,12 @@ def sort_criterion(
 
         for sub_sort_item, sub_term in zip(sort[:idx], terms[:idx]):
             sub_filter = sub_sort_item.equal_filter().applied_to(sub_term, args)
-            filter = filter & sub_filter
+            filter = ComplexCriterion(Boolean.and_, filter, sub_filter)
 
         if res is None:
             res = filter
         else:
-            res = res | filter
+            res = ComplexCriterion(Boolean.or_, res, filter)
 
+    assert res is not None
     return res

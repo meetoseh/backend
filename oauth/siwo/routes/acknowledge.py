@@ -2,7 +2,7 @@ import json
 import secrets
 from fastapi import APIRouter, Cookie
 from fastapi.responses import Response
-from typing import Literal, Optional, Tuple
+from typing import Literal, Optional, Tuple, cast as typing_cast
 from typing_extensions import Annotated
 from error_middleware import handle_warning
 from lib.emails.send import create_email_uid
@@ -22,7 +22,11 @@ from redis_helpers.siwo_acknowledge_elevation import (
 from timing_attacks import coarsen_time_with_sleeps
 import unix_dates
 import pytz
-from oauth.siwo.lib.authorize_stats_preparer import auth_stats
+from oauth.siwo.lib.authorize_stats_preparer import (
+    CheckElevationFailedReason,
+    CheckElevationSucceededReason,
+    auth_stats,
+)
 
 tz = pytz.timezone("America/Los_Angeles")
 
@@ -48,14 +52,18 @@ async def acknowledge_elevation(
     )
     async with coarsen_time_with_sleeps(0.5), Itgs() as itgs:
         auth_result = await auth_jwt(itgs, siwo_elevation, revoke=True)
-        if not auth_result.success:
+        if auth_result.result is None:
+            assert auth_result.error is not None
             async with auth_stats(itgs) as stats:
                 stats.incr_check_elevation_acknowledged(
                     unix_date=acknowledged_unix_date
                 )
                 stats.incr_check_elevation_failed(
                     unix_date=acknowledged_unix_date,
-                    reason=f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    reason=typing_cast(
+                        CheckElevationFailedReason,
+                        f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    ),
                 )
             return auth_result.error.response
 
@@ -72,11 +80,13 @@ async def acknowledge_elevation(
             stats.incr_check_elevation_acknowledged(unix_date=acknowledged_unix_date)
             if success:
                 stats.incr_check_elevation_succeeded(
-                    unix_date=acknowledged_unix_date, reason=reason
+                    unix_date=acknowledged_unix_date,
+                    reason=typing_cast(CheckElevationSucceededReason, reason),
                 )
             else:
                 stats.incr_check_elevation_failed(
-                    unix_date=acknowledged_unix_date, reason=reason
+                    unix_date=acknowledged_unix_date,
+                    reason=typing_cast(CheckElevationFailedReason, reason),
                 )
 
         if not success:
@@ -88,7 +98,7 @@ async def acknowledge_elevation(
                         "restart at the email selection step after a short delay. If the problem "
                         "persists, contact support by emailing hi@oseh.com"
                     ),
-                ).json(),
+                ).model_dump_json(),
                 status_code=503,
                 headers={
                     "Set-Cookie": "SIWO_Elevation=; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
@@ -145,6 +155,7 @@ async def attempt_send_strategy(
     key for `check_elevation_succeeded`. Otherwise, the first result is False
     and the second result is valid breakdown key for `check_elevation_failed`
     """
+    assert auth_result.result is not None
     email = auth_result.result.sub
     elevate_reason = auth_result.result.hidden_state.reason
 
@@ -192,6 +203,7 @@ async def attempt_send_strategy(
             reason=elevate_reason.encode("utf-8"),
         ),
     )
+    assert result is not None
 
     if result.action == "unsent" and delay <= 0:
         await delete_email_log(itgs, uid=email_uid)
@@ -217,6 +229,7 @@ async def attempt_send_strategy(
     if result.action == "unsent" and result.reason == "ratelimited":
         return (True, f"unsent:ratelimited:{elevate_reason}".encode("utf-8"))
 
+    assert result.reason is not None, result
     return (False, result.reason.encode("utf-8"))
 
 

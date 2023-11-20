@@ -1,6 +1,6 @@
 from itgs import Itgs
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Protocol, Sequence, cast as typing_cast
 
 
 @dataclass
@@ -22,6 +22,11 @@ class JourneyForCombination:
     """If debug information was requested, additional information that's not
     relevant to the algorithm but may be useful for debugging purposes
     """
+
+
+class JourneyForCombinationWithDebugInfo(Protocol):
+    uid: str
+    debug_info: JourneyForCombinationDebugInfo
 
 
 async def get_journeys_for_combination(
@@ -195,3 +200,27 @@ async def get_journeys_for_combination(
         ]
 
     return result
+
+
+async def get_journeys_for_combination_with_debug(
+    itgs: Itgs,
+    *,
+    category_uid: str,
+    instructor_uid: str,
+    emotion: str,
+    user_sub: str,
+    limit: int = 1,
+) -> Sequence[JourneyForCombinationWithDebugInfo]:
+    """get_journeys_for_combination with debug=True and more precise typing"""
+    return typing_cast(
+        Sequence[JourneyForCombinationWithDebugInfo],
+        await get_journeys_for_combination(
+            itgs,
+            category_uid=category_uid,
+            instructor_uid=instructor_uid,
+            emotion=emotion,
+            user_sub=user_sub,
+            limit=limit,
+            debug=True,
+        ),
+    )

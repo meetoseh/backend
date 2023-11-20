@@ -2,13 +2,21 @@
 them with a default image. Specifically, this is adding support for 13.3' macs with
 a native resolution of 2560x1600
 """
-from typing import List, Optional, Tuple
-from daily_events.lib.read_one_external import evict_external_daily_event
+from typing import List, Optional, Tuple, cast as typing_cast
+
+# Used to have a cache for external daily events back when we had daily events.
+# from daily_events.lib.read_one_external import evict_external_daily_event
 from itgs import Itgs
 
 # from journeys.events.helper import purge_journey_meta REMOVED; was in original migration
 from journeys.lib.read_one_external import evict_external_journey
 import socket
+
+
+# Stub for gone function
+async def evict_external_daily_event(*args, **kwargs):
+    ...
+
 
 min_width = 2560
 min_height = 2745
@@ -40,8 +48,7 @@ async def up(itgs: Itgs) -> None:
     )
     if not response.results:
         return
-
-    uids: List[Tuple[str, str, str, str]] = response.results
+    uids = typing_cast(List[Tuple[str, str, str, str]], response.results)
 
     response = await cursor.execute(
         "SELECT journey_background_images.uid FROM journey_background_images, image_files "
@@ -53,7 +60,7 @@ async def up(itgs: Itgs) -> None:
 
     jobs = await itgs.jobs()
     default_uid = response.results[0][0]
-    for (uid, *image_uids) in uids:
+    for uid, *image_uids in uids:
         response = await cursor.execute(
             """
             SELECT uid FROM journeys

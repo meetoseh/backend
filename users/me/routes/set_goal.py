@@ -23,7 +23,7 @@ ERROR_FAILED_TO_STORE = Response(
     content=StandardErrorResponse[ERROR_503_TYPES](
         type="failed_to_store",
         message="Failed to update your goal, perhaps because your account has been deleted. Try again later.",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -36,7 +36,7 @@ async def set_user_goal(
     """Updates the users goal, i.e., how many days per week they want to practice."""
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()

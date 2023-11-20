@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from typing import Optional
+from typing import Optional, List, cast as typing_cast
 from pydantic import BaseModel, Field
 from models import STANDARD_ERRORS_BY_CODE
 from auth import auth_admin
@@ -41,12 +41,12 @@ async def read_total_push_tokens(authorization: Optional[str] = Header(None)):
 
         now = time.time()
         response = await cursor.execute("SELECT COUNT(*) from user_push_tokens")
-        total_push_tokens = response.results[0][0]
+        total_push_tokens = typing_cast(List[List[int]], response.results)[0][0]
 
         return Response(
             content=ReadTotalPushTokensResponse(
                 total_push_tokens=total_push_tokens, checked_at=now
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=5",

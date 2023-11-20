@@ -61,15 +61,15 @@ async def read_last_leaked_link_detection_job(
             return auth_result.error_response
         redis = await itgs.redis()
         result = await redis.hmget(
-            b"stats:touch_links:leaked_link_detection_job",
-            b"started_at",
-            b"finished_at",
-            b"running_time",
-            b"leaked",
-            b"recovered",
-            b"abandoned",
-            b"stop_reason",
-        )
+            b"stats:touch_links:leaked_link_detection_job",  # type: ignore
+            b"started_at",  # type: ignore
+            b"finished_at",  # type: ignore
+            b"running_time",  # type: ignore
+            b"leaked",  # type: ignore
+            b"recovered",  # type: ignore
+            b"abandoned",  # type: ignore
+            b"stop_reason",  # type: ignore
+        )  # type: ignore
 
         if result[0] is None or result[1] is None:
             return Response(status_code=404)
@@ -83,7 +83,7 @@ async def read_last_leaked_link_detection_job(
                 recovered=int(result[4]),
                 abandoned=int(result[5]),
                 stop_reason=result[6].decode("utf-8"),
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

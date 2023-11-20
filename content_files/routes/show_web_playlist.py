@@ -1,7 +1,7 @@
 import json
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union, cast as typing_cast
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from models import (
     STANDARD_ERRORS_BY_CODE,
     StandardErrorResponse,
@@ -100,7 +100,7 @@ async def show_web_playlist(
 
     async with Itgs() as itgs:
         auth_result = await content_files.auth.auth_any(itgs, token)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         if auth_result.result.content_file_uid != uid:
@@ -110,7 +110,7 @@ async def show_web_playlist(
             itgs, uid, presign_jwt=token if presign else None
         )
         if response is None:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="not_found",
                     message=(
@@ -118,7 +118,8 @@ async def show_web_playlist(
                         "file either has not finished processing, was deleted, or has no relevant formats for your "
                         "device."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
@@ -140,9 +141,7 @@ async def get_cached_raw_web_playlist(
     if raw_bytes is None:
         return None
 
-    return ShowWebPlaylistResponse.parse_raw(
-        raw_bytes, content_type="application/json", encoding="utf-8"
-    )
+    return ShowWebPlaylistResponse.model_validate_json(typing_cast(bytes, raw_bytes))
 
 
 async def get_cached_raw_web_playlist_as_response(
@@ -158,13 +157,16 @@ async def get_cached_raw_web_playlist_as_response(
     This can be significantly faster if presigning is not required.
     """
     local_cache = await itgs.local_cache()
-    raw_result: Optional[Union[bytes, io.BytesIO]] = local_cache.get(
-        f"content_files:playlists:web:{uid}".encode("utf-8"), read=True
+    raw_result = typing_cast(
+        Optional[Union[bytes, io.BytesIO]],
+        local_cache.get(
+            f"content_files:playlists:web:{uid}".encode("utf-8"), read=True
+        ),
     )
     if raw_result is None:
         return None
 
-    if isinstance(raw_result, (bytes, bytearray)):
+    if isinstance(raw_result, (bytes, bytearray, memoryview)):
         return Response(
             content=raw_result,
             headers={
@@ -191,7 +193,7 @@ async def set_cached_raw_web_playlist(
     local_cache = await itgs.local_cache()
     local_cache.set(
         f"content_files:playlists:web:{uid}".encode("utf-8"),
-        bytes(response.json(), "utf-8"),
+        bytes(response.model_dump_json(), "utf-8"),
         expire=900,
     )
 
@@ -243,19 +245,20 @@ async def get_raw_web_playlist_from_db(
     exports: List[ShowWebPlaylistResponseItem] = []
     duration_seconds: float = response.results[0][-1]
     for row in response.results:
-        cfep_uid: str = row[0]
-        format: str = row[1]
-        bandwidth: int = row[2]
-        codecs_raw: str = row[3]
-        codecs: List[str] = codecs_raw.split(",")
-        file_size: int = row[4]
-        quality_parameters_raw: str = row[5]
-        quality_parameters: Dict[str, Any] = json.loads(quality_parameters_raw)
+        cfep_uid = typing_cast(str, row[0])
+        format = typing_cast(Literal["mp4"], row[1])
+        bandwidth = typing_cast(int, row[2])
+        codecs_raw = typing_cast(str, row[3])
+        codecs = typing_cast(List[Literal["aac"]], codecs_raw.split(","))
+        file_size = typing_cast(int, row[4])
+        quality_parameters_raw = typing_cast(str, row[5])
+        quality_parameters = typing_cast(
+            Dict[str, Any], json.loads(quality_parameters_raw)
+        )
 
         exports.append(
             ShowWebPlaylistResponseItem(
                 url=f"{root_backend_url}/api/1/content_files/exports/parts/{cfep_uid}.{format}",
-                uid=cfep_uid,
                 format=format,
                 bandwidth=bandwidth,
                 codecs=codecs,
@@ -325,7 +328,7 @@ async def get_web_playlist(
             item.url += "?" + urlencode({"jwt": presign_jwt})
 
     return Response(
-        content=raw.json(),
+        content=raw.model_dump_json(),
         headers={"content-type": "application/json; charset=utf-8"},
         status_code=200,
     )

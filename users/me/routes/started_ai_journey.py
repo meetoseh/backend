@@ -9,7 +9,6 @@ from models import STANDARD_ERRORS_BY_CODE
 from auth import auth_any
 from journeys.auth import auth_any as auth_journey_any
 from itgs import Itgs
-from emotions.lib.emotion_users import on_started_emotion_user_journey
 from journeys.lib.notifs import on_entering_lobby
 
 router = APIRouter()
@@ -38,11 +37,11 @@ async def started_ai_journey(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         journey_auth_result = await auth_journey_any(itgs, f"bearer {args.journey_jwt}")
-        if not journey_auth_result.success:
+        if journey_auth_result.result is None:
             return journey_auth_result.error_response
 
         await on_entering_lobby(

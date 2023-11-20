@@ -4,7 +4,6 @@ from typing import Literal, Optional
 from auth import auth_id
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
-from contextlib import asynccontextmanager
 from starlette.concurrency import run_in_threadpool
 from users.me.routes.delete_account import delete_lock
 import users.lib.entitlements
@@ -26,7 +25,7 @@ ERROR_409_TYPES = Literal[
 NO_ACTIVE_SUBSCRIPTION_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
         type="no_active_subscription", message="No active subscription found to cancel."
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -42,7 +41,7 @@ HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE = Response(
             "To cancel your subscription, follow the instructions at "
             "https://support.apple.com/en-us/HT202039"
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -58,7 +57,7 @@ HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE = Response(
             "You have an active promotional subscription. It does not "
             "need to be canceled as it does not incur a charge."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -72,7 +71,7 @@ TOO_MANY_REQUESTS_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_429_TYPES](
         type="too_many_requests",
         message="You are doing that too much. Try again in a minute.",
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -92,7 +91,7 @@ MULTIPLE_UPDATES_RESPONSE = Response(
             "already been deleted, or the subscription was just canceled. "
             "Log back in and try again."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -130,7 +129,7 @@ async def cancel_subscription(authorization: Optional[str] = Header(None)):
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         async with delete_lock(itgs, auth_result.result.sub) as got_lock:
@@ -181,7 +180,7 @@ async def cancel_subscription(authorization: Optional[str] = Header(None)):
                         # we may be less generous with refunds in the future if people
                         # abuse this
                         await revenue_cat.refund_and_revoke_google_play_subscription(
-                            itgs, revenue_cat_id, product_id
+                            revenue_cat_id=revenue_cat_id, product_id=product_id
                         )
                         canceled_something = True
                     elif subscription.store == "stripe":
@@ -218,7 +217,7 @@ async def cancel_subscription(authorization: Optional[str] = Header(None)):
                         for stripe_subscription in stripe_subscriptions:
                             await run_in_threadpool(
                                 stripe.Subscription.delete,
-                                stripe_subscription.id,
+                                stripe_subscription.id,  # type: ignore
                                 prorate=True,
                                 api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
                             )

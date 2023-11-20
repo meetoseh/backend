@@ -1,4 +1,3 @@
-import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term, Function, ExistsCriterion, Not
@@ -68,7 +67,8 @@ class UserCourseJourneyFilter(BaseModel):
 
 class ReadUserCourseJourneysRequest(BaseModel):
     filters: UserCourseJourneyFilter = Field(
-        default_factory=UserCourseJourneyFilter, description="the filters to apply"
+        default_factory=lambda: UserCourseJourneyFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[UserCourseJourneySortOption]] = Field(
         None, description="the sort order to apply"
@@ -109,7 +109,7 @@ async def read_user_course_journeys(
     sort = cleanup_sort(USER_COURSE_JOURNEY_SORT_OPTIONS, sort, ["association_uid"])
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
         filters_to_apply = flattened_filters(
             dict(
@@ -148,7 +148,7 @@ async def read_user_course_journeys(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -254,7 +254,7 @@ async def raw_read_user_course_journeys(
         .on((user_likes.user_id == users.id) & (user_likes.journey_id == journeys.id))
         .where(journeys.deleted_at.isnull())
     )
-    qargs = [user_sub, user_sub]
+    qargs: List[Any] = [user_sub, user_sub]
 
     def pseudocolumn(key: str) -> Term:
         if key == "journey_uid":

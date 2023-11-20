@@ -1,7 +1,7 @@
 from itgs import Itgs
 from typing import Set
 from loguru import logger
-from lib.email.send import send_email
+from lib.emails.send import send_email
 from lib.shared.job_callback import JobCallback
 import socket
 

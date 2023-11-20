@@ -89,7 +89,7 @@ async def undelete_journey(uid: str, authorization: Optional[str] = Header(None)
                         "This journey is a variation of a deleted journey; "
                         "undelete the parent first: " + response.results[0][0]
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
@@ -101,7 +101,7 @@ async def undelete_journey(uid: str, authorization: Optional[str] = Header(None)
                     "The journey with that uid was not found, was modified "
                     "during the request, or is not soft-deleted"
                 ),
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=404,
         )

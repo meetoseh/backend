@@ -38,13 +38,13 @@ async def started_related_journey(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         journey_auth_result = await journeys.auth.auth_any(
             itgs, "bearer " + args.journey_jwt
         )
-        if not journey_auth_result.success:
+        if journey_auth_result.result is None:
             return journey_auth_result.error_response
 
         if journey_auth_result.result.journey_uid != args.journey_uid:

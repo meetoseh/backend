@@ -164,7 +164,7 @@ async def create_vip_chat_request(
 
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -193,7 +193,7 @@ async def create_vip_chat_request(
                     content=StandardErrorResponse[ERROR_404_TYPES](
                         type="user_not_found",
                         message="There is no user with that email",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
                     },
@@ -204,7 +204,7 @@ async def create_vip_chat_request(
                     content=StandardErrorResponse[ERROR_409_TYPES](
                         type="multiple_users_found",
                         message="There are multiple users with that email",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
                     },
@@ -221,7 +221,7 @@ async def create_vip_chat_request(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="user_not_found",
                     message="There is no user with that sub",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                 },
@@ -296,13 +296,14 @@ async def create_vip_chat_request(
                 args.display_data.image_uid,
             ),
         )
+        assert response.results
         if not response.results[0][0]:
             return Response(
                 status_code=404,
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="background_image_not_found",
                     message="The background image was not found",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                 },
@@ -313,7 +314,7 @@ async def create_vip_chat_request(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="image_not_found",
                     message="The image was not found",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                 },
@@ -347,7 +348,7 @@ async def create_vip_chat_request(
             """,
             (
                 uid,
-                args.display_data.json(),
+                args.display_data.model_dump_json(),
                 args.variant,
                 args.reason,
                 now,
@@ -357,6 +358,14 @@ async def create_vip_chat_request(
         )
 
         if response.rows_affected is not None and response.rows_affected > 0:
+            assert args.display_data.background_image_uid is not None
+            assert args.display_data.image_uid is not None
+            assert args.display_data.phone_number is not None
+            assert args.display_data.text_prefill is not None
+            assert args.display_data.image_caption is not None
+            assert args.display_data.title is not None
+            assert args.display_data.message is not None
+            assert args.display_data.cta is not None
             return Response(
                 content=CreateVipChatRequestResponse(
                     uid=uid,
@@ -395,7 +404,7 @@ async def create_vip_chat_request(
                     ),
                     reason=args.reason,
                     created_at=now,
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=201,
             )
@@ -408,7 +417,7 @@ async def create_vip_chat_request(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="user_not_found",
                     message="There is no user with that sub",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -417,7 +426,7 @@ async def create_vip_chat_request(
             content=StandardErrorResponse[ERROR_409_TYPES](
                 type="user_has_pending_request",
                 message="The user already has a pending vip chat request",
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=409,
         )

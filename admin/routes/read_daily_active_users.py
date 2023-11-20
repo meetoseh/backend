@@ -2,7 +2,7 @@ import io
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional, Union
+from typing import List, Optional, Union, cast as typing_cast
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
@@ -32,7 +32,7 @@ class ReadDailyActiveUsersResponse(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "labels": ["2020-01-01", "2020-01-02", "2020-01-03"],
                 "values": [100, 200, 300],
@@ -84,7 +84,10 @@ async def get_daily_active_users_from_local_cache(
             file-like object, or None if not available
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(f"daily_active_users:{unix_date}".encode("ascii"), read=True)
+    return typing_cast(
+        Union[bytes, io.BytesIO],
+        local_cache.get(f"daily_active_users:{unix_date}".encode("ascii"), read=True),
+    )
 
 
 async def set_daily_active_users_in_local_cache(
@@ -198,7 +201,7 @@ async def get_daily_active_users_from_source(
     if unix_date > next_expected_unix_date:
         async with redis.pipeline() as pipe:
             for missing_unix_date in range(next_expected_unix_date, unix_date):
-                await pipe.scard(f"stats:daily_active_users:{missing_unix_date}")
+                await pipe.scard(f"stats:daily_active_users:{missing_unix_date}")  # type: ignore
 
             data: List[bytes] = await pipe.execute()
 
@@ -240,6 +243,6 @@ async def get_daily_active_users(itgs: Itgs, unix_date: int) -> Response:
         )
 
     response = await get_daily_active_users_from_source(itgs, unix_date)
-    encoded_response = response.json().encode("utf-8")
+    encoded_response = response.model_dump_json().encode("utf-8")
     await set_daily_active_users_in_local_cache(itgs, unix_date, encoded_response)
     return Response(content=encoded_response, headers=HEADERS, status_code=200)

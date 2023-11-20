@@ -36,7 +36,7 @@ async def leave_interactive_prompt(
             interactive_prompt_jwt=args.interactive_prompt_jwt,
             interactive_prompt_uid=args.interactive_prompt_uid,
         )
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         display_name = await interactive_prompts.events.helper.get_display_name(
@@ -65,6 +65,6 @@ async def leave_interactive_prompt(
                 store_event_data=NoInteractivePromptEventData(),
             )
         )
-        if not result.success:
+        if result.result is None:
             return result.error_response
         return result.result.response

@@ -44,7 +44,7 @@ async def store_vip_chat_request_action(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -105,7 +105,7 @@ async def store_vip_chat_request_action(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="not_found",
                     message="The vip chat request was not found, or is for a different user",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                 },

@@ -3,6 +3,7 @@ from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 from typing import Dict, List, Optional
 import admin.lib.read_daily_stats as read_daily_stats
+from lifespan import lifespan_handler
 from models import STANDARD_ERRORS_BY_CODE
 
 
@@ -54,10 +55,10 @@ class PartialEmailEventStatsItem(BaseModel):
 
 class PartialEmailEventStats(BaseModel):
     today: PartialEmailEventStatsItem = Field(
-        default_factory=PartialEmailEventStatsItem
+        default_factory=lambda: PartialEmailEventStatsItem.model_validate({})
     )
     yesterday: PartialEmailEventStatsItem = Field(
-        default_factory=PartialEmailEventStatsItem
+        default_factory=lambda: PartialEmailEventStatsItem.model_validate({})
     )
 
 
@@ -113,9 +114,7 @@ async def read_partial_email_event_stats(authorization: Optional[str] = Header(N
     return await route.partial_handler(authorization)
 
 
-_background_tasks = []
-
-
-@router.on_event("startup")
-def register_background_tasks():
-    _background_tasks.append(asyncio.create_task(route.background_task()))
+@lifespan_handler
+async def register_background_tasks():
+    task = asyncio.create_task(route.background_task())
+    yield

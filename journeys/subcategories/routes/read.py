@@ -13,7 +13,6 @@ from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from itgs import Itgs
-from resources.standard_text_operator import StandardTextOperator
 
 
 class JourneySubcategory(BaseModel):
@@ -63,7 +62,8 @@ class JourneySubcategoryFilter(BaseModel):
 
 class ReadJourneySubcategoryRequest(BaseModel):
     filters: JourneySubcategoryFilter = Field(
-        default_factory=JourneySubcategoryFilter, description="the filters to apply"
+        default_factory=lambda: JourneySubcategoryFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[JourneySubcategorySortOption]] = Field(
         None, description="the order to sort by"
@@ -136,7 +136,7 @@ async def read_journey_subcategories(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -193,4 +193,9 @@ async def raw_read_journey_subcategories(
 def item_pseudocolumns(item: JourneySubcategory) -> dict:
     """returns the dictified item such that the keys in the return dict match
     the keys of the sort options"""
-    return item.dict()
+    return {
+        "uid": item.uid,
+        "internal_name": item.internal_name,
+        "external_name": item.external_name,
+        "bias": item.bias,
+    }

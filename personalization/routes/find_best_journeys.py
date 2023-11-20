@@ -13,7 +13,9 @@ from personalization.lib.s05_compare_combinations import (
     ComparableInstructorCategory,
     find_best_combination_index,
 )
-from personalization.lib.s06_journey_for_combination import get_journeys_for_combination
+from personalization.lib.s06_journey_for_combination import (
+    get_journeys_for_combination_with_debug,
+)
 from auth import auth_admin
 from itgs import Itgs
 import asyncio
@@ -69,7 +71,7 @@ async def find_best_journeys(
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         combinations = await get_instructor_category_and_biases(itgs, emotion=emotion)
@@ -107,14 +109,13 @@ async def find_best_journeys(
         best_combination = available_combinations[best_combination_idx]
 
         started_at = time.perf_counter()
-        journeys = await get_journeys_for_combination(
+        journeys = await get_journeys_for_combination_with_debug(
             itgs,
             category_uid=best_combination.category_uid,
             instructor_uid=best_combination.instructor_uid,
             emotion=emotion,
             user_sub=auth_result.result.sub,
             limit=limit,
-            debug=True,
         )
         computation_time = time.perf_counter() - started_at
 
@@ -130,7 +131,7 @@ async def find_best_journeys(
                     for journey in journeys
                 ],
                 computation_time=computation_time,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=60, stale-while-revalidate=60, stale-if-error=86400",

@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional, Sequence, Protocol, cast as typing_cast
 from itgs import Itgs
 from dataclasses import dataclass
 import time
@@ -36,6 +36,20 @@ class JourneyFeedback:
     """For yes/no, +1/-1. For 2-point scales, +1, 0, -1, or -2"""
     debug_info: Optional[JourneyFeedbackDebugInfo]
     """Debug information, if requested"""
+
+
+class JourneyFeedbackWithDebugInfo(Protocol):
+    instructor_uid: str
+    category_uid: str
+    rating: float
+    debug_info: JourneyFeedbackDebugInfo
+
+
+class JourneyFeedbackWithoutDebugInfo(Protocol):
+    instructor_uid: str
+    category_uid: str
+    rating: float
+    debug_info: Literal[None]
 
 
 async def find_feedback(
@@ -130,3 +144,23 @@ async def find_feedback(
         )
 
     return result
+
+
+async def find_feedback_with_debug(
+    itgs: Itgs, *, user_sub: str
+) -> Sequence[JourneyFeedbackWithDebugInfo]:
+    """find_feedback with debug=True and more precise typing"""
+    return typing_cast(
+        Sequence[JourneyFeedbackWithDebugInfo],
+        await find_feedback(itgs, user_sub=user_sub, debug=True),
+    )
+
+
+async def find_feedback_without_debug(
+    itgs: Itgs, *, user_sub: str
+) -> Sequence[JourneyFeedbackWithoutDebugInfo]:
+    """find_feedback with debug=False and more precise typing"""
+    return typing_cast(
+        Sequence[JourneyFeedbackWithoutDebugInfo],
+        await find_feedback(itgs, user_sub=user_sub, debug=False),
+    )

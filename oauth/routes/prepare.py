@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import Literal, Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing import List, Literal, Annotated
 from itgs import Itgs
 import secrets
 import os
@@ -13,9 +13,11 @@ from models import StandardErrorResponse
 
 router = APIRouter()
 
+OauthProvider = Literal["Google", "SignInWithApple", "Direct"]
+
 
 class OauthPrepareRequest(BaseModel):
-    provider: Literal["Google", "SignInWithApple", "Direct"] = Field(
+    provider: OauthProvider = Field(
         description="Which provider to use for authentication"
     )
     refresh_token_desired: bool = Field(
@@ -24,10 +26,10 @@ class OauthPrepareRequest(BaseModel):
             "Does not guarrantee a refresh token is returned."
         )
     )
-    redirect_uri: Optional[
-        constr(strip_whitespace=True, min_length=5, max_length=65535)
+    redirect_uri: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=5, max_length=65535)
     ] = Field(
-        None,
+        os.environ["ROOT_FRONTEND_URL"],
         description=(
             "If specified, the url to redirect to after the exchange. This must be "
             "an allowed URL or URL format. We allow the following urls:\n\n"
@@ -42,6 +44,20 @@ class OauthPrepareResponse(BaseModel):
 
 
 ERROR_409_TYPES = Literal["invalid_redirect_uri"]
+
+valid_redirect_uris: List[str] = [
+    os.environ["ROOT_FRONTEND_URL"],
+    "oseh://login_callback",
+]
+
+INVALID_REDIRECT_URI_RESPONSE = Response(
+    content=StandardErrorResponse[ERROR_409_TYPES](
+        type="invalid_redirect_uri",
+        message="The specified redirect uri is not allowed.",
+    ).model_dump_json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+    status_code=409,
+)
 
 
 @router.post(
@@ -62,100 +78,125 @@ async def prepare(args: OauthPrepareRequest):
     The user will be redirected back to the specified uri.
     """
 
-    if args.redirect_uri is None:
-        args.redirect_uri = os.environ["ROOT_FRONTEND_URL"]
-    else:
-        if (
-            args.redirect_uri != os.environ["ROOT_FRONTEND_URL"]
-            and args.redirect_uri != "oseh://login_callback"
-        ):
-            return Response(
-                content=StandardErrorResponse[ERROR_409_TYPES](
-                    type="invalid_redirect_uri",
-                    message="The specified redirect uri is not allowed.",
-                ).json(),
-                headers={"Content-Type": "application/json; charset=utf-8"},
-                status_code=409,
-            )
+    if args.redirect_uri not in valid_redirect_uris:
+        return INVALID_REDIRECT_URI_RESPONSE
 
-    # 30 characters as recommended
-    # https://developers.google.com/identity/openid-connect/openid-connect#createxsrftoken
-    state = secrets.token_urlsafe(22)
-
-    # no recommended length -> match csrf
-    nonce = secrets.token_urlsafe(22)
-
-    redirect_uri = (
-        os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback"
-        if args.provider != "SignInWithApple"
-        else os.environ["ROOT_BACKEND_URL"] + "/api/1/oauth/callback/apple"
-    )
-
-    url = (
-        (
-            PROVIDER_TO_SETTINGS[args.provider].authorization_endpoint
-            if args.provider != "SignInWithApple"
-            else "https://appleid.apple.com/auth/authorize"
-        )
-        + "?"
-        + urlencode(
-            {
-                "client_id": (
-                    PROVIDER_TO_SETTINGS[args.provider].client_id
-                    if args.provider != "SignInWithApple"
-                    else os.environ["OSEH_APPLE_CLIENT_ID"]
-                ),
-                "scope": (
-                    PROVIDER_TO_SETTINGS[args.provider].scope
-                    if args.provider != "SignInWithApple"
-                    else "name email"
-                ),
-                "redirect_uri": redirect_uri,
-                "response_type": "code",
-                "state": state,
-                "nonce": nonce,
-                **(
-                    {
-                        # why must apple be special
-                        "response_mode": "form_post"
-                    }
-                    if args.provider == "SignInWithApple"
-                    else {}
-                ),
-                **(
-                    PROVIDER_TO_SETTINGS[args.provider].bonus_params
-                    if args.provider != "SignInWithApple"
-                    else {}
-                ),
-            }
-        )
+    state = generate_state_secret()
+    nonce = generate_nonce()
+    initial_redirect_uri = get_initial_redirect_uri_for_provider(args.provider)
+    url = get_provider_url(
+        args.provider,
+        state=state,
+        nonce=nonce,
+        initial_redirect_uri=initial_redirect_uri,
     )
 
     async with Itgs() as itgs:
-        redis = await itgs.redis()
-        await redis.set(
-            f"oauth:states:{state}".encode("utf-8"),
-            (
-                OauthState(
-                    provider=args.provider,
-                    refresh_token_desired=args.refresh_token_desired,
-                    redirect_uri=args.redirect_uri,
-                    initial_redirect_uri=redirect_uri,
-                    nonce=nonce,
-                )
-                .json()
-                .encode("utf-8")
+        await associate_state_secret_with_info(
+            itgs,
+            secret=state,
+            info=OauthState(
+                provider=args.provider,
+                refresh_token_desired=args.refresh_token_desired,
+                redirect_uri=args.redirect_uri,
+                initial_redirect_uri=initial_redirect_uri,
+                nonce=nonce,
+                merging_with_user_sub=None,
             ),
-            ex=3600,
         )
 
     return Response(
-        content=OauthPrepareResponse(
-            url=url,
-        ).json(),
+        content=OauthPrepareResponse(url=url).model_dump_json(),
         headers={
             "Content-Type": "application/json; charset=utf-8",
             "Cache-Control": "no-store",
         },
         status_code=200,
+    )
+
+
+def generate_state_secret() -> str:
+    """Generates a new random value that can be used for the state in the oauth
+    flow. Note that we need to associate this random value with information,
+    as if via associate_state_secret_with_info, in order for it to be useful when
+    they return to us in the callback step.
+    """
+    # 30 characters as recommended
+    # https://developers.google.com/identity/openid-connect/openid-connect#createxsrftoken
+    return secrets.token_urlsafe(22)
+
+
+def generate_nonce() -> str:
+    """Generates a new random value for the nonce in the oauth flow. We must store
+    and verify this nonce when they return to us in the callback step. The nonce
+    is generally associated with the state secret.
+    """
+    # no recommended length I could find
+    return secrets.token_urlsafe(22)
+
+
+def get_initial_redirect_uri_for_provider(provider: OauthProvider) -> str:
+    """Determines where the provider should redirect back to after the user
+    logs in. This is different from where we redirect the user to after we've
+    received the code from the provider.
+    """
+    root_backend_url = os.environ["ROOT_BACKEND_URL"]
+    return (
+        f"{root_backend_url}/api/1/oauth/callback"
+        if provider != "SignInWithApple"
+        else f"{root_backend_url}/api/1/oauth/callback/apple"
+    )
+
+
+def get_provider_url(
+    provider: OauthProvider, *, state: str, nonce: str, initial_redirect_uri: str
+) -> str:
+    """Determines the url that the user should go to to authorize with the given
+    provider, given the state secret, nonce, and initial redirect uri.
+    """
+    if provider == "SignInWithApple":
+        return _get_sign_in_with_apple_url(
+            state=state, nonce=nonce, initial_redirect_uri=initial_redirect_uri
+        )
+
+    settings = PROVIDER_TO_SETTINGS[provider]
+    return (
+        settings.authorization_endpoint
+        + "?"
+        + urlencode(
+            {
+                "client_id": settings.client_id,
+                "scope": settings.scope,
+                "redirect_uri": initial_redirect_uri,
+                "response_type": "code",
+                "state": state,
+                "nonce": nonce,
+                **settings.bonus_params,
+            }
+        )
+    )
+
+
+def _get_sign_in_with_apple_url(*, state: str, nonce: str, initial_redirect_uri: str):
+    return "https://appleid.apple.com/auth/authorize?" + urlencode(
+        {
+            "client_id": os.environ["OSEH_APPLE_CLIENT_ID"],
+            "scope": "name email",
+            "redirect_uri": initial_redirect_uri,
+            "response_type": "code",
+            "state": state,
+            "nonce": nonce,
+            "response_mode": "form_post",
+        }
+    )
+
+
+async def associate_state_secret_with_info(
+    itgs: Itgs, *, secret: str, info: OauthState
+) -> None:
+    redis = await itgs.redis()
+    await redis.set(
+        f"oauth:states:{secret}".encode("utf-8"),
+        info.model_dump_json().encode("utf-8"),
+        ex=3600,
     )

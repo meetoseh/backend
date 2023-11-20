@@ -76,16 +76,16 @@ async def read_partial_sms_webhook_stats(authorization: Optional[str] = Header(N
         async with redis.pipeline(transaction=False) as pipe:
             for unix_date in (unix_date_today - 1, unix_date_today):
                 await pipe.hmget(
-                    f"stats:sms_webhooks:daily:{unix_date}".encode("ascii"),
-                    b"received",
-                    b"verified",
-                    b"accepted",
-                    b"unprocessable",
-                    b"signature_missing",
-                    b"signature_invalid",
-                    b"body_read_error",
-                    b"body_max_size_exceeded_error",
-                    b"body_parse_error",
+                    f"stats:sms_webhooks:daily:{unix_date}".encode("ascii"),  # type: ignore
+                    b"received",  # type: ignore
+                    b"verified",  # type: ignore
+                    b"accepted",  # type: ignore
+                    b"unprocessable",  # type: ignore
+                    b"signature_missing",  # type: ignore
+                    b"signature_invalid",  # type: ignore
+                    b"body_read_error",  # type: ignore
+                    b"body_max_size_exceeded_error",  # type: ignore
+                    b"body_parse_error",  # type: ignore
                 )
             result = await pipe.execute()
 
@@ -108,7 +108,7 @@ async def read_partial_sms_webhook_stats(authorization: Optional[str] = Header(N
             content=ReadPartialSMSWebhookStats(
                 yesterday=day_stats[0],
                 today=day_stats[1],
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

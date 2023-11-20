@@ -2,7 +2,7 @@ import io
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Literal, Optional, List, Union
+from typing import Literal, Optional, List, Union, cast as typing_cast
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from content_files.lib.serve_s3_file import read_in_parts
@@ -39,7 +39,7 @@ class ReadMonthlyActiveUsersResponse(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "labelled_by": "month",
                 "labels": ["2020-01", "2020-02", "2020-03"],
@@ -140,8 +140,11 @@ async def get_monthly_active_users_from_local_cache(
         Optional[Union[bytes, io.BytesIO]]: The chart, or None if it doesn't exist
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(
-        f"monthly_active_users:{unix_date}:{labelled_by}".encode("utf-8"), read=True
+    return typing_cast(
+        Union[bytes, io.BytesIO],
+        local_cache.get(
+            f"monthly_active_users:{unix_date}:{labelled_by}".encode("utf-8"), read=True
+        ),
     )
 
 
@@ -353,18 +356,18 @@ async def get_monthly_active_users(
                 as_bytes = monthly_cached.read()
                 monthly_cached.close()
 
-            as_monthly_chart = ReadMonthlyActiveUsersResponse.parse_raw(
-                as_bytes, content_type="application/json"
+            as_monthly_chart = ReadMonthlyActiveUsersResponse.model_validate_json(
+                typing_cast(Union[bytes, bytearray, memoryview], as_bytes)
             )
             as_daily_chart = convert_monthly_to_daily(as_monthly_chart, unix_date)
-            encoded = as_daily_chart.json().encode("utf-8")
+            encoded = as_daily_chart.model_dump_json().encode("utf-8")
             await set_monthly_active_users_in_local_cache(
                 itgs, unix_date, "day", encoded
             )
             return Response(content=encoded, headers=HEADERS, status_code=200)
 
     monthly_chart = await get_monthly_active_users_from_source(itgs, unix_date)
-    encoded_monthly_chart = monthly_chart.json().encode("utf-8")
+    encoded_monthly_chart = monthly_chart.model_dump_json().encode("utf-8")
     await set_monthly_active_users_in_local_cache(
         itgs, unix_date, "month", encoded_monthly_chart
     )
@@ -373,6 +376,6 @@ async def get_monthly_active_users(
         return Response(content=encoded_monthly_chart, headers=HEADERS, status_code=200)
 
     as_daily_chart = convert_monthly_to_daily(monthly_chart, unix_date)
-    encoded = as_daily_chart.json().encode("utf-8")
+    encoded = as_daily_chart.model_dump_json().encode("utf-8")
     await set_monthly_active_users_in_local_cache(itgs, unix_date, "day", encoded)
     return Response(content=encoded, headers=HEADERS, status_code=200)

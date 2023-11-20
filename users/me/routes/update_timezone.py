@@ -1,9 +1,8 @@
-import json
 import secrets
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
-from typing import Literal, Optional
+from typing import Optional
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
@@ -47,7 +46,7 @@ async def update_timezone(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()

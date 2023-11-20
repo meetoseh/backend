@@ -35,7 +35,7 @@ async def like_interactive_prompt(
             interactive_prompt_jwt=args.interactive_prompt_jwt,
             interactive_prompt_uid=args.interactive_prompt_uid,
         )
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         result = (
@@ -59,6 +59,6 @@ async def like_interactive_prompt(
                 ],
             )
         )
-        if not result.success:
+        if result.result is None:
             return result.error_response
         return result.result.response

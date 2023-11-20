@@ -1,11 +1,8 @@
-from dataclasses import dataclass
-from typing import List, Optional
-
+from typing import Sequence, List, Protocol
 from itgs import Itgs
 
 
-@dataclass
-class InstructorAndCategory:
+class InstructorAndCategory(Protocol):
     instructor_uid: str
     """The primary stable unique identifier of the instructor"""
     category_uid: str
@@ -15,7 +12,7 @@ class InstructorAndCategory:
 async def map_to_lowest_view_counts(
     itgs: Itgs,
     *,
-    combinations: List[InstructorAndCategory],
+    combinations: Sequence[InstructorAndCategory],
     user_sub: str,
     emotion: str,
 ) -> List[int]:

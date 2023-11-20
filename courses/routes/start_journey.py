@@ -10,7 +10,6 @@ from journeys.models.external_journey import ExternalJourney
 from models import (
     StandardErrorResponse,
     STANDARD_ERRORS_BY_CODE,
-    AUTHORIZATION_UNKNOWN_TOKEN,
 )
 import users.lib.entitlements as entitlements
 from auth import auth_any
@@ -34,7 +33,7 @@ JOURNEY_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="journey_not_found",
         message="That journey does not exist, or it is not in that course, or you do not own that course",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
 )
 
@@ -46,7 +45,7 @@ JOURNEY_GONE_RESPONSE = Response(
             "The journey was deleted between you requesting it and us starting it. "
             "Retry in a few seconds."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -57,7 +56,7 @@ FAILED_TO_START_RESPONSE = Response(
             "We failed to start the journey. This is probably a server error. "
             "Retry in a few seconds."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -86,7 +85,7 @@ async def start_journey(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()

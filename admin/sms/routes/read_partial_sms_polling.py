@@ -124,7 +124,7 @@ async def read_partial_sms_polling_stats(authorization: Optional[str] = Header(N
             content=ReadPartialSMSPollingStatsResponse(
                 today=today,
                 yesterday=yesterday,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",
@@ -148,9 +148,9 @@ async def queue_day_to_pipe(pipe: Pipeline, unix_date: int) -> int:
     """Requests the given unix dates statistics from the given pipeline,
     returning how many commands were queued
     """
-    await pipe.hgetall(key_for_date(unix_date))
+    await pipe.hgetall(key_for_date(unix_date))  # type: ignore
     for event in BREAKDOWN_EVENTS:
-        await pipe.hgetall(key_for_date_and_event(unix_date, event))
+        await pipe.hgetall(key_for_date_and_event(unix_date, event))  # type: ignore
     return 1 + len(BREAKDOWN_EVENTS)
 
 
@@ -167,7 +167,7 @@ async def parse_day_from_result(result: list) -> PartialDaySMSPollingStats:
             str_key = key if isinstance(key, str) else key.decode("ascii")
             int_val = int(val)
             raw[f"{event}_breakdown"][str_key] = int_val
-    return PartialDaySMSPollingStats.parse_obj(raw)
+    return PartialDaySMSPollingStats.model_validate(raw)
 
 
 def key_for_date(unix_date: int) -> bytes:

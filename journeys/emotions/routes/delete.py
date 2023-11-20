@@ -24,7 +24,7 @@ ERROR_RELATIONSHIP_NOT_FOUND = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="relationship_not_found",
         message="There is no matching relationship between the journey and emotion",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )

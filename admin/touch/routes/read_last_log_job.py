@@ -73,24 +73,24 @@ async def read_last_log_job(authorization: Optional[str] = Header(None)):
             return auth_result.error_response
         redis = await itgs.redis()
         async with redis.pipeline(transaction=False) as pipe:
-            await pipe.hmget(
-                b"stats:touch_log:log_job",
-                b"started_at",
-                b"finished_at",
-                b"running_time",
-                b"inserts",
-                b"updates",
-                b"full_batch_inserts",
-                b"full_batch_updates",
-                b"partial_batch_inserts",
-                b"partial_batch_updates",
-                b"accepted_inserts",
-                b"accepted_updates",
-                b"failed_inserts",
-                b"failed_updates",
-                b"stop_reason",
+            await pipe.hmget(  # type: ignore
+                b"stats:touch_log:log_job",  # type: ignore
+                b"started_at",  # type: ignore
+                b"finished_at",  # type: ignore
+                b"running_time",  # type: ignore
+                b"inserts",  # type: ignore
+                b"updates",  # type: ignore
+                b"full_batch_inserts",  # type: ignore
+                b"full_batch_updates",  # type: ignore
+                b"partial_batch_inserts",  # type: ignore
+                b"partial_batch_updates",  # type: ignore
+                b"accepted_inserts",  # type: ignore
+                b"accepted_updates",  # type: ignore
+                b"failed_inserts",  # type: ignore
+                b"failed_updates",  # type: ignore
+                b"stop_reason",  # type: ignore
             )
-            await pipe.llen(b"touch:log_purgatory")
+            await pipe.llen(b"touch:log_purgatory")  # type: ignore
             result, purgatory_size = await pipe.execute()
 
         if result[0] is None or result[1] is None:
@@ -113,7 +113,7 @@ async def read_last_log_job(authorization: Optional[str] = Header(None)):
                 failed_updates=int(result[12]),
                 stop_reason=result[13].decode("ascii"),
                 in_purgatory=purgatory_size,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

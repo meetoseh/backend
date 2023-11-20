@@ -4,7 +4,7 @@ import json
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
-from typing import Dict, List, Optional, Union, NoReturn as Never
+from typing import Dict, List, Optional, Union, NoReturn as Never, cast as typing_cast
 from pydantic import BaseModel, Field
 from auth import auth_admin
 from error_middleware import handle_error
@@ -187,7 +187,7 @@ async def read_daily_sms_sends(
             itgs, start_unix_date=start_unix_date, end_unix_date=end_unix_date
         )
         if cached_result is not None:
-            if isinstance(cached_result, (bytes, bytearray)):
+            if isinstance(cached_result, (bytes, bytearray, memoryview)):
                 return Response(content=cached_result, headers=headers)
             return StreamingResponse(
                 content=read_in_parts(cached_result), headers=headers
@@ -341,7 +341,7 @@ async def read_daily_sms_sends_from_cache(
     """
     cache = await itgs.local_cache()
     key = f"daily_sms_sends:{start_unix_date}:{end_unix_date}".encode("ascii")
-    return cache.get(key, read=True)
+    return typing_cast(Union[bytes, io.BytesIO, None], cache.get(key, read=True))
 
 
 def serialize_and_compress(raw: ReadDailySMSSendsResponse) -> bytes:
@@ -353,7 +353,7 @@ def serialize_and_compress(raw: ReadDailySMSSendsResponse) -> bytes:
     Returns:
         bytes: The serialized and compressed data
     """
-    return gzip.compress(raw.json().encode("utf-8"), mtime=0)
+    return gzip.compress(raw.model_dump_json().encode("utf-8"), mtime=0)
 
 
 async def write_daily_sms_sends_to_cache(
@@ -404,6 +404,7 @@ async def handle_reading_daily_sms_sends_from_other_instances() -> Never:
     """Uses the perpetual pub sub to listen for any sms send statistics
     retrieved by other instances, and writes them to the local cache.
     """
+    assert pps.instance is not None
     try:
         async with pps.PPSSubscription(
             pps.instance, "ps:stats:sms_sends:daily", "rdsss-hrdssfoi"
@@ -424,7 +425,7 @@ async def handle_reading_daily_sms_sends_from_other_instances() -> Never:
                     )
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
-            return
+            return  # type: ignore
         await handle_error(e)
     finally:
         print(

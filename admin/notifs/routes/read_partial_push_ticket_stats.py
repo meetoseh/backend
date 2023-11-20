@@ -121,18 +121,18 @@ async def read_partial_push_ticket_stats(authorization: Optional[str] = Header(N
         async with redis.pipeline(transaction=False) as pipe:
             for unix_date in (unix_date_today - 1, unix_date_today):
                 await pipe.hmget(
-                    f"stats:push_tickets:daily:{unix_date}".encode("ascii"),
-                    b"queued",
-                    b"succeeded",
-                    b"abandoned",
-                    b"failed_due_to_device_not_registered",
-                    b"failed_due_to_client_error_other",
-                    b"failed_due_to_internal_error",
-                    b"retried",
-                    b"failed_due_to_client_error_429",
-                    b"failed_due_to_server_error",
-                    b"failed_due_to_network_error",
-                )
+                    f"stats:push_tickets:daily:{unix_date}".encode("ascii"),  # type: ignore
+                    b"queued",  # type: ignore
+                    b"succeeded",  # type: ignore
+                    b"abandoned",  # type: ignore
+                    b"failed_due_to_device_not_registered",  # type: ignore
+                    b"failed_due_to_client_error_other",  # type: ignore
+                    b"failed_due_to_internal_error",  # type: ignore
+                    b"retried",  # type: ignore
+                    b"failed_due_to_client_error_429",  # type: ignore
+                    b"failed_due_to_server_error",  # type: ignore
+                    b"failed_due_to_network_error",  # type: ignore
+                )  # type: ignore
             result = await pipe.execute()
 
         day_stats = [
@@ -162,7 +162,7 @@ async def read_partial_push_ticket_stats(authorization: Optional[str] = Header(N
                 yesterday=day_stats[0],
                 today=day_stats[1],
                 checked_at=checked_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

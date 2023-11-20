@@ -1,4 +1,3 @@
-from typing import List
 from auth import AuthResult, SuccessfulAuthResult
 from itgs import Itgs
 from lib.daily_reminders.setting_stats import (
@@ -58,7 +57,9 @@ async def up(itgs: Itgs):
         now = time.time()
         queries = _update_settings_for_channel(
             channel="email",
-            time_range=DailyReminderTimeRange(preset="unspecified"),
+            time_range=DailyReminderTimeRange(
+                start=None, end=None, preset="unspecified"
+            ),
             day_of_week_mask=0,
             auth_result=AuthResult(
                 result=SuccessfulAuthResult(sub=user_sub, claims=None),

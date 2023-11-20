@@ -51,12 +51,12 @@ async def read_last_stale_detection_job(authorization: Optional[str] = Header(No
             return auth_result.error_response
         redis = await itgs.redis()
         result = await redis.hmget(
-            b"stats:touch_stale:detection_job",
-            b"started_at",
-            b"finished_at",
-            b"running_time",
-            b"stale",
-            b"stop_reason",
+            b"stats:touch_stale:detection_job",  # type: ignore
+            b"started_at",  # type: ignore
+            b"finished_at",  # type: ignore
+            b"running_time",  # type: ignore
+            b"stale",  # type: ignore
+            b"stop_reason",  # type: ignore
         )
 
         if result[0] is None or result[1] is None:
@@ -69,7 +69,7 @@ async def read_last_stale_detection_job(authorization: Optional[str] = Header(No
                 running_time=float(result[2]),
                 stale=int(result[3]),
                 stop_reason=result[4].decode("utf-8"),
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

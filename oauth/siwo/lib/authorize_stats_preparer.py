@@ -1,5 +1,4 @@
 from typing import (
-    AsyncIterator,
     FrozenSet,
     Literal,
     Optional,
@@ -8,7 +7,6 @@ from typing import (
 )
 from itgs import Itgs
 from lib.redis_stats_preparer import RedisStatsPreparer
-from contextlib import asynccontextmanager
 
 
 CheckElevatedReason = Literal[
@@ -196,7 +194,7 @@ CREATE_SUCCEEDED_PRECONDITIONS: FrozenSet[CreateSucceededPrecondition] = frozens
     typing_get_args(CreateSucceededPrecondition)
 )
 
-PasswordResetFailedReason = Literal[
+PasswordResetFailedReasonPrecise = Literal[
     b"bad_jwt:missing",
     b"bad_jwt:malformed",
     b"bad_jwt:incomplete",
@@ -212,10 +210,12 @@ PasswordResetFailedReason = Literal[
     b"uid_ratelimited",
     b"backpressure:email_to_send",
 ]
-PASSWORD_RESET_FAILED_REASONS: FrozenSet[PasswordResetFailedReason] = frozenset(
-    typing_get_args(PasswordResetFailedReason)
+
+PASSWORD_RESET_FAILED_REASONS: FrozenSet[PasswordResetFailedReasonPrecise] = frozenset(
+    typing_get_args(PasswordResetFailedReasonPrecise)
 )
-PasswordResetFailedReason = Union[PasswordResetFailedReason, bytes]
+
+PasswordResetFailedReason = Union[PasswordResetFailedReasonPrecise, bytes]
 
 
 PasswordResetConfirmedResult = Literal[b"sent"]

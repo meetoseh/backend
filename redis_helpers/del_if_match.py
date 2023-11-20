@@ -66,7 +66,7 @@ async def del_if_match(
     Raises:
         NoScriptError: If the script is not loaded into redis
     """
-    res = await redis.evalsha(DEL_IF_MATCH_LUA_SCRIPT_HASH, 1, key, val)
+    res = await redis.evalsha(DEL_IF_MATCH_LUA_SCRIPT_HASH, 1, key, val)  # type: ignore
     if res is redis:
         return None
     assert isinstance(res, int), res

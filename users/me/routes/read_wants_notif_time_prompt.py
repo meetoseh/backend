@@ -22,7 +22,6 @@ class ReadWantsNotifTimePromptResponse(BaseModel):
         description=(
             "Which channels the user is missing reminder settings for, if any"
         ),
-        unique_items=True,
     )
     potential_channels: List[Channel] = Field(
         description=(
@@ -33,7 +32,6 @@ class ReadWantsNotifTimePromptResponse(BaseModel):
             "selected, it will be in potential_channels but not channels. This will be "
             "set even if wants_notification_time_prompt is false."
         ),
-        unique_items=True,
     )
 
     @validator("channels")
@@ -64,7 +62,7 @@ async def read_wants_notif_time_prompt(authorization: Optional[str] = Header(Non
     global _deployed_improved_settings_at
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         if _deployed_improved_settings_at is None:
@@ -159,7 +157,7 @@ async def read_wants_notif_time_prompt(authorization: Optional[str] = Header(Non
                 wants_notification_time_prompt=not not channels,
                 channels=channels,
                 potential_channels=potential_channels,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
             },

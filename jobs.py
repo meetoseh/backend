@@ -1,7 +1,8 @@
 import redis.asyncio
 import json
 import time
-from typing import Optional, TypedDict
+from typing import Optional, cast as typing_cast, Awaitable
+from typing_extensions import TypedDict
 
 
 class Job(TypedDict):
@@ -56,9 +57,9 @@ class Jobs:
         """
         job = {"name": name, "kwargs": kwargs, "queued_at": time.time()}
         job_serd = json.dumps(job)
-        await self.conn.rpush(self.queue_key, job_serd.encode("utf-8"))
+        await self.conn.rpush(self.queue_key, job_serd.encode("utf-8"))  # type: ignore
 
-    async def retrieve(self, timeout: float) -> Optional[Job]:
+    async def retrieve(self, timeout: int) -> Optional[Job]:
         """blocking retrieve of the oldest job in the queue, if there is one
 
         Args:
@@ -67,8 +68,9 @@ class Jobs:
         Returns:
             (Job, None): The oldest job, if there is one
         """
-        response: Optional[tuple] = await self.conn.blpop(
-            self.queue_key, timeout=timeout
+        response = await typing_cast(
+            Awaitable[list],
+            self.conn.blpop([self.queue_key], timeout=timeout),
         )
         if response is None:
             return None

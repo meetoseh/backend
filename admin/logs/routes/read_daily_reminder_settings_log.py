@@ -50,8 +50,7 @@ class DailyReminderSettingsLog(BaseModel):
         description="the channel of the contact method"
     )
     days_of_week: List[DayOfWeek] = Field(
-        description="the days of the week the reminder is active after this change",
-        unique_items=True,
+        description="the days of the week the reminder is active after this change"
     )
     time_range: DailyReminderTimeRange = Field(
         description="The time range on those days after this change"
@@ -71,6 +70,21 @@ class DailyReminderSettingsLogFilter(BaseModel):
     created_at: Optional[FilterItemModel[float]] = Field(
         None, description="the time the log entry was inserted"
     )
+
+    def __init__(
+        self,
+        *,
+        uid: Optional[FilterTextItemModel] = None,
+        user_sub: Optional[FilterTextItemModel] = None,
+        channel: Optional[FilterTextItemModel] = None,
+        created_at: Optional[FilterItemModel[float]] = None,
+    ):
+        super().__init__(
+            uid=uid,
+            user_sub=user_sub,
+            channel=channel,
+            created_at=created_at,
+        )
 
 
 class ReadDailyReminderSettingsLogRequest(BaseModel):
@@ -153,7 +167,7 @@ async def read_daily_reminder_settings_log(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

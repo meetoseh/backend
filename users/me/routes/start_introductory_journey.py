@@ -39,7 +39,7 @@ async def start_introductory_journey(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         journey_uid = await get_journey_uid(itgs, uid)
@@ -49,7 +49,7 @@ async def start_introductory_journey(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="no_introductory_journeys",
                     message=("There are no introductory journeys available."),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -62,7 +62,7 @@ async def start_introductory_journey(
                 status_code=503,
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="raced", message="Please try again in a moment."
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "5",

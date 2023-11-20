@@ -71,6 +71,7 @@ class DailyReminderTimeRange(BaseModel):
     def effective_start(self, channel: Literal["email", "sms", "push"]) -> int:
         """Applies the preset (if applicable) to the given channel to get the start time"""
         if self.preset is None:
+            assert self.start is not None, self
             return self.start
         preset = PRESETS.get(channel, PRESETS["sms"])
         return preset.get(self.preset, preset["morning"])[0]
@@ -78,6 +79,7 @@ class DailyReminderTimeRange(BaseModel):
     def effective_end(self, channel: Literal["email", "sms", "push"]) -> int:
         """Applies the preset (if applicable) to the given channel to get the end time"""
         if self.preset is None:
+            assert self.end is not None, self
             return self.end
         preset = PRESETS.get(channel, PRESETS["sms"])
         return preset.get(self.preset, preset["morning"])[1]
@@ -85,9 +87,9 @@ class DailyReminderTimeRange(BaseModel):
     @classmethod
     def parse_db_obj(cls, db: dict) -> "DailyReminderTimeRange":
         if db["type"] == "preset":
-            return DailyReminderTimeRange(preset=db["preset"])
+            return DailyReminderTimeRange(preset=db["preset"], start=None, end=None)
         else:
-            return DailyReminderTimeRange(start=db["start"], end=db["end"])
+            return DailyReminderTimeRange(start=db["start"], end=db["end"], preset=None)
 
     @classmethod
     def parse_db(cls, db: str) -> "DailyReminderTimeRange":

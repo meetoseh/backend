@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from auth import auth_id
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
@@ -49,7 +49,7 @@ async def update_user_token(
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
         conn = await itgs.conn()
         cursor = conn.cursor("none")
@@ -67,12 +67,15 @@ async def update_user_token(
             (args.name, uid, auth_result.result.sub),
         )
         if response.rows_affected is not None and response.rows_affected > 0:
-            return JSONResponse(
-                content=UpdateUserTokenResponse(name=args.name).dict(), status_code=200
+            return Response(
+                content=UpdateUserTokenResponse(name=args.name).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=200,
             )
-        return JSONResponse(
+        return Response(
             content=StandardErrorResponse[ERROR_404_TYPE](
                 type="not_found", message="user token not found"
-            ).dict(),
+            ).model_dump_json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=404,
         )

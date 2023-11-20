@@ -13,7 +13,6 @@ from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from itgs import Itgs
-from resources.standard_text_operator import StandardTextOperator
 import content_files.auth as content_files_auth
 from content_files.models import ContentFileRef
 
@@ -70,6 +69,25 @@ class JourneyAudioContentFilter(BaseModel):
     last_uploaded_at: Optional[FilterItemModel[float]] = Field(
         None, description="the timestamp of when the content file was last uploaded"
     )
+
+    def __init__(
+        self,
+        *,
+        uid: Optional[FilterTextItemModel] = None,
+        content_file_uid: Optional[FilterTextItemModel] = None,
+        content_file_created_at: Optional[FilterItemModel[float]] = None,
+        original_file_sha512: Optional[FilterTextItemModel] = None,
+        uploaded_by_user_sub: Optional[FilterTextItemModel] = None,
+        last_uploaded_at: Optional[FilterItemModel[float]] = None,
+    ):
+        super().__init__(
+            uid=uid,
+            content_file_uid=content_file_uid,
+            content_file_created_at=content_file_created_at,
+            original_file_sha512=original_file_sha512,
+            uploaded_by_user_sub=uploaded_by_user_sub,
+            last_uploaded_at=last_uploaded_at,
+        )
 
 
 class ReadJourneyAudioContentRequest(BaseModel):
@@ -147,7 +165,7 @@ async def read_journey_audio_content(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

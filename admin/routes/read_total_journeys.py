@@ -41,7 +41,7 @@ async def read_total_journeys(authorization: Optional[str] = Header(None)):
             value = int(value)
 
         return Response(
-            content=TotalJourneysResponse(value=value).json(),
+            content=TotalJourneysResponse(value=value).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=1, stale-while-revalidate=60, stale-if-error=86400",

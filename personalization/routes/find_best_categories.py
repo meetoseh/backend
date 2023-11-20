@@ -12,7 +12,7 @@ from personalization.lib.s04a_times_seen_today import map_to_times_seen_today
 from personalization.lib.s04b_adjust_scores import map_to_adjusted_scores
 from personalization.lib.s05_compare_combinations import (
     ComparableInstructorCategory,
-    compare_combination,
+    compare_combination_clean as compare_combination,
     sort_by_descending_preference,
 )
 from auth import auth_admin
@@ -137,7 +137,7 @@ async def find_best_categories(
                     for i, combination in enumerate(sorted_combinations)
                 ],
                 computation_time=computation_time,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=60, stale-while-revalidate=60, stale-if-error=86400",

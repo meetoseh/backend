@@ -2,9 +2,9 @@ from hmac import compare_digest
 import io
 import json
 import tempfile
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Union, cast as typing_cast
 from fastapi import APIRouter, Header
-from fastapi.responses import Response, JSONResponse, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from itgs import Itgs
 from models import (
     AUTHORIZATION_UNKNOWN_TOKEN,
@@ -17,6 +17,7 @@ from urllib.parse import urlencode
 import os
 from content_files.lib.serve_s3_file import read_in_parts
 import content_files.auth
+import content_files.helper
 import rqdb.result
 
 
@@ -102,9 +103,9 @@ async def show_m3u_vod(
 
     async with Itgs() as itgs:
         auth_result = await content_files.auth.auth_any(itgs, token)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
-
+        assert token is not None
         meta = await get_m3u_vod_meta(itgs, uid)
         if meta is None:
             # 404 leaks if it exists without a necessarily valid jwt. we'll give
@@ -123,18 +124,19 @@ async def show_m3u_vod(
             itgs, uid, token[len("bearer ") :] if presign else None
         )
         if result is None:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="not_found",
                     message=(
                         "There is no content file export with the given UID, or it's not a VOD export. "
                         "It may still be processing or have since been deleted."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
-        if isinstance(result, (bytes, bytearray)):
+        if isinstance(result, (bytes, bytearray, memoryview)):
             return Response(
                 content=result,
                 headers={
@@ -165,7 +167,10 @@ async def get_cached_m3u_vod_meta(itgs: Itgs, uid: str) -> Optional[M3UVodMetada
     if it exists, otherwise returns None.
     """
     local_cache = await itgs.local_cache()
-    raw = local_cache.get(f"content_files:vods:{uid}:meta".encode("utf-8"))
+    raw = typing_cast(
+        Optional[bytes],
+        local_cache.get(f"content_files:vods:{uid}:meta".encode("utf-8")),
+    )
     if raw is None:
         return None
 
@@ -229,7 +234,7 @@ async def get_m3u_vod_meta(itgs: Itgs, uid: str) -> Optional[M3UVodMetadata]:
 
 async def get_cached_m3u_vod(
     itgs: Itgs, uid: str, jwt: Optional[str]
-) -> Optional[Union[bytes, io.BytesIO]]:
+) -> Optional[Union[bytes, io.BytesIO, content_files.helper.M3UPresigner]]:
     """Gets the cached m3u vod file for the given content file export uid, if it exists,
     otherwise returns None. The actual cached representation is not presigned,
     but if a jwt is provided then presigning can be done efficiently.
@@ -243,7 +248,7 @@ async def get_cached_m3u_vod(
 
 
 async def set_cached_m3u_vod(
-    itgs: Itgs, uid: str, vod: Union[bytes, io.BytesIO]
+    itgs: Itgs, uid: str, vod: Union[bytes, io.BytesIO, tempfile.SpooledTemporaryFile]
 ) -> None:
     """Stores the m3u vod for the content file with the given uid in the
     local cache. This can work with either a bytes object or a BytesIO-like object.
@@ -253,7 +258,7 @@ async def set_cached_m3u_vod(
     """
     local_cache = await itgs.local_cache()
 
-    is_bytesio_like = not isinstance(vod, (bytes, bytearray))
+    is_bytesio_like = not isinstance(vod, (bytes, bytearray, memoryview))
     local_cache.set(
         f"content_files:vods:{uid}:m3u".encode("utf-8"),
         vod,
@@ -264,7 +269,7 @@ async def set_cached_m3u_vod(
 
 async def get_raw_m3u_vod_from_db(
     itgs: Itgs, uid: str, consistency: Literal["none", "weak", "strong"] = "none"
-) -> Optional[Union[bytes, io.BytesIO]]:
+) -> Optional[Union[bytes, io.BytesIO, tempfile.SpooledTemporaryFile[bytes]]]:
     """Fetches the actual m3u vod for the content file export with the given uid
     from the database, if it exists, otherwise returns None. This is not presigned.
 
@@ -337,10 +342,13 @@ async def get_raw_m3u_vod_from_db(
     return result
 
 
-def _encode_db_response(response: rqdb.result.ResultItem, out: io.BytesIO) -> None:
+def _encode_db_response(
+    response: rqdb.result.ResultItem, out: tempfile.SpooledTemporaryFile[bytes]
+) -> None:
     """Implementation detail of get_raw_m3u_vod_from_db, created so it
     can be targeted for run_in_threadpool
     """
+    assert response.results
     base_url = bytes(f"{root_backend_url}/api/1/content_files/exports/parts/", "ascii")
 
     for row in response.results:
@@ -357,7 +365,14 @@ def _encode_db_response(response: rqdb.result.ResultItem, out: io.BytesIO) -> No
 
 async def get_m3u_vod(
     itgs: Itgs, uid: str, jwt: Optional[str]
-) -> Optional[Union[bytes, io.BytesIO]]:
+) -> Optional[
+    Union[
+        bytes,
+        io.BytesIO,
+        tempfile.SpooledTemporaryFile[bytes],
+        content_files.helper.M3UPresigner,
+    ]
+]:
     """Gets the m3u vod for the content file export with the given uid, if it
     exists, otherwise returns None. This will first check the local cache, failing
     that it will hit the database and cache the result.
@@ -374,13 +389,13 @@ async def get_m3u_vod(
         return None
 
     await set_cached_m3u_vod(itgs, uid, vod)
-    if not isinstance(vod, (bytes, bytearray)):
+    if not isinstance(vod, (bytes, bytearray, memoryview)):
         vod.seek(0)
 
     if jwt is None:
         return vod
 
-    if isinstance(vod, (bytes, bytearray)):
+    if isinstance(vod, (bytes, bytearray, memoryview)):
         vod = io.BytesIO(vod)
 
     return content_files.helper.M3UPresigner(

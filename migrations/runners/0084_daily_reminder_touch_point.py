@@ -149,7 +149,7 @@ async def up(itgs: Itgs) -> None:
                             ),
                         ],
                     )
-                    .json()
+                    .model_dump_json()
                     .encode("utf-8"),
                     compresslevel=9,
                     mtime=0,

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Sequence
 from itgs import Itgs
 from personalization.lib.s02_lowest_view_count import InstructorAndCategory
 import pytz
@@ -6,7 +6,7 @@ import unix_dates
 
 
 async def map_to_times_seen_today(
-    itgs: Itgs, *, combinations: List[InstructorAndCategory], user_sub: str
+    itgs: Itgs, *, combinations: Sequence[InstructorAndCategory], user_sub: str
 ) -> List[int]:
     """Maps the given instructor/category combinations to how many times the
     user with the given sub has taken that combination already today, where

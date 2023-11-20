@@ -88,7 +88,7 @@ async def find_adjusted_scores(
                     )
                 ],
                 computation_time=computation_time,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=60, stale-while-revalidate=60, stale-if-error=86400",

@@ -1,9 +1,11 @@
+import json
 import os
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error, handle_error
 from itgs import Itgs, our_diskcache
+from lifespan import top_level_lifespan_handler, lifespan_handler
 from mp_helper import adapt_threading_event_to_asyncio
 import perpetual_pub_sub
 import secrets
@@ -46,6 +48,7 @@ import admin.sms.routes.read_daily_sms_polling
 import admin.sms.routes.read_daily_sms_events
 import asyncio
 from loguru import logger
+from typing import cast as typing_cast
 
 
 if (
@@ -68,6 +71,85 @@ if (
 while our_diskcache.evict(tag="collab") > 0:
     ...
 
+
+@lifespan_handler
+async def register_background_tasks():
+    if perpetual_pub_sub.instance is None:
+        perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
+
+    logger.add(typing_cast(str, "backend.log"), enqueue=True, rotation="100 MB")
+
+    background_tasks = set()
+    background_tasks.add(
+        asyncio.create_task(perpetual_pub_sub.instance.run_in_background_async())
+    )
+    background_tasks.add(asyncio.create_task(updater.listen_forever()))
+    background_tasks.add(asyncio.create_task(migrations.main.main()))
+    background_tasks.add(
+        asyncio.create_task(users.lib.entitlements.purge_cache_loop_async())
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(journeys.lib.read_one_external.cache_push_loop())
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            interactive_prompts.routes.profile_pictures.cache_push_loop()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(interactive_prompts.lib.read_one_external.cache_push_loop())
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            interactive_prompts.lib.read_interactive_prompt_meta.cache_push_loop()
+        )
+    )
+    personalization.register_background_tasks.register_background_tasks(
+        background_tasks
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.notifs.routes.read_daily_push_tokens.handle_reading_daily_push_tokens_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.notifs.routes.read_daily_push_tickets.handle_reading_daily_push_tickets_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.notifs.routes.read_daily_push_receipts.handle_reading_daily_push_receipts_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.sms.routes.read_daily_sms_sends.handle_reading_daily_sms_sends_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.sms.routes.read_daily_sms_polling.handle_reading_daily_sms_polling_from_other_instances()
+        )
+    )
+    background_tasks.add(
+        asyncio.create_task(
+            admin.sms.routes.read_daily_sms_events.handle_reading_daily_sms_events_from_other_instances()
+        )
+    )
+    yield
+    perpetual_pub_sub.instance.exit_event.set()
+
+    await adapt_threading_event_to_asyncio(
+        perpetual_pub_sub.instance.exitted_event
+    ).wait()
+
+
 app = FastAPI(
     title="oseh",
     description="hypersocial daily mindfulness",
@@ -75,6 +157,7 @@ app = FastAPI(
     openapi_url="/api/1/openapi.json",
     docs_url="/api/1/docs",
     exception_handlers={Exception: handle_request_error},
+    lifespan=top_level_lifespan_handler,
 )
 
 if os.environ.get("ENVIRONMENT") == "dev":
@@ -141,89 +224,6 @@ app.include_router(emails.router.router, prefix="/api/1/emails", tags=["emails"]
 app.router.redirect_slashes = False
 
 
-background_tasks = set()
-
-if perpetual_pub_sub.instance is None:
-    perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()
-
-
-@app.on_event("startup")
-def register_background_tasks():
-    logger.add("backend.log", enqueue=True, rotation="100 MB")
-
-    background_tasks.add(
-        asyncio.create_task(perpetual_pub_sub.instance.run_in_background_async())
-    )
-    background_tasks.add(asyncio.create_task(updater.listen_forever()))
-    background_tasks.add(asyncio.create_task(migrations.main.main()))
-    background_tasks.add(
-        asyncio.create_task(users.lib.entitlements.purge_cache_loop_async())
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            admin.routes.read_journey_subcategory_view_stats.listen_available_responses_forever()
-        )
-    )
-    background_tasks.add(
-        asyncio.create_task(journeys.lib.read_one_external.cache_push_loop())
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            interactive_prompts.routes.profile_pictures.cache_push_loop()
-        )
-    )
-    background_tasks.add(
-        asyncio.create_task(interactive_prompts.lib.read_one_external.cache_push_loop())
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            interactive_prompts.lib.read_interactive_prompt_meta.cache_push_loop()
-        )
-    )
-    personalization.register_background_tasks.register_background_tasks(
-        background_tasks
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            admin.notifs.routes.read_daily_push_tokens.handle_reading_daily_push_tokens_from_other_instances()
-        )
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            admin.notifs.routes.read_daily_push_tickets.handle_reading_daily_push_tickets_from_other_instances()
-        )
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            admin.notifs.routes.read_daily_push_receipts.handle_reading_daily_push_receipts_from_other_instances()
-        )
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            admin.sms.routes.read_daily_sms_sends.handle_reading_daily_sms_sends_from_other_instances()
-        )
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            admin.sms.routes.read_daily_sms_polling.handle_reading_daily_sms_polling_from_other_instances()
-        )
-    )
-    background_tasks.add(
-        asyncio.create_task(
-            admin.sms.routes.read_daily_sms_events.handle_reading_daily_sms_events_from_other_instances()
-        )
-    )
-
-
-@app.on_event("shutdown")
-async def cleanly_shutdown_perpetual_pub_sub():
-    perpetual_pub_sub.instance.exit_event.set()
-
-    await adapt_threading_event_to_asyncio(
-        perpetual_pub_sub.instance.exitted_event
-    ).wait()
-
-
 @app.get("/api/1")
 def root():
     return {"message": "Hello World"}
@@ -235,18 +235,23 @@ async def test_rqdb():
     async with Itgs() as itgs:
         conn = await itgs.conn()
         res = await conn.cursor("none").execute("SELECT 2")
+        assert res.results
         if res.rowcount != 1:
-            return JSONResponse(
-                content={"message": f"invalid rowcount: {res.rowcount}"},
+            return Response(
+                content=json.dumps({"message": f"invalid rowcount: {res.rowcount}"}),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
         if res.results[0] != [2]:
-            return JSONResponse(
-                content={"message": f"invalid row: {repr(res.results[0])}"},
+            return Response(
+                content=json.dumps({"message": f"invalid row: {repr(res.results[0])}"}),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
-        return JSONResponse(
-            content={"message": "rqlite cluster responding normally"}, status_code=200
+        return Response(
+            content=json.dumps({"message": "rqlite cluster responding normally"}),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            status_code=200,
         )
 
 
@@ -256,30 +261,39 @@ async def test_redis():
     async with Itgs() as itgs:
         redis = await itgs.redis()
 
-        test_key = "__test" + secrets.token_urlsafe(8)
-        test_val = secrets.token_urlsafe(8)
+        test_key = f"__test{secrets.token_urlsafe(8)}".encode("utf-8")
+        test_val = secrets.token_urlsafe(8).encode("utf-8")
         if not await redis.set(test_key, test_val):
-            return JSONResponse(
-                content={
-                    "message": f"failed to set {test_key=} to {test_val=} (non-OK)"
-                },
+            return Response(
+                content=json.dumps(
+                    {"message": f"failed to set {test_key=} to {test_val=} (non-OK)"}
+                ),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
-        val: bytes = await redis.get(test_key)
-        val = val.decode("utf-8")
+        val = await redis.get(test_key)
         if val != test_val:
-            return JSONResponse(
-                content={
-                    "message": f"expected {test_key=} to have {test_val=} but got {val=}"
-                },
+            return Response(
+                content=json.dumps(
+                    {
+                        "message": f"expected {test_key=} to have {test_val=} but got {val=}"
+                    }
+                ),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
         if not await redis.delete(test_key):
-            return JSONResponse(
-                content={"message": f"failed to delete {test_key=} (non-OK)"},
+            return Response(
+                content=json.dumps(
+                    {"message": f"failed to delete {test_key=} (non-OK)"}
+                ),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
-        return JSONResponse(content={"message": "redis cluster responding normally"})
+        return Response(
+            content=json.dumps({"message": "redis cluster responding normally"}),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+        )
 
 
 @app.get("/api/1/test/division")
@@ -287,4 +301,8 @@ async def test_division(dividend: int, divisor: int):
     """returns dividend/divisor - but gives an internal server error
     if divisor = 0; useful for testing error reporting
     """
-    return JSONResponse(content={"quotient": dividend / divisor}, status_code=200)
+    return Response(
+        content=json.dumps({"quotient": dividend / divisor}),
+        headers={"Content-Type": "application/json; charset=utf-8"},
+        status_code=200,
+    )

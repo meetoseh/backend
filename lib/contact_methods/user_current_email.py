@@ -8,17 +8,25 @@ email address can be provided, such as a stripe payment form.
 """
 from itgs import Itgs
 from auth import AuthResult
-from typing import Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Union
 from pypika import Query, Parameter, Table
 from pypika.terms import ExistsCriterion
-
+from enum import Enum
 from lib.contact_methods.user_primary_email import primary_email_join_clause
 
-NotSet = object()
+
+class _NotSetEnum(Enum):
+    NotSet = 0
+
+
+NotSet = _NotSetEnum.NotSet
 
 
 async def get_user_current_email(
-    itgs: Itgs, auth_result: AuthResult, *, default: Optional[str] = NotSet
+    itgs: Itgs,
+    auth_result: AuthResult,
+    *,
+    default: Optional[Union[str, Literal[_NotSetEnum.NotSet]]] = NotSet
 ) -> Optional[str]:
     """Gets the users current email address. It's possible, though unlikely, that
     the authorization method doesn't provide an email address and there are none
@@ -31,7 +39,7 @@ async def get_user_current_email(
         default (Optional[str], optional): the default email address to use if
             none is found. Defaults to NotSet, meaning a ValueError will be raised
     """
-    if not auth_result.success:
+    if auth_result.result is None:
         raise ValueError("auth_result must be successful")
 
     if auth_result.result.claims is None:
@@ -44,7 +52,9 @@ async def get_user_current_email(
     return email
 
 
-async def _fallback_to_primary(itgs: Itgs, sub: str, default: Union[str, None, object]):
+async def _fallback_to_primary(
+    itgs: Itgs, sub: str, default: Union[str, None, Literal[_NotSetEnum.NotSet]]
+):
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 

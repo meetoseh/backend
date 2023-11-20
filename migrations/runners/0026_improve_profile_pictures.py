@@ -82,7 +82,7 @@ async def up(itgs: Itgs) -> None:
             tuple(v for values in values_to_insert for v in values),
         )
 
-        if len(response.results) < max_per_query:
+        if response.results is None or len(response.results) < max_per_query:
             break
 
         last_user_id = response.results[-1][0]

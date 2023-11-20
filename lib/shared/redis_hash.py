@@ -1,7 +1,14 @@
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Literal, Union, TypeVar, overload
+from enum import Enum
 
 
-NotSet = object()
+class _NotSetEnum(Enum):
+    NotSet = 0
+
+
+NOT_SET = _NotSetEnum.NotSet
+
+DefaultT = TypeVar("DefaultT")
 
 
 class RedisHash:
@@ -24,11 +31,24 @@ class RedisHash:
         else:
             self._map = raw
 
-    def get_bytes(self, key: bytes, *, default: Optional[bytes] = NotSet) -> bytes:
+    @overload
+    def get_bytes(self, key: bytes) -> bytes:
+        ...
+
+    @overload
+    def get_bytes(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, bytes]:
+        ...
+
+    def get_bytes(
+        self,
+        key: bytes,
+        *,
+        default: Union[DefaultT, Literal[_NotSetEnum.NotSet]] = NOT_SET
+    ) -> Union[DefaultT, bytes]:
         if key not in self._map:
             str_key = key.decode("utf-8")
             if str_key not in self._map:
-                if default is NotSet:
+                if default is NOT_SET:
                     raise KeyError(key)
                 return default
             res = self._map[str_key]
@@ -36,34 +56,74 @@ class RedisHash:
         if isinstance(res, str):
             return res.encode("utf-8")
         if res == b"":
-            if default is NotSet:
+            if default is NOT_SET:
                 raise KeyError(key)
             return default
         return res
 
+    @overload
+    def get_str(self, key: bytes, *, encoding: str = "utf-8") -> str:
+        ...
+
+    @overload
     def get_str(
-        self, key: bytes, *, default: Optional[float] = NotSet, encoding: str = "utf-8"
-    ) -> str:
+        self, key: bytes, *, encoding: str = "utf-8", default: DefaultT
+    ) -> Union[DefaultT, str]:
+        ...
+
+    def get_str(
+        self,
+        key: bytes,
+        *,
+        default: Union[DefaultT, Literal[_NotSetEnum.NotSet]] = NOT_SET,
+        encoding: str = "utf-8"
+    ) -> Union[DefaultT, str]:
         try:
             return self.get_bytes(key).decode(encoding)
         except KeyError:
-            if default is NotSet:
+            if default is NOT_SET:
                 raise
             return default
 
-    def get_int(self, key: bytes, *, default: Optional[float] = NotSet) -> int:
+    @overload
+    def get_int(self, key: bytes) -> int:
+        ...
+
+    @overload
+    def get_int(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, int]:
+        ...
+
+    def get_int(
+        self,
+        key: bytes,
+        *,
+        default: Union[DefaultT, Literal[_NotSetEnum.NotSet]] = NOT_SET
+    ) -> Union[DefaultT, int]:
         try:
             return int(self.get_bytes(key))
         except KeyError:
-            if default is NotSet:
+            if default is NOT_SET:
                 raise
             return default
 
-    def get_float(self, key: bytes, *, default: Optional[float] = NotSet) -> float:
+    @overload
+    def get_float(self, key: bytes) -> float:
+        ...
+
+    @overload
+    def get_float(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, float]:
+        ...
+
+    def get_float(
+        self,
+        key: bytes,
+        *,
+        default: Union[DefaultT, Literal[_NotSetEnum.NotSet]] = NOT_SET
+    ) -> Union[DefaultT, float]:
         try:
             return float(self.get_bytes(key))
         except KeyError:
-            if default is NotSet:
+            if default is NOT_SET:
                 raise
             return default
 

@@ -45,10 +45,10 @@ class PartialEmailWebhookStatsItem(BaseModel):
 
 class PartialEmailWebhookStats(BaseModel):
     today: PartialEmailWebhookStatsItem = Field(
-        default_factory=PartialEmailWebhookStatsItem
+        default_factory=lambda: PartialEmailWebhookStatsItem.model_validate({})
     )
     yesterday: PartialEmailWebhookStatsItem = Field(
-        default_factory=PartialEmailWebhookStatsItem
+        default_factory=lambda: PartialEmailWebhookStatsItem.model_validate({})
     )
 
 

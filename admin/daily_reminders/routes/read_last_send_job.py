@@ -67,19 +67,19 @@ async def last_send_job(
         async with redis.pipeline() as pipe:
             pipe.multi()
             await pipe.hmget(
-                b"stats:daily_reminders:send_job",
-                b"started_at",
-                b"finished_at",
-                b"running_time",
-                b"stop_reason",
-                b"attempted",
-                b"lost",
-                b"stale",
-                b"links",
-                b"sms",
-                b"push",
-                b"email",
-            )
+                b"stats:daily_reminders:send_job",  # type: ignore
+                b"started_at",  # type: ignore
+                b"finished_at",  # type: ignore
+                b"running_time",  # type: ignore
+                b"stop_reason",  # type: ignore
+                b"attempted",  # type: ignore
+                b"lost",  # type: ignore
+                b"stale",  # type: ignore
+                b"links",  # type: ignore
+                b"sms",  # type: ignore
+                b"push",  # type: ignore
+                b"email",  # type: ignore
+            )  # type: ignore
             await pipe.zcard(b"daily_reminders:send_purgatory")
             response = await pipe.execute()
 
@@ -102,7 +102,7 @@ async def last_send_job(
                 push=int(result[9]),
                 email=int(result[10]),
                 purgatory_size=purgatory_size,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

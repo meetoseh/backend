@@ -125,6 +125,7 @@ async def auth_shared_secret(itgs: Itgs, authorization: Optional[str]) -> AuthRe
         return AuthResult(
             None, error_type="invalid", error_response=AUTHORIZATION_UNKNOWN_TOKEN
         )
+    assert response.results, response
     sub: str = response.results[0][0]
     return AuthResult(SuccessfulAuthResult(sub), None, None)
 
@@ -161,7 +162,7 @@ async def auth_admin(itgs: Itgs, authorization: Optional[str]) -> AuthResult:
         AuthResult: the result of interpreting the provided header
     """
     result = await auth_any(itgs, authorization)
-    if not result.success:
+    if result.result is None:
         return result
 
     local_cache = await itgs.local_cache()

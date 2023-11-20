@@ -77,7 +77,7 @@ async def create_account(*, email: str, email_verified: bool, password: str):
             (
                 uid,
                 email,
-                key_derivation_method.json(),
+                key_derivation_method.model_dump_json(),
                 base64.b64encode(derived_password).decode("ascii"),
                 now,
                 now if email_verified else None,

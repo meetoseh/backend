@@ -24,7 +24,7 @@ NOT_FOUND = Response(
     status_code=404,
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="not_found", message=("There is no journey with that UID")
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
 )
 
@@ -95,7 +95,7 @@ async def read_journey_views(
         return Response(
             content=ReadJourneyViewsResponse(
                 views=total_views, retrieved_at=time.time()
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

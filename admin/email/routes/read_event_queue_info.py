@@ -40,8 +40,8 @@ async def read_event_queue_info(authorization: Optional[str] = Header(None)):
         queue_key = b"email:event"
 
         async with redis.pipeline(transaction=False) as pipe:
-            await pipe.llen(queue_key)
-            await pipe.lindex(queue_key, 0)
+            await pipe.llen(queue_key)  # type: ignore
+            await pipe.lindex(queue_key, 0)  # type: ignore
             length, oldest_item = await pipe.execute()
 
         if oldest_item is not None:
@@ -53,7 +53,7 @@ async def read_event_queue_info(authorization: Optional[str] = Header(None)):
             content=ReadEventQueueInfoResponse(
                 length=length,
                 oldest_last_queued_at=oldest_last_queued_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

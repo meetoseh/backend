@@ -37,10 +37,10 @@ async def push_visitor_association(
     """
     redis = await itgs.redis()
     try:
-        await redis.evalsha(PUSH_VISITOR_ASSOCIATION_SHA, 2, queue_key, lock_key, msg)
+        await redis.evalsha(PUSH_VISITOR_ASSOCIATION_SHA, 2, queue_key, lock_key, msg)  # type: ignore
     except NoScriptError:
         correct_sha = await redis.script_load(PUSH_VISITOR_ASSOCIATION_LUA)
         assert (
             correct_sha == PUSH_VISITOR_ASSOCIATION_SHA
         ), f"{correct_sha=} != {PUSH_VISITOR_ASSOCIATION_SHA=}"
-        await redis.evalsha(PUSH_VISITOR_ASSOCIATION_SHA, 2, queue_key, lock_key, msg)
+        await redis.evalsha(PUSH_VISITOR_ASSOCIATION_SHA, 2, queue_key, lock_key, msg)  # type: ignore

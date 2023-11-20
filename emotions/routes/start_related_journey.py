@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
-from typing import AsyncIterator, List, Literal, Optional
+from typing import AsyncIterator, List, Literal, Optional, Union
 from pydantic import BaseModel, Field
 from image_files.models import ImageFileRef
 from journeys.models.external_journey import ExternalJourney
@@ -12,7 +12,6 @@ from journeys.auth import create_jwt as create_journey_jwt
 from image_files.auth import create_jwt as create_image_file_jwt
 from personalization.lib.pipeline import select_journey
 import emotions.lib.emotion_users as emotion_users
-import random
 
 router = APIRouter()
 
@@ -56,7 +55,7 @@ ERROR_EMOTION_NOT_FOUND = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="emotion_not_found",
         message="There is no matching emotion",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -66,16 +65,20 @@ ERROR_JOURNEY_NOT_FOUND = Response(
     content=StandardErrorResponse[ERROR_503_TYPES](
         type="journey_not_found",
         message="The selected journey was deleted while you were joining it",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
 
 
-async def _buffered_yield(inner: AsyncIterator[bytes]):
-    buffer = b""
+async def _buffered_yield(inner: AsyncIterator[Union[str, bytes]]):
+    buffer: bytes = b""
     async for chunk in inner:
-        buffer += chunk
+        buffer += (
+            chunk
+            if isinstance(chunk, (bytes, bytearray, memoryview))
+            else chunk.encode("utf-8")
+        )
         if len(buffer) > 8192:
             yield buffer
             buffer = b""
@@ -113,7 +116,7 @@ async def _yield_response_from_nested(
             first = False
         else:
             yield b","
-        yield voter_picture.json().encode("utf-8")
+        yield voter_picture.model_dump_json().encode("utf-8")
     yield b"]}"
 
 
@@ -145,7 +148,7 @@ async def start_related_journey(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         journey_uid = await select_journey(

@@ -13,7 +13,6 @@ from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from itgs import Itgs
-from resources.standard_text_operator import StandardTextOperator
 
 
 class InappNotification(BaseModel):
@@ -80,7 +79,8 @@ class InappNotificationUserFilter(BaseModel):
 
 class ReadInappNotificationUserRequest(BaseModel):
     filters: InappNotificationUserFilter = Field(
-        default_factory=InappNotificationUserFilter, description="the filters to apply"
+        default_factory=lambda: InappNotificationUserFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[InappNotificationUserSortOption]] = Field(
         None, description="the order to sort by"
@@ -159,7 +159,7 @@ async def read_inapp_notification_users(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

@@ -91,7 +91,8 @@ async def determine_unrun_migrations(itgs: Itgs, migrations: List[str]) -> List[
             f"SELECT name FROM migrations WHERE name IN ({db.utils.question_mark_list(len(checking))})",
             checking,
         )
-        for row in response.results:
+        assert response is not None, response
+        for row in response.results or []:
             migrations_to_run.remove(row[0])
 
     return list(migrations_to_run)

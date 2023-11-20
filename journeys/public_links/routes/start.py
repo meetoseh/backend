@@ -3,7 +3,7 @@ import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import AsyncIterator, Literal, Optional
+from typing import AsyncIterator, Literal, Optional, Union
 from journeys.lib.notifs import on_entering_lobby
 from journeys.lib.read_one_external import read_one_external
 from journeys.models.external_journey import ExternalJourney
@@ -40,7 +40,7 @@ INVALID_CODE_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="invalid_code",
         message="There is no journey public link with the provided code; it may have been deleted.",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -51,16 +51,20 @@ FAILED_TO_STORE_VIEW_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_503_TYPES](
         type="failed_to_store_view",
         message="An error occurred connecting to our database. Please try again later.",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
 
 
-async def _buffered_yield(inner: AsyncIterator[bytes]):
+async def _buffered_yield(inner: AsyncIterator[Union[bytes, str]]):
     buffer = b""
     async for chunk in inner:
-        buffer += chunk
+        buffer += (
+            chunk
+            if isinstance(chunk, (bytes, bytearray, memoryview))
+            else chunk.encode("utf-8")
+        )
         if len(buffer) > 8192:
             yield buffer
             buffer = b""
@@ -111,7 +115,7 @@ async def start_journey_from_public_link(
             auth_result = None
         else:
             auth_result = await auth_any(itgs, authorization)
-            if not auth_result.success:
+            if auth_result.result is None:
                 return auth_result.error_response
 
         now = time.time()
@@ -169,7 +173,9 @@ async def start_journey_from_public_link(
                     view_uid,
                     now,
                     visitor_uid,
-                    auth_result.result.sub if auth_result is not None else None,
+                    auth_result.result.sub
+                    if auth_result is not None and auth_result.result is not None
+                    else None,
                     args.code,
                 ),
             )
@@ -185,7 +191,7 @@ async def start_journey_from_public_link(
         if journey is None:
             return INVALID_CODE_RESPONSE
 
-        if auth_result is not None:
+        if auth_result is not None and auth_result.result is not None:
             await on_entering_lobby(
                 itgs,
                 user_sub=auth_result.result.sub,

@@ -70,6 +70,7 @@ async def up(itgs: Itgs):
     response = await cursor.execute(
         "SELECT MIN(created_at) FROM interactive_prompt_events WHERE evtype='join'",
     )
+    assert response.results is not None
     earliest_join_unix_seconds = response.results[0][0]
     if earliest_join_unix_seconds is None:
         earliest_join_unix_seconds = time.time()
@@ -77,7 +78,7 @@ async def up(itgs: Itgs):
     response = await cursor.execute(
         "SELECT DISTINCT external_name FROM journey_subcategories"
     )
-    subcategories: List[str] = [row[0] for row in response.results]
+    subcategories: List[str] = [row[0] for row in (response.results or [])]
 
     redis = await itgs.redis()
 
@@ -229,8 +230,8 @@ async def up(itgs: Itgs):
     async with redis.pipeline() as pipe:
         pipe.multi()
         for subcategory in subcategories:
-            await pipe.sadd(
-                b"stats:interactive_prompt_sessions:bysubcat:subcategories",
+            await pipe.sadd(  # type: ignore
+                b"stats:interactive_prompt_sessions:bysubcat:subcategories",  # type: ignore
                 subcategory.encode("utf-8"),
             )
         await pipe.execute()
@@ -275,12 +276,14 @@ async def up(itgs: Itgs):
                     subcategory,
                 ),
             )
+            if not response.results:
+                continue
 
             unique_users_for_subcategory_on_date = response.results[0][0]
             if unique_users_for_subcategory_on_date > 0:
-                await redis.hincrby(
-                    totals_users_key,
-                    subcategory.encode("utf-8"),
+                await redis.hincrby(  # type: ignore
+                    totals_users_key,  # type: ignore
+                    subcategory.encode("utf-8"),  # type: ignore
                     unique_users_for_subcategory_on_date,
                 )
 

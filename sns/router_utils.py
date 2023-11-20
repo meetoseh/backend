@@ -1,5 +1,13 @@
 import io
-from typing import Callable, Coroutine, Literal, Optional, Union
+from typing import (
+    Awaitable,
+    Callable,
+    Coroutine,
+    Literal,
+    Optional,
+    Union,
+    cast as typing_cast,
+)
 from urllib.parse import urlparse
 from base64 import b64decode
 from fastapi import APIRouter, Request
@@ -19,7 +27,10 @@ router = APIRouter()
 
 
 def verify_confirm_subscription(
-    body_json: dict, decoded_signature: bytes, signing_certificate: pem.Certificate
+    body_json: dict,
+    decoded_signature: bytes,
+    signing_certificate: pem.Certificate,
+    signature_version: Literal["1", "2"],
 ) -> Optional[JSONResponse]:
     """Verifies that a request which was signed using the given signature and
     signing certificate whose type is SubscriptionConfirmation has a valid signature
@@ -32,6 +43,7 @@ def verify_confirm_subscription(
         body_json,
         decoded_signature,
         signing_certificate,
+        signature_version,
         [
             "Message",
             "MessageId",
@@ -50,13 +62,17 @@ def verify_confirm_subscription(
 
 
 def verify_notification(
-    body_json: dict, decoded_signature: bytes, signing_certificate: pem.Certificate
+    body_json: dict,
+    decoded_signature: bytes,
+    signing_certificate: pem.Certificate,
+    signature_version: Literal["1", "2"],
 ) -> Optional[JSONResponse]:
     """Like verify_confirm_subscription but for the type Notification"""
     verification_error = verify_signature(
         body_json,
         decoded_signature,
         signing_certificate,
+        signature_version,
         ["Message", "MessageId", "Subject", "Timestamp", "TopicArn", "Type"],
     )
 
@@ -196,14 +212,15 @@ async def handle_raw_unconfirmed_sns(
             ),
         )
 
-    signature_version = body_json.get("SignatureVersion")
-    if signature_version != "1":
+    signature_version_raw = body_json.get("SignatureVersion")
+    if signature_version_raw not in ("1", "2"):
         return SNSResponse(
             request_type="BodyParseError",
             response=JSONResponse(
                 content={"message": "Unsupported signature version."}, status_code=400
             ),
         )
+    signature_version = typing_cast(Literal["1", "2"], signature_version_raw)
 
     signature = body_json.get("Signature")
     if not isinstance(signature, str):
@@ -265,7 +282,7 @@ async def handle_raw_unconfirmed_sns(
             ),
         )
 
-    signing_pem_bytes = cache.get(signing_cert_url)
+    signing_pem_bytes = typing_cast(Optional[bytes], cache.get(signing_cert_url))
     if signing_pem_bytes is None:
         response = await run_in_threadpool(
             requests.get, signing_cert_url, allow_redirects=False
@@ -351,16 +368,20 @@ async def handle_raw_unconfirmed_sns(
             ),
         )
 
-    if (resp := verify(body_json, decoded_signature_bytes, certs[0])) is not None:
+    if (
+        resp := verify(body_json, decoded_signature_bytes, certs[0], signature_version)
+    ) is not None:
         return SNSResponse(
             request_type="SignatureInvalid",
             response=resp,
         )
 
     if inspect.iscoroutinefunction(fnc):
-        resp = await fnc(body_json, topic_arn=topic_arn)
+        resp = await typing_cast(Awaitable[Response], fnc(body_json, topic_arn))
     else:
-        resp = await run_in_threadpool(fnc, body_json, topic_arn=topic_arn)
+        resp = await run_in_threadpool(
+            typing_cast(Callable[[dict, str], Response], fnc), body_json, topic_arn
+        )
 
     return SNSResponse(
         request_type=message_type,

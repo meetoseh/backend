@@ -2,7 +2,15 @@ import asyncio
 import json
 import time
 from fastapi.responses import Response, StreamingResponse
-from typing import AsyncIterator, Dict, List, NoReturn, Optional, Union
+from typing import (
+    AsyncIterator,
+    Dict,
+    List,
+    NoReturn,
+    Optional,
+    Union,
+    cast as typing_cast,
+)
 from content_files.models import ContentFileRef
 from journeys.models.external_journey import (
     ExternalJourneyCategory,
@@ -134,8 +142,9 @@ async def read_local_cache(
         journey_uid (str): The UID of the journey to read
     """
     local_cache = await itgs.local_cache()
-    return local_cache.get(
-        f"journeys:external:{journey_uid}".encode("utf-8"), read=True
+    return typing_cast(
+        Optional[Union[bytes, io.BytesIO]],
+        local_cache.get(f"journeys:external:{journey_uid}".encode("utf-8"), read=True),
     )
 
 
@@ -347,7 +356,6 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
 
     return ExternalJourney(
         uid=journey_uid,
-        session_uid="",
         jwt="",
         duration_seconds=row[2],
         background_image=ImageFileRef(uid=row[0], jwt=""),
@@ -379,7 +387,7 @@ async def push_to_caches(
         JourneysExternalPushCachePubSubMessage(
             uid=journey_uid, min_checked_at=time.time(), have_updated=True
         )
-        .json()
+        .model_dump_json()
         .encode("utf-8")
     )
 
@@ -408,7 +416,7 @@ async def evict_external_journey(itgs: Itgs, uid: str) -> None:
         JourneysExternalPushCachePubSubMessage(
             uid=uid, min_checked_at=time.time(), have_updated=False
         )
-        .json()
+        .model_dump_json()
         .encode("utf-8")
     )
 
@@ -435,6 +443,7 @@ async def cache_push_loop() -> NoReturn:
     purging or updating our cache appropriately. This should be a background task
     that is started when the server starts, as it will mostly idle.
     """
+    assert pps.instance is not None
     try:
         async with pps.PPSSubscription(
             pps.instance, "ps:journeys:external:push_cache", "je-cpl"
@@ -444,9 +453,8 @@ async def cache_push_loop() -> NoReturn:
                 initial_part_length = int.from_bytes(
                     raw_message.read(4), "big", signed=False
                 )
-                message = JourneysExternalPushCachePubSubMessage.parse_raw(
-                    raw_message.read(initial_part_length),
-                    content_type="application/json",
+                message = JourneysExternalPushCachePubSubMessage.model_validate_json(
+                    raw_message.read(initial_part_length)
                 )
 
                 async with Itgs() as itgs:
@@ -460,7 +468,7 @@ async def cache_push_loop() -> NoReturn:
                         event.set()
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
-            return
+            return  # type: ignore
         await handle_error(e)
     finally:
         print("read_one_external cache_push_loop exiting")

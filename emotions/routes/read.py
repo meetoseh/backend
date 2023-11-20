@@ -39,6 +39,15 @@ class EmotionFilter(BaseModel):
         None, description="a uid of a journey that resolves this emotion"
     )
 
+    def __init__(
+        self,
+        *,
+        word: Optional[FilterTextItemModel] = None,
+        antonym: Optional[FilterTextItemModel] = None,
+        journey_uid: Optional[FilterTextItemModel] = None,
+    ) -> None:
+        super().__init__(word=word, antonym=antonym, journey_uid=journey_uid)
+
 
 class ReadEmotionRequest(BaseModel):
     filters: EmotionFilter = Field(
@@ -113,7 +122,7 @@ async def read_emotions(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -186,4 +195,6 @@ async def raw_read_emotions(
 def item_pseudocolumns(item: Emotion) -> dict:
     """returns the dictified item such that the keys in the return dict match
     the keys of the sort options"""
-    return item.dict()
+    return {
+        "word": item.word,
+    }

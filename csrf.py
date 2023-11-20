@@ -26,7 +26,7 @@ BadCSRFReason = Literal[
     "signature",
     "bad_iss",
     "bad_aud",
-    "epxired",
+    "expired",
     "already_used",
 ]
 """The reasons we might reject a CSRF token."""
@@ -66,7 +66,7 @@ def create_bad_csrf_response(hint: str):
                 "The CSRF token was invalid or expired. This endpoint is "
                 f"not intended to be used by third parties. ({hint})"
             ),
-        ).json(),
+        ).model_dump_json(),
         headers={
             "Content-Type": "application/json; charset=utf-8",
         },

@@ -1,6 +1,5 @@
 from typing import Optional, TypeVar, Generic, get_args
-from pydantic import Field
-from pydantic.generics import GenericModel
+from pydantic import BaseModel, Field
 from .filter_item import FilterItem
 from .standard_operator import StandardOperator
 from .sort_dir import SortDir
@@ -99,7 +98,7 @@ class SortItem(Generic[SortKeyT, ValueT]):
 
         return FilterItem[self.__valuet__()](operator=operator, value=self.after)
 
-    def equal_filter(self) -> Optional[FilterItem[ValueT]]:
+    def equal_filter(self) -> FilterItem[ValueT]:
         """The equivalent of the after filter except with the equal operator
         rather than the range operator, required for nesting sorts.
         """
@@ -107,7 +106,7 @@ class SortItem(Generic[SortKeyT, ValueT]):
             operator=StandardOperator.EQUAL, value=self.after
         )
 
-    def not_equal_filter(self) -> Optional[FilterItem[ValueT]]:
+    def not_equal_filter(self) -> FilterItem[ValueT]:
         """Inverse of the equal_filter"""
         return FilterItem[self.__valuet__()](
             operator=StandardOperator.NOT_EQUAL, value=self.after
@@ -122,8 +121,13 @@ class SortItem(Generic[SortKeyT, ValueT]):
         raise ValueError(f"Unknown sort direction: {self.dir}")
 
     def to_model(self) -> "SortItemModel[SortKeyT, ValueT]":
-        return SortItemModel[self.__sortkeyt__(), self.__valuet__()](
-            key=self.key, dir=self.dir.value, before=self.before, after=self.after
+        return SortItemModel[self.__sortkeyt__(), self.__valuet__()].model_validate(
+            {
+                "key": self.key,
+                "dir": self.dir.value,
+                "before": self.before,
+                "after": self.after,
+            }
         )
 
     def __repr__(self) -> str:
@@ -131,14 +135,14 @@ class SortItem(Generic[SortKeyT, ValueT]):
 
     def __sortkeyt__(self) -> type:
         """The value type for this class"""
-        return get_args(self.__orig_class__)[0]
+        return get_args(self.__orig_class__)[0]  # type: ignore
 
     def __valuet__(self) -> type:
         """The value type for this class"""
-        return get_args(self.__orig_class__)[1]
+        return get_args(self.__orig_class__)[1]  # type: ignore
 
 
-class SortItemModel(GenericModel, Generic[SortKeyT, ValueT]):
+class SortItemModel(BaseModel, Generic[SortKeyT, ValueT]):
     key: SortKeyT = Field(
         title="Key",
         description="The key we are sorting by",
@@ -198,8 +202,15 @@ class SortItemModel(GenericModel, Generic[SortKeyT, ValueT]):
 
     def __sortkeyt__(self) -> type:
         """The value type for this class"""
-        return self.__fields__["key"].type_
+        key_type = self.model_fields["key"].annotation
+        assert key_type is not None
+        return key_type
 
     def __valuet__(self) -> type:
         """The value type for this class"""
-        return self.__fields__["after"].type_
+        value_type = self.model_fields["after"].annotation
+        assert value_type is not None
+        value_type_args = get_args(value_type)
+        assert len(value_type_args) == 2, (value_type, value_type_args)
+        assert value_type_args[1] == type(None), (value_type, value_type_args)
+        return value_type_args[0]

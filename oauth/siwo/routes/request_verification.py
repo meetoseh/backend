@@ -2,12 +2,11 @@ import json
 import secrets
 from fastapi import APIRouter, Cookie
 from fastapi.responses import Response
-from typing import Optional, Literal
-from typing_extensions import Annotated
+from typing import Awaitable, Optional, Literal, Annotated, cast as typing_cast
 from error_middleware import handle_warning
 from lib.shared.job_callback import JobCallback
 from oauth.siwo.code.security_check import generate_code
-from oauth.siwo.lib.verify_email_stats_preparer import verify_stats
+from oauth.siwo.lib.verify_email_stats_preparer import EmailFailedReason, verify_stats
 from oauth.siwo.jwt.core import CORE_ERRORS_BY_STATUS, auth_jwt, INVALID_TOKEN_RESPONSE
 from lib.emails.send import send_email
 from models import StandardErrorResponse
@@ -25,7 +24,7 @@ RATELIMITED_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_429_TYPE](
         type="ratelimited",
         message="You have received too many verification emails, please try again later",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=429,
 )
@@ -35,7 +34,7 @@ SERVICE_UNAVAILABLE_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_503_TYPE](
         type="service_unavailable",
         message="Email verification is currently unavailable, please try again later",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=503,
 )
@@ -65,12 +64,16 @@ async def request_verification(
     request_unix_date = unix_dates.unix_timestamp_to_unix_date(request_at, tz=tz)
     async with Itgs() as itgs:
         auth_result = await auth_jwt(itgs, siwo_core, revoke=False)
-        if not auth_result.success:
+        if auth_result.result is None:
+            assert auth_result.error is not None
             async with verify_stats(itgs) as stats:
                 stats.incr_email_requested(unix_date=request_unix_date)
                 stats.incr_email_failed(
                     unix_date=request_unix_date,
-                    reason=f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    reason=typing_cast(
+                        EmailFailedReason,
+                        f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    ),
                 )
             return auth_result.error.response
 
@@ -114,7 +117,9 @@ async def request_verification(
 
         email: str = response.results[0][0]
 
-        email_to_send_length = await redis.llen("email:to_send")
+        email_to_send_length = await typing_cast(
+            Awaitable[int], redis.llen(b"email:to_send")  # type: ignore
+        )
         if email_to_send_length > 10_000:
             async with verify_stats(itgs) as stats:
                 stats.incr_email_requested(unix_date=request_unix_date)
@@ -134,7 +139,7 @@ async def request_verification(
             )
             await pipe.zadd(identity_codes_key, {code.encode("utf-8"): request_at})
             await pipe.expireat(identity_codes_key, int(request_at + 60 * 60))
-            await pipe.execute()
+            await pipe.execute()  # type: ignore
 
         email_log_uid = f"oseh_sel_{secrets.token_urlsafe(16)}"
         await cursor.execute(

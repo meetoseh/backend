@@ -4,13 +4,15 @@ import time
 from fastapi import APIRouter, Form
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
-from typing import List, Optional, Tuple, TypedDict
+from typing import List, Optional, Tuple, cast as typing_cast
+from typing_extensions import TypedDict
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from error_middleware import handle_error
 from itgs import Itgs
 from urllib.parse import urlencode
 import oauth.lib.exchange
 from oauth.models.oauth_state import OauthState
+import oauth.lib.start_merge_auth
 import aiohttp
 import jwt
 import jwt.algorithms
@@ -48,7 +50,7 @@ async def callback(
     """
     user_info: Optional[User] = None
     if user is not None:
-        user_info = User.parse_raw(user, content_type="application/json")
+        user_info = User.model_validate_json(user)
 
     std_redirect_url = os.environ["ROOT_FRONTEND_URL"]
 
@@ -95,10 +97,11 @@ async def callback(
             return INVALID_TOKEN
 
         signing_key = matching_keys[0]
-        alg: jwt.algorithms.RSAAlgorithm = jwt.algorithms.get_default_algorithms()[
-            signing_key["alg"]
-        ]
-        key: RSAPublicKey = alg.from_jwk(signing_key)
+        alg = typing_cast(
+            jwt.algorithms.RSAAlgorithm,
+            jwt.algorithms.get_default_algorithms()[signing_key["alg"]],
+        )
+        key = typing_cast(RSAPublicKey, alg.from_jwk(typing_cast(dict, signing_key)))
         try:
             claims = jwt.decode(
                 id_token,
@@ -146,12 +149,33 @@ async def callback(
             picture=None,
             iat=claims["iat"],
         )
-        user = await oauth.lib.exchange.initialize_user_from_info(
+
+        if state_info.merging_with_user_sub is not None:
+            merge_jwt = await oauth.lib.start_merge_auth.create_jwt(
+                itgs,
+                original_user_sub=state_info.merging_with_user_sub,
+                provider="SignInWithApple",
+                provider_claims={
+                    **claims,
+                    **interpreted_claims.model_dump(),
+                },
+            )
+            return RedirectResponse(
+                url=f"{state_info.redirect_uri}/#"
+                + urlencode(
+                    {
+                        "merge_token": merge_jwt,
+                    }
+                ),
+                status_code=302,
+            )
+
+        user_with_identity = await oauth.lib.exchange.initialize_user_from_info(
             itgs, state_info.provider, interpreted_claims, claims
         )
         response = await oauth.lib.exchange.create_tokens_for_user(
             itgs,
-            user=user,
+            user=user_with_identity,
             interpreted_claims=interpreted_claims,
             redirect_uri=state_info.redirect_uri,
             refresh_token_desired=state_info.refresh_token_desired,
@@ -220,7 +244,7 @@ async def get_trusted_apple_keys(itgs: Itgs) -> List[JWK]:
     return keys
 
 
-async def id_token_from_code(itgs: Itgs, code: str, state_info: OauthState):
+async def id_token_from_code(itgs: Itgs, code: str, state_info: OauthState) -> str:
     """https://developer.apple.com/documentation/sign_in_with_apple/generate_and_validate_tokens"""
     key_id = os.environ["OSEH_APPLE_KEY_ID"]
     key_base64 = os.environ["OSEH_APPLE_KEY_BASE64"]

@@ -1,10 +1,19 @@
-import asyncio
 from dataclasses import dataclass
 import datetime
 import gzip
 import json
 import time
-from typing import Callable, Coroutine, Dict, List, Optional, Tuple, Type, Union
+from typing import (
+    Callable,
+    Coroutine,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+    cast as typing_cast,
+)
 from fastapi.concurrency import run_in_threadpool
 
 from fastapi.responses import StreamingResponse
@@ -259,6 +268,7 @@ def create_daily_stats_route(args: ReadDailyStatsRouteArgs):
     # our redis client behaves in an undesirable way
     assert isinstance(args.basic_data_redis_key(0), bytes)
     if args.fancy_fields:
+        assert args.extra_data_redis_key is not None
         assert isinstance(args.extra_data_redis_key(0, ""), bytes)
     else:
         assert args.extra_data_redis_key is None
@@ -269,6 +279,7 @@ def create_daily_stats_route(args: ReadDailyStatsRouteArgs):
         assert args.pubsub_redis_key is None
     # similarly, we want to be consistent with accessing the local cache via bytes keys
     if args.table_name is not None:
+        assert args.compressed_response_local_cache_key is not None
         assert isinstance(args.compressed_response_local_cache_key(0, 0), bytes)
     else:
         assert args.compressed_response_local_cache_key is None
@@ -279,64 +290,88 @@ def create_daily_stats_route(args: ReadDailyStatsRouteArgs):
         assert args.response_model is not None
 
         # Verifying the model make sense
-        remaining_model_fields = dict(args.response_model.__fields__)
+        remaining_model_fields = dict(args.response_model.model_fields)
         assert "labels" in remaining_model_fields
-        assert remaining_model_fields["labels"].outer_type_.__origin__ is list
-        assert remaining_model_fields["labels"].type_ is str
+        labels_annotation = remaining_model_fields["labels"].annotation
+        assert labels_annotation is not None
+        assert getattr(labels_annotation, "__origin__", None) is list
+        labels_annotation_args = getattr(labels_annotation, "__args__", None)
+        assert isinstance(labels_annotation_args, tuple)
+        assert len(labels_annotation_args) == 1
+        assert labels_annotation_args[0] is str
         remaining_model_fields.pop("labels")
 
         for simple_field_name in args.simple_fields:
             assert simple_field_name in remaining_model_fields, simple_field_name
             # it is not safe to compare types directly (List[int] == List[int]) depending on version and compiler
+            simple_field_annotation = remaining_model_fields[
+                simple_field_name
+            ].annotation
+            assert simple_field_annotation is not None, simple_field_name
             assert (
-                remaining_model_fields[simple_field_name].outer_type_.__origin__ is list
+                getattr(simple_field_annotation, "__origin__", None) is list
             ), simple_field_name
-            assert (
-                remaining_model_fields[simple_field_name].type_ is int
-            ), simple_field_name
+            simple_field_annotation_args = getattr(
+                simple_field_annotation, "__args__", None
+            )
+            assert isinstance(simple_field_annotation_args, tuple), simple_field_name
+            assert len(simple_field_annotation_args) == 1, simple_field_name
+            assert simple_field_annotation_args[0] is int, simple_field_name
             remaining_model_fields.pop(simple_field_name)
 
         for fancy_field_name in args.fancy_fields:
             assert fancy_field_name in remaining_model_fields, fancy_field_name
-            assert (
-                remaining_model_fields[fancy_field_name].outer_type_.__origin__ is list
-            ), fancy_field_name
-            assert (
-                remaining_model_fields[fancy_field_name].type_ is int
-            ), fancy_field_name
+            fancy_field_annotation = remaining_model_fields[fancy_field_name].annotation
+            assert fancy_field_annotation is not None, fancy_field_name
+            assert getattr(fancy_field_annotation, "__origin__", None) is list
+            fancy_field_annotation_args = getattr(
+                fancy_field_annotation, "__args__", None
+            )
+            assert isinstance(fancy_field_annotation_args, tuple), fancy_field_name
+            assert len(fancy_field_annotation_args) == 1, fancy_field_name
+            assert fancy_field_annotation_args[0] is int, fancy_field_name
             remaining_model_fields.pop(fancy_field_name)
 
             breakdown_name = f"{fancy_field_name}_breakdown"
             assert breakdown_name in remaining_model_fields, breakdown_name
+            # Dict[str, List[int]]
+            breakdown_annotation = remaining_model_fields[breakdown_name].annotation
+            assert breakdown_annotation is not None, breakdown_name
             assert (
-                remaining_model_fields[breakdown_name].outer_type_.__origin__ is dict
+                getattr(breakdown_annotation, "__origin__", None) is dict
             ), breakdown_name
+            breakdown_annotation_args = getattr(breakdown_annotation, "__args__", None)
+            assert isinstance(breakdown_annotation_args, tuple), breakdown_name
+            assert len(breakdown_annotation_args) == 2, breakdown_name
+            assert breakdown_annotation_args[0] is str, breakdown_name
             assert (
-                remaining_model_fields[breakdown_name].outer_type_.__args__[0] is str
+                getattr(breakdown_annotation_args[1], "__origin__", None) is list
             ), breakdown_name
-            assert (
-                remaining_model_fields[breakdown_name].type_.__origin__ is list
-            ), breakdown_name
-            assert (
-                remaining_model_fields[breakdown_name].type_.__args__[0] is int
-            ), breakdown_name
+            breakdown_annotation_args_1_args = getattr(
+                breakdown_annotation_args[1], "__args__", None
+            )
+            assert isinstance(breakdown_annotation_args_1_args, tuple), breakdown_name
+            assert len(breakdown_annotation_args_1_args) == 1, breakdown_name
+            assert breakdown_annotation_args_1_args[0] is int, breakdown_name
             remaining_model_fields.pop(breakdown_name)
 
         assert not remaining_model_fields, remaining_model_fields
     else:
         assert args.response_model is None
 
-    remaining_model_fields = dict(args.partial_response_model.__fields__)
+    remaining_model_fields = dict(args.partial_response_model.model_fields)
     assert "today" in remaining_model_fields
     if "two_days_ago" in remaining_model_fields:
         assert "yesterday" in remaining_model_fields
 
     for partial_key in ["today", "yesterday", "two_days_ago"]:
         if partial_key in remaining_model_fields:
-            assert remaining_model_fields[partial_key].required is False, partial_key
+            assert (
+                remaining_model_fields[partial_key].is_required() is False
+            ), partial_key
             try:
                 _verify_partial_model_item(
-                    args, remaining_model_fields[partial_key].type_
+                    args, remaining_model_fields[partial_key].annotation
                 )
             except:
                 raise AssertionError(f"{partial_key=}")
@@ -366,7 +401,7 @@ def _create_historical(
             return Response(status_code=404)
 
         async def _void_background_task() -> Never:
-            return
+            ...
 
         return _void_handler, _void_background_task
 
@@ -379,6 +414,7 @@ def _create_historical(
         itgs: Itgs, *, start_unix_date: int, end_unix_date: int
     ) -> BaseModel:
         """start inclusive, end exclusive"""
+        assert args.response_model is not None
         conn = await itgs.conn()
         cursor = conn.cursor("none")
         response = await cursor.execute(
@@ -447,22 +483,24 @@ def _create_historical(
             response_obj[field] = simple_lists[idx + len(args.simple_fields)]
             response_obj[field + "_breakdown"] = breakdown_lists[idx]
 
-        return args.response_model.parse_obj(response_obj)
+        return args.response_model.model_validate(response_obj)
 
     async def read_from_cache(
         itgs: Itgs, *, start_unix_date: int, end_unix_date: int
     ) -> Union[bytes, io.BytesIO, None]:
+        assert args.compressed_response_local_cache_key is not None
         cache = await itgs.local_cache()
         key = args.compressed_response_local_cache_key(start_unix_date, end_unix_date)
-        return cache.get(key, read=True)
+        return typing_cast(Union[bytes, io.BytesIO, None], cache.get(key, read=True))
 
     def serialize_and_compress(raw: BaseModel) -> bytes:
         # brotli would probably be better but not built-in
-        return gzip.compress(raw.json().encode("utf-8"), mtime=0)
+        return gzip.compress(raw.model_dump_json().encode("utf-8"), mtime=0)
 
     async def write_to_cache(
         itgs: Itgs, *, start_unix_date: int, end_unix_date: int, data: bytes
     ) -> None:
+        assert args.compressed_response_local_cache_key is not None
         now = time.time()
         tomorrow_unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=tz) + 1
         cache_expire_in = (
@@ -478,6 +516,7 @@ def _create_historical(
     async def write_to_other_instances(
         itgs: Itgs, *, start_unix_date: int, end_unix_date: int, data: bytes
     ) -> None:
+        assert args.pubsub_redis_key is not None
         redis = await itgs.redis()
         message = (
             int.to_bytes(start_unix_date, 4, "big", signed=False)
@@ -488,6 +527,8 @@ def _create_historical(
         await redis.publish(args.pubsub_redis_key, message)
 
     async def read_from_other_instances() -> Never:
+        assert pps.instance is not None
+        assert args.pubsub_redis_key is not None
         try:
             async with pps.PPSSubscription(
                 pps.instance,
@@ -512,7 +553,7 @@ def _create_historical(
             if pps.instance.exit_event.is_set() and isinstance(
                 e, pps.PPSShutdownException
             ):
-                return
+                return  # type: ignore
             await handle_error(e)
         finally:
             print(
@@ -522,7 +563,8 @@ def _create_historical(
     async def handler(authorization: Optional[str]) -> Response:
         async with Itgs() as itgs:
             auth_result = await auth_admin(itgs, authorization)
-            if not auth_result.success:
+            if auth_result.result is None:
+                assert auth_result.error_response is not None
                 return auth_result.error_response
 
             today_unix_date = unix_dates.unix_date_today(tz=tz)
@@ -546,7 +588,7 @@ def _create_historical(
                 itgs, start_unix_date=start_unix_date, end_unix_date=end_unix_date
             )
             if cached_result is not None:
-                if isinstance(cached_result, (bytes, bytearray)):
+                if isinstance(cached_result, (bytes, bytearray, memoryview)):
                     return Response(content=cached_result, headers=headers)
                 return StreamingResponse(
                     content=read_in_parts(cached_result), headers=headers
@@ -625,9 +667,9 @@ def _create_partial(
         async with redis.pipeline(transaction=False) as pipe:
             await pipe.get(args.earliest_data_redis_key)
             for unix_date in unix_dates:
-                await pipe.hgetall(args.basic_data_redis_key(unix_date))
+                await pipe.hgetall(args.basic_data_redis_key(unix_date))  # type: ignore
                 for field in args.fancy_fields:
-                    await pipe.hgetall(args.extra_data_redis_key(unix_date, field))
+                    await pipe.hgetall(args.extra_data_redis_key(unix_date, field))  # type: ignore
             results = await pipe.execute()
 
         if results[0] is None:
@@ -652,12 +694,12 @@ def _create_partial(
             ]
             results_idx += 1 + len(args.fancy_fields)
 
-            merged_data = dict(
-                (key.decode("utf-8"), int(val)) for key, val in basic_data.items_bytes()
+            merged_data: Dict[str, Union[int, Dict[str, int]]] = dict(
+                (str(key, "utf-8"), int(val)) for key, val in basic_data.items_bytes()
             )
             for field, data in zip(args.fancy_fields, fancy_data):
                 merged_data[field + "_breakdown"] = dict(
-                    (key.decode("utf-8"), int(val)) for key, val in data.items_bytes()
+                    (str(key, "utf-8"), int(val)) for key, val in data.items_bytes()
                 )
             parsed_results.append(merged_data)
         return parsed_results
@@ -665,7 +707,8 @@ def _create_partial(
     async def handler(authorization: Optional[str]) -> Response:
         async with Itgs() as itgs:
             auth_result = await auth_admin(itgs, authorization)
-            if not auth_result.success:
+            if auth_result.result is None:
+                assert auth_result.error_response is not None
                 return auth_result.error_response
 
             today_unix_date = unix_dates.unix_date_today(tz=tz)
@@ -688,9 +731,9 @@ def _create_partial(
             if num_days > 2:
                 response_obj["two_days_ago"] = response_obj_items[2]
 
-            response_content = args.partial_response_model.parse_obj(response_obj)
+            response_content = args.partial_response_model.model_validate(response_obj)
             return Response(
-                content=response_content.json(),
+                content=response_content.model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Cache-Control": "no-store",
@@ -705,14 +748,16 @@ def _get_implied_number_of_days_from_partial_response(
     args: ReadDailyStatsRouteArgs,
 ) -> int:
     num_days = 1
-    if "yesterday" in args.partial_response_model.__fields__:
+    if "yesterday" in args.partial_response_model.model_fields:
         num_days += 1
-    if "two_days_ago" in args.partial_response_model.__fields__:
+    if "two_days_ago" in args.partial_response_model.model_fields:
         num_days += 1
     return num_days
 
 
 def _create_read_from_source_sql(args: ReadDailyStatsRouteArgs) -> str:
+    assert args.table_name is not None
+
     builder = io.StringIO()
     builder.write('SELECT "retrieved_for" AS "a0"')
 
@@ -749,6 +794,8 @@ def _create_read_from_source_sql(args: ReadDailyStatsRouteArgs) -> str:
 
 
 def _create_read_partial_from_db_sql(args: ReadDailyStatsRouteArgs) -> str:
+    assert args.table_name is not None
+
     builder = io.StringIO()
     builder.write("SELECT ")
 
@@ -785,29 +832,31 @@ def _create_read_partial_from_db_sql(args: ReadDailyStatsRouteArgs) -> str:
 
 
 def _verify_partial_model_item(
-    args: ReadDailyStatsRouteArgs, itm: Type[BaseModel]
+    args: ReadDailyStatsRouteArgs, itm: Optional[Type[BaseModel]]
 ) -> None:
-    remaining_fields = dict(itm.__fields__)
+    assert itm is not None
+    remaining_fields = dict(itm.model_fields)
     for simple_field_name in args.simple_fields:
         assert simple_field_name in remaining_fields, simple_field_name
-        assert remaining_fields[simple_field_name].type_ is int, simple_field_name
+        assert remaining_fields[simple_field_name].annotation is int, simple_field_name
         remaining_fields.pop(simple_field_name)
 
     for fancy_field_name in args.fancy_fields:
         assert fancy_field_name in remaining_fields, fancy_field_name
-        assert remaining_fields[fancy_field_name].type_ is int, fancy_field_name
+        assert remaining_fields[fancy_field_name].annotation is int, fancy_field_name
         assert remaining_fields[fancy_field_name].default == 0
         remaining_fields.pop(fancy_field_name)
 
         breakdown_name = f"{fancy_field_name}_breakdown"
         assert breakdown_name in remaining_fields, breakdown_name
-        assert (
-            remaining_fields[breakdown_name].outer_type_.__origin__ is dict
-        ), breakdown_name
-        assert (
-            remaining_fields[breakdown_name].outer_type_.__args__[0] is str
-        ), breakdown_name
-        assert remaining_fields[breakdown_name].type_ is int, breakdown_name
+        breakdown_annotation = remaining_fields[breakdown_name].annotation
+        # Dict[str, int]
+        assert breakdown_annotation is not None, breakdown_name
+        assert getattr(breakdown_annotation, "__origin__") is dict, breakdown_name
+        breakdown_annotation_args = getattr(breakdown_annotation, "__args__")
+        assert len(breakdown_annotation_args) == 2, breakdown_name
+        assert breakdown_annotation_args[0] is str, breakdown_name
+        assert breakdown_annotation_args[1] is int, breakdown_name
         assert remaining_fields[breakdown_name].default_factory is dict
         remaining_fields.pop(breakdown_name)
 

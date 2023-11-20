@@ -57,7 +57,9 @@ async def complete_notification(
             if random.random() < 0.1:
                 return Response(
                     content=CompleteNotificationResponse(
-                        page_identifier="home", page_extra=dict()
+                        page_identifier="home",
+                        page_extra=dict(),
+                        click_uid=create_click_uid(),
                     ),
                     status_code=200,
                     headers={
@@ -72,7 +74,7 @@ async def complete_notification(
             itgs,
             code=args.code,
             visitor_uid=visitor,
-            user_sub=auth_result.result.sub if auth_result.success else None,
+            user_sub=auth_result.result.sub if auth_result.result is not None else None,
             track_type="on_click",
             parent_uid=None,
             clicked_at=None,
@@ -89,7 +91,7 @@ async def complete_notification(
                 page_identifier=link.page_identifier,
                 page_extra=link.page_extra,
                 click_uid=click_uid,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
             },

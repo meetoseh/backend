@@ -17,7 +17,7 @@ ERROR_JOURNEY_EMOTION_NOT_FOUND = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="journey_emotion_not_found",
         message="There is no matching relationship between the journey and emotion",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -76,7 +76,7 @@ async def get_journey_emotion_info(
                 emotion=emotion,
                 creation_hint=json.loads(response.results[0][1]),
                 created_at=response.results[0][2],
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=60",

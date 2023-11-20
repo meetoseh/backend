@@ -61,17 +61,17 @@ async def read_last_send_job(authorization: Optional[str] = Header(None)):
 
         redis = await itgs.redis()
         async with redis.pipeline(transaction=False) as pipe:
-            await pipe.hmget(
-                b"stats:push_tickets:send_job",
-                b"last_started_at",
-                b"last_finished_at",
-                b"last_running_time",
-                b"last_num_messages_attempted",
-                b"last_num_succeeded",
-                b"last_num_failed_permanently",
-                b"last_num_failed_transiently",
+            await pipe.hmget(  # type: ignore
+                b"stats:push_tickets:send_job",  # type: ignore
+                b"last_started_at",  # type: ignore
+                b"last_finished_at",  # type: ignore
+                b"last_running_time",  # type: ignore
+                b"last_num_messages_attempted",  # type: ignore
+                b"last_num_succeeded",  # type: ignore
+                b"last_num_failed_permanently",  # type: ignore
+                b"last_num_failed_transiently",  # type: ignore
             )
-            await pipe.llen(b"push:message_attempts:purgatory")
+            await pipe.llen(b"push:message_attempts:purgatory")  # type: ignore
             result, purgatory_size = await pipe.execute()
 
         if result[0] is None or result[1] is None:
@@ -87,7 +87,7 @@ async def read_last_send_job(authorization: Optional[str] = Header(None)):
                 num_failed_permanently=int(result[5]),
                 num_failed_transiently=int(result[6]),
                 num_in_purgatory=int(purgatory_size),
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

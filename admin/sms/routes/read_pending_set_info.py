@@ -1,4 +1,3 @@
-import json
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -62,7 +61,7 @@ async def read_send_queue_info(authorization: Optional[str] = Header(None)):
                 length=length,
                 oldest_due_at=oldest_due_at,
                 num_overdue=num_overdue,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

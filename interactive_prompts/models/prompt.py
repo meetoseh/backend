@@ -1,15 +1,15 @@
 import json
-from pydantic import BaseModel, Field, constr, validator
-from typing import Literal, List, Union
+from pydantic import BaseModel, Field, StringConstraints, validator
+from typing import Literal, List, Union, Annotated
 
 
 class NumericPrompt(BaseModel):
     """E.g., What's your mood? 1-10"""
 
     style: Literal["numeric"] = Field(description="The prompt style")
-    text: constr(strip_whitespace=True, min_length=1, max_length=75) = Field(
-        description="The text to display to the user before they answer"
-    )
+    text: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=75)
+    ] = Field(description="The text to display to the user before they answer")
     min: int = Field(description="The minimum value, inclusive")
     max: int = Field(description="The maximum value, inclusive")
     step: Literal[1] = Field(description="The step size between values")
@@ -32,7 +32,7 @@ class NumericPrompt(BaseModel):
         return v
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "style": "numeric",
                 "text": "What's your mood?",
@@ -47,20 +47,20 @@ class PressPrompt(BaseModel):
     """E.g., press when you like it"""
 
     style: Literal["press"] = Field(description="The prompt style")
-    text: constr(strip_whitespace=True, min_length=1, max_length=75) = Field(
-        description="The text to display to the user before they answer"
-    )
+    text: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=75)
+    ] = Field(description="The text to display to the user before they answer")
 
 
 class ColorPrompt(BaseModel):
     """E.g., what color is this song?"""
 
     style: Literal["color"] = Field(description="The prompt style")
-    text: constr(strip_whitespace=True, min_length=1, max_length=75) = Field(
-        description="The text to display to the user before they answer"
-    )
+    text: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=75)
+    ] = Field(description="The text to display to the user before they answer")
     colors: List[str] = Field(
-        description="The colors to choose from", min_items=2, max_items=8
+        description="The colors to choose from", min_length=2, max_length=8
     )
 
     @validator("colors")
@@ -79,12 +79,14 @@ class WordPrompt(BaseModel):
     """e.g. what are you feeling?"""
 
     style: Literal["word"] = Field(description="The prompt style")
-    text: constr(strip_whitespace=True, min_length=1, max_length=75) = Field(
-        description="The text to display to the user before they answer"
-    )
-    options: List[constr(min_length=1, max_length=45, strip_whitespace=True)] = Field(
-        description="The options to choose from", min_items=2, max_items=8
-    )
+    text: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=75)
+    ] = Field(description="The text to display to the user before they answer")
+    options: List[
+        Annotated[
+            str, StringConstraints(min_length=1, max_length=45, strip_whitespace=True)
+        ]
+    ] = Field(description="The options to choose from", min_length=2, max_length=8)
 
 
 Prompt = Union[NumericPrompt, PressPrompt, ColorPrompt, WordPrompt]

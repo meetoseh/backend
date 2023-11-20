@@ -121,10 +121,12 @@ async def up(itgs: Itgs) -> None:
         for row_user_sub, row_preferred_notification_time in response.results:
             extra_kwargs = {
                 "old_day_of_week_mask": 127,
-                "old_time_range": DailyReminderTimeRange(preset="unspecified"),
+                "old_time_range": DailyReminderTimeRange(
+                    start=None, end=None, preset="unspecified"
+                ),
                 "new_day_of_week_mask": 127,
                 "new_time_range": DailyReminderTimeRange(
-                    preset=row_preferred_notification_time
+                    start=None, end=None, preset=row_preferred_notification_time
                 ),
             }
             stats.incr_email(batch_unix_date, **extra_kwargs)
@@ -211,7 +213,7 @@ async def up(itgs: Itgs) -> None:
                     "utf-8"
                 )
                 if await redis.exists(row_key):
-                    await redis.hset(row_key, b"uid", b"z")
+                    await redis.hset(row_key, b"uid", b"z")  # type: ignore
 
         batch: List[_DailyReminder] = []
         async for user in iter_users(itgs):

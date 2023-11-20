@@ -1,4 +1,4 @@
-from typing import Literal, Optional, List, Union
+from typing import Literal, Optional, List, cast as typing_cast
 import hashlib
 import time
 import redis.asyncio.client
@@ -142,6 +142,17 @@ async def ensure_touch_click_try_create_script_exists(
         _last_touch_click_try_create_ensured_at = now
 
 
+FailedToTrackReason = Optional[
+    Literal[
+        "not_requested",
+        "no_link_and_not_post_login",
+        "parent_has_child",
+        "no_parent",
+        "implementation_error",
+    ]
+]
+
+
 @dataclasses.dataclass
 class ClickLinkRedisResult:
     tracked: bool
@@ -158,15 +169,7 @@ class ClickLinkRedisResult:
     tracked_in_delayed: bool
     """True iff tracked and the track was saved in the Delayed Link Clicks sorted set"""
 
-    failed_to_track_reason: Optional[
-        Literal[
-            "not_requested",
-            "no_link_and_not_post_login",
-            "parent_has_child",
-            "no_parent",
-            "implementation_error",
-        ]
-    ]
+    failed_to_track_reason: FailedToTrackReason
     """The reason we didn't track, one of:
 
     - `not_requested`: `should_track` was False
@@ -201,7 +204,7 @@ async def touch_click_try_create(
     click_uid: Optional[str],
     now: float,
     should_track: bool,
-) -> ClickLinkRedisResult:
+) -> Optional[ClickLinkRedisResult]:
     """Attempts to fetch the touch link with the given code from the buffered link
     sorted set, and optionally tries to track the click.
 
@@ -252,22 +255,22 @@ async def touch_click_try_create(
         assert user_sub != "0", "reserved user sub"
         assert parent_uid != "0", "reserved parent uid"
 
-        res = await redis.evalsha(
+        res = await redis.evalsha(  # type: ignore
             TOUCH_CLICK_TRY_CREATE_LUA_SCRIPT_HASH,
             0,
-            code.encode("utf-8"),
-            b"1",
-            visitor_uid.encode("utf-8") if visitor_uid is not None else b"0",
-            user_sub.encode("utf-8") if user_sub is not None else b"0",
-            track_type.encode("ascii"),
-            parent_uid.encode("utf-8") if parent_uid is not None else b"0",
-            str(clicked_at).encode("ascii"),
-            click_uid.encode("utf-8"),
-            str(now).encode("ascii"),
+            code.encode("utf-8"),  # type: ignore
+            b"1",  # type: ignore
+            visitor_uid.encode("utf-8") if visitor_uid is not None else b"0",  # type: ignore
+            user_sub.encode("utf-8") if user_sub is not None else b"0",  # type: ignore
+            track_type.encode("ascii"),  # type: ignore
+            parent_uid.encode("utf-8") if parent_uid is not None else b"0",  # type: ignore
+            str(clicked_at).encode("ascii"),  # type: ignore
+            click_uid.encode("utf-8"),  # type: ignore
+            str(now).encode("ascii"),  # type: ignore
         )
     else:
-        res = await redis.evalsha(
-            TOUCH_CLICK_TRY_CREATE_LUA_SCRIPT_HASH, 0, code.encode("utf-8"), b"0"
+        res = await redis.evalsha(  # type: ignore
+            TOUCH_CLICK_TRY_CREATE_LUA_SCRIPT_HASH, 0, code.encode("utf-8"), b"0"  # type: ignore
         )
     if res is redis:
         return None
@@ -299,6 +302,6 @@ def touch_click_try_create_parse_result(res) -> ClickLinkRedisResult:
         tracked=tracked,
         tracked_in_buffer=tracked_in_buffer,
         tracked_in_delayed=tracked_in_delayed,
-        failed_to_track_reason=failed_to_track_reason,
+        failed_to_track_reason=typing_cast(FailedToTrackReason, failed_to_track_reason),
         link=link,
     )

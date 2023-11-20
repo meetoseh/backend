@@ -13,7 +13,6 @@ from user_safe_error import UserSafeError
 from error_middleware import handle_error
 import users.lib.entitlements as entitlements
 import stripe
-import asyncio
 import secrets
 from urllib.parse import urlencode
 
@@ -78,7 +77,7 @@ async def start_checkout_stripe(
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         redis = await itgs.redis()
@@ -93,7 +92,7 @@ async def start_checkout_stripe(
                 content=StandardErrorResponse[ERROR_429_TYPES](
                     type="ratelimited",
                     message="You have exceeded the rate limit for this endpoint.",
-                ).json(),
+                ).model_dump_json(),
                 status_code=429,
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
@@ -104,13 +103,14 @@ async def start_checkout_stripe(
         existing_entitlement = await entitlements.get_entitlement(
             itgs, user_sub=auth_result.result.sub, identifier="pro", force=True
         )
+        assert existing_entitlement is not None, auth_result
 
         if existing_entitlement.is_active:
             return Response(
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="already_subscribed",
                     message="You already have the pro entitlement.",
-                ).json(),
+                ).model_dump_json(),
                 status_code=409,
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
@@ -149,7 +149,7 @@ async def start_checkout_stripe(
                     content=StandardErrorResponse[ERROR_503_TYPES](
                         type="stripe_error",
                         message="There was an error communicating with our payment provider.",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
                         "Retry-After": "5",
@@ -165,6 +165,7 @@ async def start_checkout_stripe(
             )
 
         try:
+            assert session.url is not None, session
             await store_session(
                 itgs,
                 checkout_session_id=session.id,
@@ -190,6 +191,7 @@ async def ensure_stripe_customer(itgs: Itgs, auth_result: AuthResult) -> str:
     """Gets or creates and gets the stripe customer id to use for the
     given user.
     """
+    assert auth_result.result is not None
     conn = await itgs.conn()
     cursor = conn.cursor("weak")
 
@@ -229,7 +231,7 @@ async def ensure_stripe_customer(itgs: Itgs, auth_result: AuthResult) -> str:
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="user_not_found",
                     message="Despite valid authorization, you do not appear to exist! Your account may have been deleted.",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "15",
@@ -244,12 +246,12 @@ async def ensure_stripe_customer(itgs: Itgs, auth_result: AuthResult) -> str:
         customer = await run_in_threadpool(
             stripe.Customer.create,
             api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
-            email=email,
             name=name,
             metadata={
                 "user_sub": auth_result.result.sub,
                 "created_for": "start_checkout_stripe",
             },
+            **({"email": email} if email is not None else {}),  # type: ignore
         )
     except Exception as exc:
         await handle_error(exc)
@@ -259,7 +261,7 @@ async def ensure_stripe_customer(itgs: Itgs, auth_result: AuthResult) -> str:
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="stripe_error",
                     message="There was an error communicating with our payment provider.",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "5",

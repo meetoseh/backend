@@ -19,7 +19,7 @@ class ReadDailyRemindersResponseItem(BaseModel):
     )
     days_of_week: List[DayOfWeek] = Field(
         description="the days of the week they receive notifications on this channel",
-        unique_items=True,
+        max_length=7,
     )
     start_time: int = Field(
         description="The earliest they receive notifications in seconds from midnight"
@@ -79,6 +79,6 @@ async def read_daily_reminders(sub: str, authorization: Optional[str] = Header(N
             )
 
         return Response(
-            content=ReadDailyRemindersResponse(reminders=reminders).json(),
+            content=ReadDailyRemindersResponse(reminders=reminders).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )

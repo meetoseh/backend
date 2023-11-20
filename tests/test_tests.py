@@ -1,9 +1,9 @@
 import unittest
 
 try:
-    import helper
+    import helper  # type: ignore
 except:
-    import tests.helper
+    import tests.helper  # type: ignore
 import main
 
 

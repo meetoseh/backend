@@ -1,4 +1,4 @@
-from typing import Literal, Optional, List, Union
+from typing import Literal, Optional, List
 import hashlib
 import time
 import redis.asyncio.client
@@ -97,8 +97,8 @@ async def siwo_update_password_ratelimit(
     Raises:
         NoScriptError: If the script is not loaded into redis
     """
-    res = await redis.evalsha(
-        SIWO_UPDATE_PASSWORD_RATELIMIT_LUA_SCRIPT_HASH, 0, str(now).encode("ascii")
+    res = await redis.evalsha(  # type: ignore
+        SIWO_UPDATE_PASSWORD_RATELIMIT_LUA_SCRIPT_HASH, 0, str(now).encode("ascii")  # type: ignore
     )
     if res is redis:
         return None

@@ -108,7 +108,7 @@ async def read_daily_reminders(authorization: Optional[str] = Header(None)):
     """Reads the daily reminders of the authorized user."""
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         user_sub = auth_result.result.sub
@@ -263,7 +263,7 @@ async def read_daily_reminders(authorization: Optional[str] = Header(None)):
                 sms=sms[0] if sms else None,
                 email=email[0] if email else None,
                 push=push[0] if push else None,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

@@ -41,7 +41,7 @@ class NonSubscription(BaseModel):
     id: str = Field()
     purchase_date: datetime = Field()
     store: Literal[
-        "app_store", "mac_app_store", "play_store", "amazon", "stripe"
+        "app_store", "mac_app_store", "play_store", "amazon", "stripe", "promotional"
     ] = Field()
     is_sandbox: bool = Field()
 
@@ -111,6 +111,7 @@ class RevenueCat:
 
     async def get_customer_info(self, *, revenue_cat_id: str) -> CustomerInfo:
         """Gets the customer information for the given RevenueCat ID."""
+        assert self.session is not None
 
         async with self.session.get(
             f"https://api.revenuecat.com/v1/subscribers/{revenue_cat_id}",
@@ -123,7 +124,7 @@ class RevenueCat:
             text = await resp.text()
 
         try:
-            return CustomerInfo.parse_raw(text, content_type="application/json")
+            return CustomerInfo.model_validate_json(text)
         except Exception as e:
             await handle_error(
                 e, extra_info=f"for {revenue_cat_id=} and response {text=}"
@@ -135,6 +136,7 @@ class RevenueCat:
     ) -> None:
         """Updates the customer attributes (also referred to as subscriber
         attributes) for the given RevenueCat ID."""
+        assert self.session is not None
 
         formatted_attrs = dict((key, {"value": val}) for key, val in attributes.items())
 
@@ -153,6 +155,7 @@ class RevenueCat:
 
     async def delete_subscriber(self, *, revenue_cat_id: str) -> None:
         """Deletes the subscriber from RevenueCat."""
+        assert self.session is not None
 
         async with self.session.delete(
             f"https://api.revenuecat.com/v1/subscribers/{revenue_cat_id}",
@@ -172,6 +175,7 @@ class RevenueCat:
             revenue_cat_id (str): The RevenueCat ID of the user
             product_id (str): The product id within revenue cat of the subscription to cancel
         """
+        assert self.session is not None
         async with self.session.post(
             f"https://api.revenuecat.com/v1/subscribers/{revenue_cat_id}/subscriptions/{product_id}/revoke",
             headers={
@@ -196,6 +200,7 @@ class RevenueCat:
         meaning that if the checkout session was used to apply entitlements to another
         user already, those entitlements are removed and added to this user.
         """
+        assert self.session is not None
 
         async with self.session.post(
             "https://api.revenuecat.com/v1/receipts",
@@ -220,7 +225,7 @@ class RevenueCat:
             resp.raise_for_status()
             data = await resp.text("utf-8")
             try:
-                return CustomerInfo.parse_raw(data, content_type="application/json")
+                return CustomerInfo.model_validate_json(data)
             except Exception as e:
                 logger.warning(
                     f"create_stripe_purchase failed; {revenue_cat_id=}, stripe_checkout_session_id={stripe_checkout_session_id}, {resp.status=}, {data=}"
@@ -253,6 +258,7 @@ class RevenueCat:
             duration ("daily", "three_day", "weekly", "monthly", "two_month", "three_month", "six_month", "yearly", "lifetime"):
                 The duration of the entitlement
         """
+        assert self.session is not None
         async with self.session.post(
             f"https://api.revenuecat.com/v1/subscribers/{revenue_cat_id}/entitlements/{entitlement_identifier}/promotional",
             headers={

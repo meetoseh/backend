@@ -28,7 +28,7 @@ AUTHORIZATION_UNKNOWN_CODE = Response(
     content=StandardErrorResponse[ERROR_403_TYPES](
         type="invalid",
         message="The provided code is invalid",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=403,
 )
@@ -125,7 +125,7 @@ async def start_course_download_with_code(args: StartCourseDownloadWithCodeReque
 
         course_jwt = await create_course_jwt(itgs, course_uid=course_uid, duration=60)
         return Response(
-            content=CourseRef(uid=course_uid, jwt=course_jwt).json(),
+            content=CourseRef(uid=course_uid, jwt=course_jwt).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

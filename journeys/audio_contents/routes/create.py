@@ -1,6 +1,6 @@
 from typing import Optional
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_admin
 from file_uploads.helper import FileUploadResponse, start_upload
@@ -31,7 +31,7 @@ async def create_journey_audio_content(
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         res = await start_upload(
@@ -42,7 +42,8 @@ async def create_journey_audio_content(
             failure_job_name="runners.delete_file_upload",
             failure_job_kwargs=dict(),
         )
-        return JSONResponse(
-            content=res.dict(),
+        return Response(
+            content=res.model_dump_json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import Literal, Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Literal, Optional, Annotated
 from auth import auth_admin
 from interactive_prompts.lib.read_interactive_prompt_meta import (
     evict_interactive_prompt_meta,
@@ -10,11 +10,12 @@ from interactive_prompts.lib.read_one_external import evict_interactive_prompt
 from journeys.lib.read_one_external import evict_external_journey
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
-import time
 
 
 class UpdateJourneySubcategoryRequest(BaseModel):
-    internal_name: constr(min_length=1, strip_whitespace=True) = Field(
+    internal_name: Annotated[
+        str, StringConstraints(min_length=1, strip_whitespace=True)
+    ] = Field(
         description=(
             "The internal name for the journey subcategory, which would generally be "
             "unique, but might not be while we're recategorizing. Statistics for "
@@ -22,7 +23,9 @@ class UpdateJourneySubcategoryRequest(BaseModel):
         )
     )
 
-    external_name: constr(min_length=1, strip_whitespace=True) = Field(
+    external_name: Annotated[
+        str, StringConstraints(min_length=1, strip_whitespace=True)
+    ] = Field(
         description=(
             "The external name for the journey subcategory, which is shown on "
             "the experience screen"
@@ -97,7 +100,7 @@ async def update_journey_subcategory(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_subcategory_not_found",
                     message="The journey subcategory with that uid was not found, it may have been deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -149,7 +152,7 @@ async def update_journey_subcategory(
                 internal_name=args.internal_name,
                 external_name=args.external_name,
                 bias=args.bias,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

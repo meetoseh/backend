@@ -2,9 +2,9 @@ import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term, Function, ExistsCriterion
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast as typing_cast
 from fastapi import APIRouter, Header
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field, validator
 from db.utils import ParenthisizeCriterion
 from image_files.models import ImageFileRef
@@ -163,6 +163,11 @@ class InteractivePromptEventFilter(BaseModel):
         if v.operator != StandardOperator.EQUAL:
             raise ValueError("dropout_for_total must be filtered using an equal filter")
 
+        if not isinstance(v.value, int):
+            raise ValueError(
+                "dropout_for_total must be filtered to a specific value, not a range"
+            )
+
         if v.value is None or v.value < 1:
             raise ValueError("dropout_for_total must be greater than or equal to 1")
 
@@ -188,7 +193,8 @@ class InteractivePromptEventFilter(BaseModel):
 
 class ReadInteractivePromptEventRequest(BaseModel):
     filters: InteractivePromptEventFilter = Field(
-        default_factory=InteractivePromptEventFilter, description="the filters to apply"
+        default_factory=lambda: InteractivePromptEventFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[InteractivePromptEventSortOption]] = Field(
         None, description="the sort order to apply"
@@ -198,7 +204,7 @@ class ReadInteractivePromptEventRequest(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "filters": {
                     "prompt_time": {
@@ -309,7 +315,7 @@ async def read_interactive_prompt_events(
     sort = cleanup_sort(INTERACTIVE_PROMPT_EVENT_SORT_OPTIONS, sort, ["uid", "random"])
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         if args.filters.interactive_prompt_uid is None:
@@ -328,6 +334,7 @@ async def read_interactive_prompt_events(
         if (args.sort and "random" in args.sort) and (
             args.filters.dropout_for_total is None
             or args.filters.dropout_for_total.operator != StandardOperator.EQUAL
+            or not isinstance(args.filters.dropout_for_total.value, int)
             or args.filters.dropout_for_total.value > 100
         ):
             # random sorts are very expensive for large datasets; this prevents
@@ -409,13 +416,16 @@ async def read_interactive_prompt_events(
         if first_item is not None or last_item is not None:
             next_page_sort = get_next_page_sort(first_item, last_item, sort)
 
-        return JSONResponse(
+        return Response(
             content=ReadInteractivePromptEventResponse(
                 items=items,
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).dict()
+            ).model_dump_json(),
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+            },
         )
 
 
@@ -431,12 +441,15 @@ async def raw_read_interactive_prompt_events(
     dropout_bucket: Optional[int] = None
     for filter in filters_to_apply:
         if filter[0] == "dropout_for_total":
+            assert isinstance(filter[1], FilterItem)
+            assert isinstance(filter[1].value, int)
             dropout_for_total = filter[1].value
             continue
 
         if filter[0] == "prompt_time":
-            pt_filter: FilterItemModel[float] = filter[1]
+            pt_filter = typing_cast(FilterItemModel[float], filter[1])
             assert pt_filter.operator == StandardOperator.BETWEEN_EXCLUSIVE_END
+            assert isinstance(pt_filter.value, (list, tuple))
             dropout_bucket = int(pt_filter.value[0])
 
         new_filters_to_apply.append(filter)
@@ -544,8 +557,8 @@ async def raw_read_interactive_prompt_events(
     response = await cursor.execute(query.get_sql(), qargs)
     items: List[InteractivePromptEvent] = []
     for row in response.results or []:
-        evtype: str = row[4]
-        event_data: dict = json.loads(row[5])
+        evtype = typing_cast(EventType, row[4])
+        event_data = typing_cast(dict, json.loads(row[5]))
 
         if evtype in ("join", "leave"):
             event_data["name"] = row[9]
@@ -557,7 +570,7 @@ async def raw_read_interactive_prompt_events(
                 interactive_prompt_uid=row[2],
                 uid=row[3],
                 evtype=evtype,
-                data=event_data,
+                data=event_data,  # type: ignore  (let pydantic validate it)
                 prompt_time=row[6],
                 created_at=row[7],
                 icon=(
@@ -576,4 +589,7 @@ async def raw_read_interactive_prompt_events(
 def item_pseudocolumns(item: InteractivePromptEvent) -> dict:
     """returns the dictified item such that the keys in the return dict match
     the keys of the sort options, but only if sorting is possible on that key"""
-    return item.dict()
+    return {
+        "uid": item.uid,
+        "prompt_time": item.prompt_time,
+    }

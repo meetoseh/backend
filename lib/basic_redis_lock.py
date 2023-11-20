@@ -15,7 +15,7 @@ class LockHeldError(Exception):
 @asynccontextmanager
 async def basic_redis_lock(
     itgs: Itgs, key: Union[str, bytes], *, spin: bool = False, timeout: float = 5
-) -> None:
+):
     """Uses redis for a very basic lock on the given key, releasing it when done
 
     Args:

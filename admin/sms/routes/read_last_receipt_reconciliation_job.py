@@ -82,22 +82,22 @@ async def read_last_receipt_reconciliation_job(
         async with redis.pipeline() as pipe:
             pipe.multi()
             await pipe.hmget(
-                b"stats:sms:receipt_reconciliation_job",
-                b"started_at",
-                b"finished_at",
-                b"running_time",
-                b"stop_reason",
-                b"attempted",
-                b"pending",
-                b"succeeded",
-                b"failed",
-                b"found",
-                b"updated",
-                b"duplicate",
-                b"out_of_order",
-                b"removed",
-            )
-            await pipe.llen(b"sms:event:purgatory")
+                b"stats:sms:receipt_reconciliation_job",  # type: ignore
+                b"started_at",  # type: ignore
+                b"finished_at",  # type: ignore
+                b"running_time",  # type: ignore
+                b"stop_reason",  # type: ignore
+                b"attempted",  # type: ignore
+                b"pending",  # type: ignore
+                b"succeeded",  # type: ignore
+                b"failed",  # type: ignore
+                b"found",  # type: ignore
+                b"updated",  # type: ignore
+                b"duplicate",  # type: ignore
+                b"out_of_order",  # type: ignore
+                b"removed",  # type: ignore
+            )  # type: ignore
+            await pipe.llen(b"sms:event:purgatory")  # type: ignore
             result, num_in_purgatory = await pipe.execute()
 
         if result[0] is None or result[1] is None:
@@ -121,7 +121,7 @@ async def read_last_receipt_reconciliation_job(
                 out_of_order=int(result[11]),
                 removed=int(result[12]),
                 purgatory_size=num_in_purgatory,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

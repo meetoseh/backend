@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal, Optional, cast as typing_cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from interactive_prompts.events.models import (
@@ -47,7 +47,7 @@ async def join_interactive_prompt(
             interactive_prompt_jwt=args.interactive_prompt_jwt,
             interactive_prompt_uid=args.interactive_prompt_uid,
         )
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         # required for stats
@@ -60,10 +60,10 @@ async def join_interactive_prompt(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="user_not_found",
                     message="Despite valid authorization, you don't seem to exist. Your account may have been deleted.",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
-                    "Retry-After": 15,
+                    "Retry-After": "15",
                 },
                 status_code=503,
             )
@@ -100,7 +100,7 @@ async def join_interactive_prompt(
                 store_event_data=NoInteractivePromptEventData(),
             )
         )
-        if not result.success:
+        if result.result is None:
             return result.error_response
 
         await users.lib.stats.on_interactive_prompt_session_started(
@@ -140,7 +140,9 @@ async def set_user_created_at_in_cache(
 
 async def get_user_created_at_from_cache(itgs: Itgs, *, sub: str) -> Optional[float]:
     cache = await itgs.local_cache()
-    return cache.get(f"users:{sub}:created_at".encode("utf-8"))
+    return typing_cast(
+        Optional[float], cache.get(f"users:{sub}:created_at".encode("utf-8"))
+    )
 
 
 async def get_user_created_at_from_db(itgs: Itgs, *, sub: str) -> Optional[float]:

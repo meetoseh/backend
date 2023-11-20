@@ -68,7 +68,7 @@ async def read_delayed_link_clicks_sorted_set_info(
                 length=length,
                 overdue=overdue,
                 oldest_score=oldest_score,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

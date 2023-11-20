@@ -1,4 +1,3 @@
-import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -57,7 +56,7 @@ async def read_pending_sorted_set_info(authorization: Optional[str] = Header(Non
             content=ReadPendingSortedSetInfoResponse(
                 length=length,
                 oldest_score=oldest_score,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

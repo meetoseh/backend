@@ -45,7 +45,7 @@ ERROR_409_TYPES = Literal["already_owned"]
 ALREADY_OWNED_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
         type="already_owned", message="You already own the extended classes pack."
-    ).json(),
+    ).model_dump_json(),
     status_code=409,
     headers={"Content-Type": "application/json; charset=utf-8"},
 )
@@ -55,7 +55,7 @@ PROVIDER_ERROR_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_503_TYPES](
         type="provider_error",
         message="There was an error communicating with the payment provider.",
-    ).json(),
+    ).model_dump_json(),
     status_code=503,
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "60"},
 )
@@ -82,7 +82,7 @@ async def create_purchase_link(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         entitlement = await get_entitlement(
@@ -124,6 +124,7 @@ async def create_purchase_link(
                     }
                 ],
             )
+            assert session.url is not None
         except Exception as exc:
             await handle_error(exc)
             raise UserSafeError(
@@ -132,7 +133,7 @@ async def create_purchase_link(
                     content=StandardErrorResponse[ERROR_503_TYPES](
                         type="provider_error",
                         message="There was an error communicating with our payment provider.",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
                         "Retry-After": "5",

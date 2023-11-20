@@ -1,15 +1,17 @@
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from auth import auth_any
+from error_middleware import handle_warning
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 import users.lib.entitlements as entitlements
 
 
 class ReadEntitlementResponse(BaseModel):
-    identifier: Literal["pro"] = Field(
+    identifier: str = Field(
         description=("The identifier of the requested entitlement.")
     )
     is_active: bool = Field(description=("Whether the user has the given entitlement"))
@@ -74,8 +76,23 @@ async def read_entitlement(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
+
+        if identifier != "pro":
+            await handle_warning(
+                f"{__name__}:unknown_identifier",
+                f"unknown identifier {identifier} requested by {auth_result.result.sub}",
+            )
+            return Response(
+                content=ReadEntitlementResponse(
+                    identifier=identifier,
+                    is_active=False,
+                    expiration_date=None,
+                    checked_at=time.time(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+            )
 
         force = pragma == "no-cache"
         if force:
@@ -87,7 +104,7 @@ async def read_entitlement(
                     content=StandardErrorResponse[ERROR_429_TYPES](
                         type="ratelimited",
                         message="You have exceeded the rate limit for this endpoint.",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={"Content-Type": "application/json; charset=utf-8"},
                     status_code=429,
                 )
@@ -103,7 +120,7 @@ async def read_entitlement(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="not_found",
                     message="Although your authorization is valid, you don't seem to exist.",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "10",
@@ -117,6 +134,6 @@ async def read_entitlement(
                 is_active=result.is_active,
                 expiration_date=result.expires_at,
                 checked_at=result.checked_at,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )

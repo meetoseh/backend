@@ -30,7 +30,6 @@ class ReadMyInterestsResponse(BaseModel):
             "unknown slugs should be ignored. May be empty. If a primary "
             "interest is set, it will be included in this list."
         ),
-        unique_items=True,
     )
 
     visitor_uid: str = Field(
@@ -68,7 +67,7 @@ async def read_my_interests(
             itgs, visitor=visitor, source=source, seen_at=request_at
         )
 
-        if auth_result.success:
+        if auth_result.result is not None:
             await push_visitor_user_association(
                 itgs, visitor, auth_result.result.sub, request_at
             )
@@ -76,7 +75,7 @@ async def read_my_interests(
         conn = await itgs.conn()
         cursor = conn.cursor("none")
 
-        if auth_result.success:
+        if auth_result.result is not None:
             response = await cursor.execute(
                 """
                 SELECT
@@ -119,7 +118,7 @@ async def read_my_interests(
                 primary_interest=primary_interest,
                 interests=interests,
                 visitor_uid=visitor,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

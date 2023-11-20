@@ -2,8 +2,8 @@ import secrets
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Optional, Annotated
 from auth import auth_admin
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE
@@ -14,9 +14,9 @@ router = APIRouter()
 
 
 class CreateInstructorRequest(BaseModel):
-    name: constr(strip_whitespace=True, min_length=1) = Field(
-        description="The display name for the instructor"
-    )
+    name: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1)
+    ] = Field(description="The display name for the instructor")
     bias: float = Field(
         description=(
             "A non-negative number generally less than 1 that influences "
@@ -55,7 +55,7 @@ async def create_instructor(
     """
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -78,7 +78,7 @@ async def create_instructor(
         return Response(
             content=CreateInstructorResponse(
                 uid=uid, name=args.name, bias=args.bias, created_at=now
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )

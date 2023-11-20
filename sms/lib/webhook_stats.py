@@ -116,8 +116,8 @@ async def attempt_increment_event(
 
     unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=timezone)
     await set_if_lower(client, b"stats:sms_webhooks:daily:earliest", unix_date)
-    await client.hincrby(
-        f"stats:sms_webhooks:daily:{unix_date}".encode("ascii"),
-        event.encode("utf-8"),
+    await client.hincrby(  # type: ignore
+        f"stats:sms_webhooks:daily:{unix_date}".encode("ascii"),  # type: ignore
+        event.encode("utf-8"),  # type: ignore
         amount,
     )

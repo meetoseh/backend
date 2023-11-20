@@ -75,7 +75,7 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
             await evict_external_journey(itgs, uid=uid)
             await purge_emotion_content_statistics_everywhere(itgs)
             return Response(
-                content=DeleteJourneyResponse(deleted_at=now).json(),
+                content=DeleteJourneyResponse(deleted_at=now).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=200,
             )
@@ -101,7 +101,7 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
                         "This journey has the following undeleted variations: "
                         + ", ".join(r[0] for r in response.results)
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
@@ -113,7 +113,7 @@ async def delete_journey(uid: str, authorization: Optional[str] = Header(None)):
                     "The journey with that uid was not found, or it was changed during this delete, "
                     "or it may already be soft-deleted"
                 ),
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=404,
         )

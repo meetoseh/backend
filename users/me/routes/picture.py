@@ -1,4 +1,4 @@
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
@@ -47,7 +47,7 @@ async def show_my_picture(authorization: Optional[str] = Header(None)):
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -72,25 +72,30 @@ async def show_my_picture(authorization: Optional[str] = Header(None)):
                 f"users:{auth_result.result.sub}:checking_profile_image".encode("utf-8")
             )
             if result is None:
-                return JSONResponse(
+                return Response(
                     content=StandardErrorResponse[ERROR_404_TYPE](
                         type="not_available",
                         message="you do not have a profile picture",
-                    ).dict(),
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
                     status_code=404,
                 )
 
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPE](
                     type="not_found",
                     message="you do not have a profile picture, or it hasn't been processed yet",
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
         image_file_uid: str = response.results[0][0]
         jwt = await image_files.auth.create_jwt(itgs, image_file_uid)
-        return JSONResponse(
-            content=ShowMyPictureResponse(uid=image_file_uid, jwt=jwt).dict(),
+        return Response(
+            content=ShowMyPictureResponse(
+                uid=image_file_uid, jwt=jwt
+            ).model_dump_json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

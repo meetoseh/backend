@@ -41,7 +41,7 @@ async def read_total_instructors(authorization: Optional[str] = Header(None)):
             value = int(value)
 
         return Response(
-            content=TotalInstructorsResponse(value=value).json(),
+            content=TotalInstructorsResponse(value=value).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=1, stale-while-revalidate=60, stale-if-error=86400",

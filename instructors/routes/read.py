@@ -15,7 +15,6 @@ from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from image_files.models import ImageFileRef
 import image_files.auth as img_file_auth
 from itgs import Itgs
-from resources.standard_text_operator import StandardTextOperator
 
 
 class Instructor(BaseModel):
@@ -81,6 +80,18 @@ class InstructorFilter(BaseModel):
             "seconds since the unix epoch"
         ),
     )
+
+    def __init__(
+        self,
+        *,
+        name: Optional[FilterTextItemModel] = None,
+        bias: Optional[FilterItemModel[float]] = None,
+        created_at: Optional[FilterItemModel[float]] = None,
+        deleted_at: Optional[FilterItemModel[float]] = None,
+    ):
+        super().__init__(
+            name=name, bias=bias, created_at=created_at, deleted_at=deleted_at
+        )
 
 
 class ReadInstructorRequest(BaseModel):
@@ -155,7 +166,7 @@ async def read_instructors(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -228,4 +239,10 @@ async def raw_read_instructors(
 def item_pseudocolumns(item: Instructor) -> dict:
     """returns the dictified item such that the keys in the return dict match
     the keys of the sort options"""
-    return item.dict()
+    return {
+        "uid": item.uid,
+        "name": item.name,
+        "bias": item.bias,
+        "created_at": item.created_at,
+        "deleted_at": item.deleted_at,
+    }

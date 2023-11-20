@@ -53,11 +53,11 @@ async def start_journeys_interactive_prompt(
     """
     async with Itgs() as itgs:
         std_auth_result = await std_auth_any(itgs, authorization)
-        if not std_auth_result.success:
+        if std_auth_result.result is None:
             return std_auth_result.error_response
 
         journey_auth_result = await journey_auth_any(itgs, f"bearer {args.journey_jwt}")
-        if not journey_auth_result.success:
+        if journey_auth_result.result is None:
             return journey_auth_result.error_response
 
         if journey_auth_result.result.journey_uid != args.journey_uid:
@@ -72,7 +72,7 @@ async def start_journeys_interactive_prompt(
                         "the JWT are not encrypted, so e.g., https://jwt.io can be used to "
                         "check which token you have."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                 },
@@ -103,7 +103,7 @@ async def start_journeys_interactive_prompt(
                     message=(
                         "The journey has been modified or deleted. Please try again."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "15",
@@ -147,7 +147,7 @@ async def start_journeys_interactive_prompt(
                         "The session failed to start. This could be because the journey "
                         "has been modified or deleted. Please try again."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "15",
@@ -171,7 +171,7 @@ async def start_journeys_interactive_prompt(
                     message=(
                         "The journey has been modified or deleted. Please try again."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "15",

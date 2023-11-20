@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Dict, Optional, List
+from typing import Dict, Literal, Optional, List
 from admin.logs.routes.read_daily_reminder_settings_log import (
     interpret_day_of_week_mask,
 )
@@ -35,8 +35,8 @@ class DailyReminderChannelSettings(BaseModel):
         description="The latest time the user receives daily reminders, in seconds since midnight",
     )
     days: List[DayOfWeek] = Field(
-        unique_items=True,
         description="The days of the week that the user receives daily reminders",
+        max_length=7,
     )
     is_real: bool = Field(
         description=(
@@ -74,7 +74,7 @@ async def read_daily_reminder_settings(authorization: Optional[str] = Header(Non
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -111,14 +111,14 @@ async def read_daily_reminder_settings(authorization: Optional[str] = Header(Non
                 email=get_implied_settings(settings_by_channel, "email", ["sms"]),
                 sms=get_implied_settings(settings_by_channel, "sms", ["push"]),
                 push=get_implied_settings(settings_by_channel, "push", ["email"]),
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
 
 def get_implied_settings(
     settings_by_channel: Dict[str, RealDailyReminderChannelSettings],
-    channel: str,
+    channel: Literal["email", "sms", "push"],
     preferred_channels: List[str],
 ) -> DailyReminderChannelSettings:
     """Determines the effective daily reminder settings for the given
@@ -180,7 +180,7 @@ def get_implied_settings(
             days=best_match.days,
             is_real=False,
         )
-    time_range = DailyReminderTimeRange(preset="unspecified")
+    time_range = DailyReminderTimeRange(preset="unspecified", start=None, end=None)
     return DailyReminderChannelSettings(
         start=time_range.effective_start(channel),
         end=time_range.effective_end(channel),

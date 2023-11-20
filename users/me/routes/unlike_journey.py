@@ -14,7 +14,7 @@ JOURNEY_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="journey_not_found",
         message="The user hasn't liked this journey or its been deleted",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -42,7 +42,7 @@ async def unlike_journey(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()

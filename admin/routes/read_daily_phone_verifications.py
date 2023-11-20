@@ -2,7 +2,7 @@ import io
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
-from typing import Dict, Iterable, List, Literal, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple, Union, cast as typing_cast
 from auth import auth_admin
 from content_files.lib.serve_s3_file import read_in_parts
 from models import STANDARD_ERRORS_BY_CODE
@@ -38,7 +38,7 @@ class ReadDailyPhoneVerificationsResponse(BaseModel):
     )
 
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
                 "labels": ["2020-01-01", "2020-01-02", "2020-01-03"],
                 "total": [10, 20, 30],
@@ -72,7 +72,7 @@ async def read_daily_phone_verifications(
     from_date: Optional[str] = None,
     to_date: Optional[str] = None,
     authorization: Optional[str] = Header(None),
-) -> None:
+) -> Response:
     """Determines the number of approved phone verifications for each day
     in the given range. If one end of the range is not specified it's
     30 days from the other end. If neither end is specified, the end is
@@ -108,22 +108,22 @@ async def read_daily_phone_verifications(
     if parsed_from is not None and parsed_to is not None and parsed_to < parsed_from:
         parsed_from = None
 
-    from_unix_date: Optional[int] = None
-    to_unix_date: Optional[int] = None
-
     if parsed_from is None and parsed_to is None:
         to_unix_date = today - 1
-    elif parsed_from is None:
+        from_unix_date = to_unix_date - 29
+    elif parsed_from is None and parsed_to is not None:
         to_unix_date = unix_dates.date_to_unix_date(parsed_to)
         if to_unix_date > today - 1:
             to_unix_date = today - 1
         from_unix_date = to_unix_date - 29
-    elif parsed_to is None:
+    elif parsed_to is None and parsed_from is not None:
         from_unix_date = unix_dates.date_to_unix_date(parsed_from)
         to_unix_date = min(today - 1, from_unix_date + 29)
         if from_unix_date > to_unix_date:
             from_unix_date = to_unix_date
     else:
+        assert parsed_from is not None
+        assert parsed_to is not None
         from_unix_date = unix_dates.date_to_unix_date(parsed_from)
         to_unix_date = unix_dates.date_to_unix_date(parsed_to)
         if to_unix_date > today - 1:
@@ -151,6 +151,7 @@ async def read_daily_phone_verifications(
     async with Itgs() as itgs:
         auth_result = await auth_admin(itgs, authorization)
         if not auth_result.success:
+            assert auth_result.error_response is not None
             return auth_result.error_response
 
         return await get_daily_phone_verifications(
@@ -219,14 +220,14 @@ async def get_daily_phone_verifications(
                 cached_days[i].first for i in range(from_unix_date, to_unix_date + 1)
             ],
         )
-        .json()
+        .model_dump_json()
         .encode("utf-8")
     )
     await write_daily_phone_verifications_to_local_cache(
         itgs,
         from_unix_date=from_unix_date,
         to_unix_date=to_unix_date,
-        serialized=serialized,
+        serialized=io.BytesIO(serialized),
     )
     return Response(content=serialized, headers=HEADERS)
 
@@ -248,7 +249,7 @@ def iter_contiguous_ranges(src: Iterable[int]) -> Iterable[Tuple[int, int]]:
     start = None
     stop = None
     for item in src:
-        if start is None:
+        if start is None or stop is None:
             start = item
             stop = item
         elif item == stop + 1:
@@ -258,7 +259,7 @@ def iter_contiguous_ranges(src: Iterable[int]) -> Iterable[Tuple[int, int]]:
             start = item
             stop = item
 
-    if start is not None:
+    if start is not None and stop is not None:
         yield start, stop
 
 
@@ -278,14 +279,19 @@ async def get_daily_phone_verifications_from_local_cache(
             method for serving it, otherwise None
     """
     local_cache = await itgs.local_cache()
-    raw = local_cache.get(
-        f"daily_phone_verifications:{from_unix_date}:{to_unix_date}".encode("utf-8"),
-        read=True,
+    raw = typing_cast(
+        Union[bytes, io.BytesIO, None],
+        local_cache.get(
+            f"daily_phone_verifications:{from_unix_date}:{to_unix_date}".encode(
+                "utf-8"
+            ),
+            read=True,
+        ),
     )
     if raw is None:
         return None
 
-    if isinstance(raw, bytes):
+    if isinstance(raw, (bytes, bytearray, memoryview)):
         return Response(content=raw, status_code=200, headers=HEADERS)
 
     return StreamingResponse(
@@ -343,11 +349,11 @@ async def get_daily_phone_verifications_from_redis(
                 if start + i > to_unix_date:
                     break
                 await pipe.hmget(
-                    f"daily_phone_verifications:{start + i}".encode("utf-8"),
-                    b"total",
-                    b"users",
-                    b"first",
-                )
+                    f"daily_phone_verifications:{start + i}".encode("utf-8"),  # type: ignore
+                    b"total",  # type: ignore
+                    b"users",  # type: ignore
+                    b"first",  # type: ignore
+                )  # type: ignore
             results = await pipe.execute()
 
         for i, (total, users, first) in enumerate(results):
@@ -384,8 +390,8 @@ async def write_daily_phone_verifications_to_redis(
                     break
                 had_entries = True
                 key = f"daily_phone_verifications:{date}".encode("utf-8")
-                await pipe.hmset(
-                    key,
+                await pipe.hmset(  # type: ignore
+                    key,  # type: ignore
                     {
                         b"total": str(value.total).encode("utf-8"),
                         b"users": str(value.users).encode("utf-8"),
@@ -462,9 +468,11 @@ async def get_daily_phone_verifications_from_db(
             (start_unix_time, end_unix_time),
         )
 
-        total: int = response.results[0][0]
-        users: int = response.results[0][1]
-        first: int = response.results[0][2]
+        assert response.results is not None
+
+        total = typing_cast(int, response.results[0][0])
+        users = typing_cast(int, response.results[0][1])
+        first = typing_cast(int, response.results[0][2])
 
         result.append(
             ReadDailyPhoneVerificationDay(

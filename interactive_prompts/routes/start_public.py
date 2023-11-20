@@ -4,7 +4,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from error_middleware import handle_contextless_error
 from interactive_prompts.models.prompt import Prompt, WordPrompt
-from typing import Dict, Literal, Optional, Tuple
+from typing import Dict, Literal, Optional, Tuple, cast as typing_cast
 from interactive_prompts.lib.read_one_external import read_one_external
 from interactive_prompts.models.external_interactive_prompt import (
     ExternalInteractivePrompt,
@@ -123,7 +123,7 @@ async def start_public_interactive_prompt(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         public_prompt = PUBLIC_INTERACTIVE_PROMPTS[args.identifier]
@@ -166,7 +166,7 @@ async def start_public_interactive_prompt(
                         "The session failed to start. This could be because the prompt "
                         "has been modified or deleted. Please try again."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "15",
@@ -192,7 +192,7 @@ async def start_public_interactive_prompt(
                         "The prompt failed to load. This could be because the prompt "
                         "has been modified or deleted. Please try again."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "15",
@@ -303,15 +303,18 @@ async def get_current_interactive_prompt_uid_from_local_cache(
     and if so, return None.
     """
     local_cache = await itgs.local_cache()
-    raw = local_cache.get(
-        f"interactive_prompts:special:{public_prompt.identifier}:info".encode("utf-8")
+    raw = typing_cast(
+        Optional[bytes],
+        local_cache.get(
+            f"interactive_prompts:special:{public_prompt.identifier}:info".encode(
+                "utf-8"
+            )
+        ),
     )
     if raw is None:
         return None
 
-    info = LocallyCachedPublicInteractivePrompt.parse_raw(
-        raw, content_type="application/json"
-    )
+    info = LocallyCachedPublicInteractivePrompt.model_validate_json(raw)
     if info.version != public_prompt.version:
         return None
     return info.uid
@@ -330,11 +333,11 @@ async def get_current_interactive_prompt_uid_and_expiration_from_redis(
     and if so, return None.
     """
     redis = await itgs.redis()
-    raw = await redis.hmget(
-        f"interactive_prompts:special:{public_prompt.identifier}:info".encode("utf-8"),
-        b"uid",
-        b"version",
-        b"expires_at",
+    raw = await redis.hmget(  # type: ignore
+        f"interactive_prompts:special:{public_prompt.identifier}:info".encode("utf-8"),  # type: ignore
+        b"uid",  # type: ignore
+        b"version",  # type: ignore
+        b"expires_at",  # type: ignore
     )
 
     if raw[0] is None:
@@ -403,7 +406,7 @@ async def create_interactive_prompt(
                 """,
                 (
                     uid,
-                    public_prompt.prompt.json(),
+                    public_prompt.prompt.model_dump_json(),
                     public_prompt.duration_seconds,
                     time.time(),
                 ),
@@ -442,8 +445,8 @@ async def store_interactive_prompt_in_redis(
     async with redis.pipeline() as pipe:
         pipe.multi()
         await pipe.delete(key)
-        await pipe.hmset(
-            key,
+        await pipe.hmset(  # type: ignore
+            key,  # type: ignore
             mapping={
                 b"uid": uid.encode("utf-8"),
                 b"version": str(public_prompt.version).encode("utf-8"),
@@ -469,7 +472,7 @@ async def store_interactive_prompt_in_local_cache(
     local_cache.set(
         f"interactive_prompts:special:{public_prompt.identifier}:info".encode("utf-8"),
         LocallyCachedPublicInteractivePrompt(version=public_prompt.version, uid=uid)
-        .json()
+        .model_dump_json()
         .encode("utf-8"),
         expire=expire_in,
     )

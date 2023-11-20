@@ -94,7 +94,7 @@ async def delete_journey_subcategory(
                             ]
                         )
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
@@ -103,7 +103,7 @@ async def delete_journey_subcategory(
             content=StandardErrorResponse[ERROR_404_TYPES](
                 type="journey_subcategory_not_found",
                 message="The journey subcategory with that uid was not found, it may have been deleted",
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=404,
         )

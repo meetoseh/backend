@@ -3,7 +3,7 @@ from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term, Case, ExistsCriterion
 from pypika.functions import Coalesce, Max, Function, AggregateFunction
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast as typing_cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -84,7 +84,7 @@ class UserFilter(BaseModel):
 
 class ReadUserRequest(BaseModel):
     filters: UserFilter = Field(
-        default_factory=UserFilter, description="the filters to apply"
+        default_factory=lambda: UserFilter.model_validate({}), description="the filters to apply"
     )
     sort: Optional[List[UserSortOption]] = Field(
         None, description="the order to sort by"
@@ -154,12 +154,12 @@ async def read_users(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
 
-base_keys: Set[str] = frozenset(
+base_keys = frozenset(
     (
         "sub",
         "given_name",
@@ -376,15 +376,15 @@ async def raw_read_users(
 
     for key, filter in filters_to_apply:
         if key == "utm":
-            query = query.where(utm_term(filter, qargs))
+            query = query.where(utm_term(typing_cast(FilterTextItem, filter), qargs))
         elif key == "email":
-            query = query.where(email_term(filter, qargs))
+            query = query.where(email_term(typing_cast(FilterTextItem, filter), qargs))
         elif key == "email_verified":
-            query = query.where(email_verified_term(filter, qargs))
+            query = query.where(email_verified_term(typing_cast(FilterItem[bool], filter), qargs))
         elif key == "phone_number":
-            query = query.where(phone_term(filter, qargs))
+            query = query.where(phone_term(typing_cast(FilterTextItem, filter), qargs))
         elif key == "phone_number_verified":
-            query = query.where(phone_verified_term(filter, qargs))
+            query = query.where(phone_verified_term(typing_cast(FilterItem[bool], filter), qargs))
         else:
             query = query.where(filter.applied_to(pseudocolumn(key), qargs))
 

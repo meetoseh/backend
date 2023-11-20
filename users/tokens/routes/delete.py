@@ -31,7 +31,7 @@ async def delete_user_token(uid: str, authorization: Optional[str] = Header(None
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
         conn = await itgs.conn()
         cursor = conn.cursor("none")
@@ -52,6 +52,7 @@ async def delete_user_token(uid: str, authorization: Optional[str] = Header(None
         return JSONResponse(
             content=StandardErrorResponse[ERROR_404_TYPE](
                 type="not_found", message="user token not found"
-            ).dict(),
+            ).model_dump_json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=404,
         )

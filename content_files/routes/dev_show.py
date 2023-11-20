@@ -1,4 +1,4 @@
-from fastapi.responses import JSONResponse
+from fastapi.responses import Response
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 from typing import Literal
@@ -46,15 +46,17 @@ async def dev_show_content_file(uid: str):
             "SELECT 1 FROM content_files WHERE uid=?", (uid,)
         )
         if not response.results:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPE](
                     type="not_found", message="There is no content file with that uid"
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
         jwt = await content_files.auth.create_jwt(itgs, uid)
-        return JSONResponse(
-            content=DevShowContentFileResponse(uid=uid, jwt=jwt).dict(),
+        return Response(
+            content=DevShowContentFileResponse(uid=uid, jwt=jwt).model_dump_json(),
+            headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

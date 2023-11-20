@@ -3,7 +3,6 @@ from fastapi.responses import Response
 from typing import List, Literal, Optional
 import pytz
 from auth import auth_id
-from error_middleware import handle_error
 from lib.contact_methods.contact_method_stats import contact_method_stats
 from lib.daily_reminders.registration_stats import (
     DailyReminderRegistrationStatsPreparer,
@@ -37,7 +36,7 @@ HAS_ACTIVE_STRIPE_SUBSCRIPTION_RESPONSE = Response(
             "it will be canceled but you will not be refunded for any remaining time. "
             "To cancel your subscription, go to your account page."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -54,7 +53,7 @@ HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE = Response(
             "cancel your subscription, follow the instructions at "
             "https://support.apple.com/en-us/HT202039"
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -70,7 +69,7 @@ HAS_ACTIVE_GOOGLE_SUBSCRIPTION_RESPONSE = Response(
             "it will be canceled but you might not be refunded for any remaining time. "
             "To cancel your subscription, go to your Settings page."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -85,7 +84,7 @@ HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE = Response(
             "You have an active promotional subscription. If you delete your account, "
             "you may not be able to recover it."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -99,7 +98,7 @@ TOO_MANY_REQUESTS_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_429_TYPES](
         type="too_many_requests",
         message="You are doing that too much. Try again in a minute.",
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -117,7 +116,7 @@ MULTIPLE_UPDATES_RESPONSE = Response(
             "There are multiple updates in progress or the account has "
             "already been deleted. Log back in and try again."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "no-store",
@@ -152,7 +151,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         async with delete_lock(itgs, auth_result.result.sub) as got_lock:
@@ -221,7 +220,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                         # we may be less generous with refunds in the future if people
                         # abuse this
                         await revenue_cat.refund_and_revoke_google_play_subscription(
-                            itgs, revenue_cat_id, product_id
+                            revenue_cat_id=revenue_cat_id, product_id=product_id
                         )
                     elif subscription.store == "stripe":
                         if stripe_customer_id is None:
@@ -258,7 +257,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
                         for stripe_subscription in stripe_subscriptions:
                             await run_in_threadpool(
                                 stripe.Subscription.delete,
-                                stripe_subscription.id,
+                                stripe_subscription.id,  # type: ignore
                                 prorate=True,
                                 api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
                             )
@@ -312,7 +311,7 @@ async def cleanup_user_daily_reminders(itgs: Itgs, sub: str) -> None:
     conn = await itgs.conn()
     cursor = conn.cursor()
 
-    channels = ["sms", "email", "push"]
+    channels: List[Literal["sms", "email", "push"]] = ["sms", "email", "push"]
 
     response = await cursor.executemany3(
         tuple(
@@ -508,7 +507,7 @@ async def cleanup_siwo_identities(itgs: Itgs, sub: str) -> None:
 
 
 @asynccontextmanager
-async def delete_lock(itgs: Itgs, sub: str) -> bool:
+async def delete_lock(itgs: Itgs, sub: str):
     """An asynchronous context manager that ensures only one delete operation can
     be performed at a time for a given user. Provides true if the lock was acquired,
     false if it was not.

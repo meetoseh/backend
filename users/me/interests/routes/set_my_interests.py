@@ -68,9 +68,8 @@ class SetMyInterestsRequest(BaseModel):
             "recognized, in which case the request will fail with a 404. This "
             "must include the primary interest and contain only unique values."
         ),
-        min_items=1,
-        max_items=10,
-        unique_items=True,
+        min_length=1,
+        max_length=10,
     )
 
     source: VisitorSource = Field(
@@ -96,7 +95,7 @@ UNRECOGNIZED_PRIMARY_INTEREST_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="unrecognized_primary_interest",
         message="The primary interest was not recognized.",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -141,7 +140,7 @@ async def set_my_interests(
             itgs, visitor=visitor, source=args.source, seen_at=request_at
         )
 
-        if auth_result.success:
+        if auth_result.result is not None:
             await push_visitor_user_association(
                 itgs,
                 visitor_uid=visitor,
@@ -152,7 +151,7 @@ async def set_my_interests(
         conn = await itgs.conn()
         cursor = conn.cursor()
 
-        if auth_result.success:
+        if auth_result.result is not None:
             new_uids = [
                 f"oseh_uint_{secrets.token_urlsafe(16)}" for _ in args.interests
             ]
@@ -354,6 +353,7 @@ async def set_my_interests(
                 f"SELECT slug FROM interests WHERE slug IN ({interests_qmarks})",
                 args.interests,
             )
+            assert response2.results, (args.interests, interests_qmarks, response2)
             stored_interests = [row[0] for row in response2.results]
 
         return Response(
@@ -361,7 +361,7 @@ async def set_my_interests(
                 primary_interest=args.primary_interest,
                 interests=stored_interests,
                 visitor_uid=visitor,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

@@ -43,7 +43,7 @@ async def respond_to_interactive_prompt_press_prompt_start(
             interactive_prompt_jwt=args.interactive_prompt_jwt,
             interactive_prompt_uid=args.interactive_prompt_uid,
         )
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         interactive_prompt_sessions = Table("interactive_prompt_sessions")
@@ -134,7 +134,7 @@ async def respond_to_interactive_prompt_press_prompt_start(
                             ](
                                 type="impossible_event",
                                 message="A press prompt start event requires the interactive prompt has a press prompt",
-                            ).json(),
+                            ).model_dump_json(),
                             headers={"Content-Type": "application/json; charset=utf-8"},
                             status_code=409,
                         ),
@@ -192,7 +192,7 @@ async def respond_to_interactive_prompt_press_prompt_start(
                                 message=(
                                     "The user is already pressing down on the press prompt."
                                 ),
-                            ).json(),
+                            ).model_dump_json(),
                             headers={"Content-Type": "application/json; charset=UTF-8"},
                             status_code=409,
                         ),
@@ -218,6 +218,6 @@ async def respond_to_interactive_prompt_press_prompt_start(
                 ),
             ],
         )
-        if not result.success:
+        if result.result is None:
             return result.error_response
         return result.result.response

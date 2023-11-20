@@ -85,10 +85,10 @@ async def read_progress_info(
                 timezone = timezone_raw.decode("utf-8")
 
                 progress_raw = await redis.hmget(
-                    f"daily_reminders:progress:{timezone}:{unix_date}".encode("utf-8"),
-                    b"start_time",
-                    b"uid",
-                    b"finished",
+                    f"daily_reminders:progress:{timezone}:{unix_date}".encode("utf-8"),  # type: ignore
+                    b"start_time",  # type: ignore
+                    b"uid",  # type: ignore
+                    b"finished",  # type: ignore
                 )
 
                 if progress_raw[0] is None:
@@ -108,7 +108,7 @@ async def read_progress_info(
             content=ReadProgressInfoResponse(
                 earliest_unix_date=earliest_unix_date,
                 progress_by_date_and_timezone=progress_by_date_and_timezone,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

@@ -1,15 +1,19 @@
-from typing import List, Optional
+from typing import List, Sequence, Literal, Optional, Protocol, cast as typing_cast
 from itgs import Itgs
 from dataclasses import dataclass
 from personalization.lib.s01_find_combinations import InstructorCategoryAndBias
-from personalization.lib.s03a_find_feedback import JourneyFeedback
+from personalization.lib.s03a_find_feedback import (
+    JourneyFeedback,
+    JourneyFeedbackWithDebugInfo,
+    JourneyFeedbackWithoutDebugInfo,
+)
 
 
 @dataclass
 class FeedbackScoreDebugInfoTerm:
     """Describes the components of a single summand in the feedback score"""
 
-    feedback: JourneyFeedback
+    feedback: JourneyFeedbackWithDebugInfo
     """The feedback that was used"""
     age_term: float
     """The value for the term which reduces the weight of older feedback"""
@@ -50,12 +54,26 @@ class FeedbackScore:
     """
 
 
+class FeedbackScoreProtocol(Protocol):
+    score: float
+
+
+class FeedbackScoreWithoutDebugInfo(Protocol):
+    score: float
+    debug_info: Literal[None]
+
+
+class FeedbackScoreWithDebugInfo(Protocol):
+    score: float
+    debug_info: FeedbackScoreDebugInfo
+
+
 async def map_to_feedback_score(
     itgs: Itgs,
     *,
     combinations: List[InstructorCategoryAndBias],
     feedback: List[JourneyFeedback],
-    debug: bool = False
+    debug: bool = False,
 ) -> List[FeedbackScore]:
     """Maps the list of combinations to the resulting feedback score, incorporating
     the journey feedback, instructor bias, and category bias. Note this score should
@@ -71,6 +89,42 @@ async def map_to_feedback_score(
             for each combination
     """
     return [get_feedback_score(comb, feedback, debug=debug) for comb in combinations]
+
+
+async def map_to_feedback_score_with_debug(
+    itgs: Itgs,
+    *,
+    combinations: List[InstructorCategoryAndBias],
+    feedback: Sequence[JourneyFeedbackWithDebugInfo],
+) -> Sequence[FeedbackScoreWithDebugInfo]:
+    """map_to_feedback_score with debug=True and more precise typing"""
+    return typing_cast(
+        List[FeedbackScoreWithDebugInfo],
+        map_to_feedback_score(
+            itgs,
+            combinations=combinations,
+            feedback=typing_cast(List[JourneyFeedback], feedback),
+            debug=True,
+        ),
+    )
+
+
+async def map_to_feedback_score_without_debug(
+    itgs: Itgs,
+    *,
+    combinations: List[InstructorCategoryAndBias],
+    feedback: Sequence[JourneyFeedbackWithoutDebugInfo],
+) -> Sequence[FeedbackScoreWithoutDebugInfo]:
+    """map_to_feedback_score with debug=False and more precise typing"""
+    return typing_cast(
+        List[FeedbackScoreWithoutDebugInfo],
+        map_to_feedback_score(
+            itgs,
+            combinations=combinations,
+            feedback=typing_cast(List[JourneyFeedback], feedback),
+            debug=True,
+        ),
+    )
 
 
 def get_feedback_score(
@@ -95,10 +149,10 @@ def get_feedback_score(
         )
         net_score = net_score_scale * item.rating
 
-        if debug:
+        if terms is not None:
             terms.append(
                 FeedbackScoreDebugInfoTerm(
-                    feedback=item,
+                    feedback=typing_cast(JourneyFeedbackWithDebugInfo, item),
                     age_term=age_term,
                     category_relevance_term=category_relevance_term,
                     instructor_relevance_term=instructor_relevance_term,
@@ -119,7 +173,7 @@ def get_feedback_score(
         score=score,
         debug_info=(
             None
-            if not debug
+            if terms is None
             else FeedbackScoreDebugInfo(
                 terms=terms,
                 terms_sum=terms_sum,

@@ -13,7 +13,6 @@ from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from itgs import Itgs
-from resources.standard_text_operator import StandardTextOperator
 import image_files.auth as image_files_auth
 from image_files.models import ImageFileRef
 
@@ -82,6 +81,29 @@ class JourneyBackgroundImageFilter(BaseModel):
     last_uploaded_at: Optional[FilterItemModel[float]] = Field(
         None, description="the timestamp of when the image file was last uploaded"
     )
+
+    def __init__(
+        self,
+        *,
+        uid: Optional[FilterTextItemModel] = None,
+        image_file_uid: Optional[FilterTextItemModel] = None,
+        image_file_created_at: Optional[FilterItemModel[float]] = None,
+        blurred_image_file_uid: Optional[FilterTextItemModel] = None,
+        darkened_image_file_uid: Optional[FilterTextItemModel] = None,
+        original_file_sha512: Optional[FilterTextItemModel] = None,
+        uploaded_by_user_sub: Optional[FilterTextItemModel] = None,
+        last_uploaded_at: Optional[FilterItemModel[float]] = None,
+    ):
+        super().__init__(
+            uid=uid,
+            image_file_uid=image_file_uid,
+            image_file_created_at=image_file_created_at,
+            blurred_image_file_uid=blurred_image_file_uid,
+            darkened_image_file_uid=darkened_image_file_uid,
+            original_file_sha512=original_file_sha512,
+            uploaded_by_user_sub=uploaded_by_user_sub,
+            last_uploaded_at=last_uploaded_at,
+        )
 
 
 class ReadJourneyBackgroundImageRequest(BaseModel):
@@ -159,7 +181,7 @@ async def read_journey_background_images(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

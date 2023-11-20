@@ -40,7 +40,7 @@ async def start_course_download(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -59,7 +59,7 @@ async def start_course_download(
         entitlement = await users.lib.entitlements.get_entitlement(
             itgs, user_sub=auth_result.result.sub, identifier=entitlement_iden
         )
-        if not entitlement.is_active:
+        if entitlement is None or not entitlement.is_active:
             return AUTHORIZATION_UNKNOWN_TOKEN
 
         slack = await itgs.slack()
@@ -80,7 +80,7 @@ async def start_course_download(
             itgs, course_uid=args.course_uid, duration=60
         )
         return Response(
-            content=CourseRef(uid=args.course_uid, jwt=course_jwt).json(),
+            content=CourseRef(uid=args.course_uid, jwt=course_jwt).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

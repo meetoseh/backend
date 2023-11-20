@@ -1,7 +1,7 @@
 """Module for working with Sign in with Oseh Elevation JWTs"""
 from dataclasses import dataclass
 import time
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, Union, cast as typing_cast
 from fastapi.responses import Response
 from error_middleware import handle_error
 from lib.shared.redis_hash import RedisHash
@@ -11,7 +11,7 @@ import jwt
 import os
 
 
-ELEVATE_ERRORS_BY_STATUS: Dict[str, Dict[str, Any]] = {
+ELEVATE_ERRORS_BY_STATUS: Dict[Union[int, str], Dict[str, Any]] = {
     "401": {
         "description": "if the SIWO_Elevation cookie is not set",
         "model": StandardErrorResponse[ERROR_401_TYPE],
@@ -116,7 +116,7 @@ INVALID_TOKEN_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_403_TYPE](
         type="invalid",
         message="The SIWO_Elevation cookie was invalid",
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Set-Cookie": "SIWO_Elevation=; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
         "Content-Type": "application/json; charset=utf-8",
@@ -145,7 +145,7 @@ async def auth_jwt(itgs: Itgs, elevation: Optional[str], *, revoke: bool) -> Aut
                     content=StandardErrorResponse[ERROR_401_TYPE](
                         type="not_set",
                         message="The SIWO_Elevation cookie was not set",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={"Content-Type": "application/json; charset=utf-8"},
                     status_code=401,
                 ),
@@ -221,8 +221,8 @@ async def auth_jwt(itgs: Itgs, elevation: Optional[str], *, revoke: bool) -> Aut
                 nx=True,
                 exat=int(payload["exp"]) + 61,
             )
-            await pipe.hgetall(
-                f"sign_in_with_oseh:hidden_state:elevation:{jti}".encode("utf-8")
+            await pipe.hgetall(  # type: ignore
+                f"sign_in_with_oseh:hidden_state:elevation:{jti}".encode("utf-8")  # type: ignore
             )
             await pipe.delete(
                 f"sign_in_with_oseh:hidden_state:elevation:{jti}".encode("utf-8")
@@ -254,8 +254,8 @@ async def auth_jwt(itgs: Itgs, elevation: Optional[str], *, revoke: bool) -> Aut
         async with redis.pipeline() as pipe:
             pipe.multi()
             await pipe.get(f"sign_in_with_oseh:revoked:elevation:{jti}".encode("utf-8"))
-            await pipe.hgetall(
-                f"sign_in_with_oseh:hidden_state:elevation:{jti}".encode("utf-8")
+            await pipe.hgetall(  # type: ignore
+                f"sign_in_with_oseh:hidden_state:elevation:{jti}".encode("utf-8")  # type: ignore
             )
             result = await pipe.execute()
 
@@ -281,7 +281,7 @@ async def auth_jwt(itgs: Itgs, elevation: Optional[str], *, revoke: bool) -> Aut
         hidden_state_raw = RedisHash(result[1])
 
     hidden_state = ElevateJWTHiddenState(
-        reason=hidden_state_raw.get_str(b"reason"),
+        reason=typing_cast(ElevateReason, hidden_state_raw.get_str(b"reason")),
     )
 
     return AuthResult(
@@ -334,8 +334,8 @@ async def create_jwt(
     redis = await itgs.redis()
     async with redis.pipeline() as pipe:
         pipe.multi()
-        await pipe.hset(
-            f"sign_in_with_oseh:hidden_state:elevation:{jti}".encode("utf-8"),
+        await pipe.hset(  # type: ignore
+            f"sign_in_with_oseh:hidden_state:elevation:{jti}".encode("utf-8"),  # type: ignore
             mapping={
                 b"reason": hidden_state.reason.encode("utf-8"),
             },

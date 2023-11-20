@@ -60,7 +60,7 @@ async def read_buffered_link_sorted_set_info(
             content=ReadBufferedLinkSortedSetInfoResponse(
                 length=length,
                 oldest_score=oldest_score,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

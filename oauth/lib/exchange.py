@@ -3,7 +3,7 @@ import secrets
 import phonenumbers
 from pydantic import BaseModel, Field, validator
 from dataclasses import dataclass
-from typing import Awaitable, Callable, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Union
 from error_middleware import handle_warning
 from itgs import Itgs
 import aiohttp
@@ -27,6 +27,7 @@ from redis.exceptions import NoScriptError
 from pypika import Table, Query, Parameter
 from pypika.terms import ExistsCriterion
 from loguru import logger
+import oauth.lib.start_merge_auth
 import users.lib.stats
 import jwt
 import time
@@ -142,6 +143,16 @@ class OauthExchangeResponse(BaseModel):
     )
 
 
+class OauthMergeExchangeResponse(BaseModel):
+    merge_jwt: str = Field(
+        description=(
+            "A specialized JWT that the original user can pass along with valid authorization "
+            "for the original account in order to attempt the merge process."
+        )
+    )
+    """A JWT created as if by oauth.lib.start_merge_auth.create_jwt"""
+
+
 class OauthCodeInvalid(Exception):
     """Returned when the code is invalid or has expired"""
 
@@ -168,12 +179,73 @@ async def fetch_state(itgs: Itgs, state: str) -> Optional[OauthState]:
     if state_info_raw is None:
         return None
 
-    return OauthState.parse_raw(state_info_raw)
+    return OauthState.model_validate_json(state_info_raw)
 
 
 async def use_standard_exchange(
     itgs: Itgs, code: str, provider: ProviderSettings, state: OauthState
 ) -> OauthExchangeResponse:
+    """Performs the standard exchange of a code from the given provider for
+    on Oseh platform id token and refresh token. This will ignore
+    `state.merging_with_user_sub`
+    """
+    claims = await fetch_provider_token_claims(itgs, code, provider, state)
+    interpreted_claims = await interpret_provider_claims(itgs, provider, claims)
+    user = await initialize_user_from_info(
+        itgs, provider.name, interpreted_claims, claims
+    )
+    return await create_tokens_for_user(
+        itgs,
+        user=user,
+        interpreted_claims=interpreted_claims,
+        redirect_uri=state.redirect_uri,
+        refresh_token_desired=state.refresh_token_desired,
+    )
+
+
+async def use_standard_merge_exchange(
+    itgs: Itgs, code: str, provider: ProviderSettings, state: OauthState
+) -> OauthMergeExchangeResponse:
+    """Performs the standard merge-exchange of a code from the given provider
+    to associate the identity with the user with sub `state.merging_with_user_sub`.
+    """
+    assert (
+        state.merging_with_user_sub is not None
+    ), "cannot use merge exchange without original user sub"
+    claims = await fetch_provider_token_claims(itgs, code, provider, state)
+    merge_jwt = await oauth.lib.start_merge_auth.create_jwt(
+        itgs,
+        original_user_sub=state.merging_with_user_sub,
+        provider=provider.name,
+        provider_claims=claims,
+    )
+    return OauthMergeExchangeResponse(
+        merge_jwt=merge_jwt,
+    )
+
+
+async def fetch_provider_token_claims(
+    itgs: Itgs, code: str, provider: ProviderSettings, state: OauthState
+) -> Dict[str, Any]:
+    """Uses the given code to fetch an id token from the given provider
+    which can be decoded to get the claims. We don't validate the signature
+    of the token as it was received over a secure connection (and we don't
+    necessarily have a way to verify the signature anyway, and whatever we
+    did do would also rely on TLS).
+
+    Args:
+        itgs (Itgs): the integrations to (re)use
+        code (str): the code to exchange
+        provider (ProviderSettings): the provider to use
+        state (OauthState): the state associated with the secret received from
+            the client
+
+    Returns:
+        dict[str, Any]: The claims from the provider
+
+    Raises:
+        OauthCodeInvalid: if the code is invalid or has expired
+    """
     async with aiohttp.ClientSession() as session:
         async with session.post(
             provider.token_endpoint,
@@ -200,18 +272,7 @@ async def use_standard_exchange(
 
             id_token = data["id_token"]
 
-    claims = jwt.decode(id_token, options={"verify_signature": False})
-    interpreted_claims = await interpret_provider_claims(itgs, provider, claims)
-    user = await initialize_user_from_info(
-        itgs, provider.name, interpreted_claims, claims
-    )
-    return await create_tokens_for_user(
-        itgs,
-        user=user,
-        interpreted_claims=interpreted_claims,
-        redirect_uri=state.redirect_uri,
-        refresh_token_desired=state.refresh_token_desired,
-    )
+    return jwt.decode(id_token, options={"verify_signature": False})
 
 
 async def create_tokens_for_user(
@@ -602,7 +663,7 @@ async def _try_login_existing_account_with_identity(
                 ex=10,
             )
             await pipe.rpush(
-                b"jobs:hot",
+                b"jobs:hot",  # type: ignore
                 json.dumps(
                     {
                         "name": "runners.check_profile_picture",
@@ -635,7 +696,7 @@ async def _try_login_existing_account_with_identity(
 @dataclass
 class _LoginQuery:
     query: str
-    qargs: list
+    qargs: Union[list, tuple]
     response_handler: Callable[
         [Itgs, ResultItem, ContactMethodStatsPreparer], Awaitable[None]
     ]
@@ -647,7 +708,7 @@ def _update_last_seen(
     def slack_context() -> str:
         return (
             f"\n\n```\result={clean_for_slack(repr(result))}\n```\n\n"
-            f"```\example_claims={clean_for_slack(repr(example_claims))}\n```\n\n"
+            f"```\nexample_claims={clean_for_slack(repr(example_claims))}\n```\n\n"
         )
 
     async def handler(itgs: Itgs, item: ResultItem, stats: ContactMethodStatsPreparer):
@@ -674,7 +735,7 @@ def _make_update_contact_method_handler(
     interpreted_claims: InterpretedClaims,
     now: float,
     *,
-    channel: str,
+    channel: Literal["email", "phone"],
     claim_is_verified: bool,
     enabled_initially: bool,
 ):
@@ -686,7 +747,7 @@ def _make_update_contact_method_handler(
         return (
             f"\n\n```\nuser={clean_for_slack(repr(user))}\n```\n\n"
             f"```\nprovider={clean_for_slack(repr(provider))}\n```\n\n"
-            f"```\ninterpreted_claims={clean_for_slack(repr(interpreted_claims))}\n```",
+            f"```\ninterpreted_claims={clean_for_slack(repr(interpreted_claims))}\n```"
         )
 
     async def handler(
@@ -780,7 +841,9 @@ def _make_update_contact_method_handler(
 
                 drr_stats = DailyReminderRegistrationStatsPreparer()
                 drr_stats.incr_subscribed(
-                    unix_date, channel=channel, reason="email_added"
+                    unix_date,
+                    channel="sms" if channel == "phone" else channel,
+                    reason="email_added",
                 )
                 stats.stats.merge_with(drr_stats)
         else:
@@ -804,7 +867,7 @@ def _update_email(
         interpreted_claims,
         now,
         channel="email",
-        claim_is_verified=interpreted_claims.email_verified,
+        claim_is_verified=not not interpreted_claims.email_verified,
         enabled_initially=True,
     )
 
@@ -843,7 +906,7 @@ def _update_email(
             qargs=[
                 new_uea_uid,
                 interpreted_claims.email,
-                int(interpreted_claims.email_verified),
+                int(not not interpreted_claims.email_verified),
                 True,
                 now,
                 user.user_sub,
@@ -1034,7 +1097,7 @@ def _update_phone(
         interpreted_claims,
         now,
         channel="phone",
-        claim_is_verified=interpreted_claims.phone_number_verified,
+        claim_is_verified=not not interpreted_claims.phone_number_verified,
         enabled_initially=False,
     )
 
@@ -1072,7 +1135,7 @@ def _update_phone(
             qargs=[
                 new_upn_uid,
                 interpreted_claims.phone_number,
-                int(interpreted_claims.phone_number_verified),
+                int(not not interpreted_claims.phone_number_verified),
                 False,
                 now,
                 user.user_sub,
@@ -1267,7 +1330,7 @@ async def _try_create_new_account_with_identity(
     async with redis.pipeline() as pipe:
         pipe.multi()
         await pipe.rpush(
-            b"jobs:hot",
+            b"jobs:hot",  # type: ignore
             json.dumps(
                 {
                     "name": "runners.revenue_cat.ensure_user",
@@ -1458,7 +1521,7 @@ def _insert_email(
             ContactMethodStatsPreparer(stats).incr_created(
                 unix_date,
                 channel="email",
-                verified=interpreted_claims.email_verified,
+                verified=not not interpreted_claims.email_verified,
                 enabled=True,
                 reason="identity",
             )
@@ -1485,7 +1548,7 @@ def _insert_email(
             qargs=[
                 new_uea_uid,
                 interpreted_claims.email,
-                int(interpreted_claims.email_verified),
+                int(not not interpreted_claims.email_verified),
                 True,
                 now,
                 user_sub,
@@ -1585,7 +1648,7 @@ def _insert_phone(
             ContactMethodStatsPreparer(stats).incr_created(
                 unix_dates.unix_timestamp_to_unix_date(now, tz=tz),
                 channel="phone",
-                verified=interpreted_claims.phone_number_verified,
+                verified=not not interpreted_claims.phone_number_verified,
                 enabled=False,
                 reason="identity",
             )
@@ -1605,7 +1668,7 @@ def _insert_phone(
             qargs=[
                 new_uea_uid,
                 interpreted_claims.phone_number,
-                int(interpreted_claims.phone_number_verified),
+                int(not not interpreted_claims.phone_number_verified),
                 False,
                 now,
                 user_sub,
@@ -1708,7 +1771,7 @@ async def sorted_set_insert_with_max_length_and_min_score(
     ]
 
     try:
-        await redis.evalsha(*evalsha_args)
+        await redis.evalsha(*evalsha_args)  # type: ignore
     except NoScriptError:
         true_hash = await redis.script_load(
             SORTED_SET_INSERT_WITH_MAX_LENGTH_AND_MIN_SCORE_SCRIPT
@@ -1718,4 +1781,4 @@ async def sorted_set_insert_with_max_length_and_min_score(
                 f"sorted set insert script hash mismatch: {true_hash=} != {SORTED_SET_INSERT_WITH_MAX_LENGTH_AND_MIN_SCORE_SCRIPT_SHA=}"
             )
 
-        await redis.evalsha(*evalsha_args)
+        await redis.evalsha(*evalsha_args)  # type: ignore

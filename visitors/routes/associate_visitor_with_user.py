@@ -6,7 +6,6 @@ from itgs import Itgs
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE
 import time
-import json
 import re
 from visitors.lib.get_or_create_visitor import (
     VisitorSource,
@@ -55,7 +54,7 @@ async def associate_visitor_with_user(
 
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         seen_at = time.time()
@@ -67,7 +66,7 @@ async def associate_visitor_with_user(
         )
         return Response(
             status_code=202,
-            content=CreateVisitorResponse(uid=sane_visitor).json(),
+            content=CreateVisitorResponse(uid=sane_visitor).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -91,7 +90,7 @@ async def push_visitor_user_association(
             user_sub=user_sub,
             seen_at=seen_at,
         )
-        .json()
+        .model_dump_json()
         .encode("utf-8")
     )
     await push_visitor_association(

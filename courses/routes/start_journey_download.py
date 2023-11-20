@@ -40,7 +40,7 @@ JOURNEY_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="journey_not_found",
         message="That journey does not exist, or it is not in that course, or you do not own that course",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
 )
 
@@ -68,7 +68,7 @@ async def start_journey_download(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -169,7 +169,7 @@ async def start_journey_download(
                     )
                 ),
                 last_taken_at=new_last_taken_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
             },

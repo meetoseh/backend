@@ -1,5 +1,4 @@
 import json
-import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -43,8 +42,8 @@ async def read_receipt_cold_set_info(authorization: Optional[str] = Header(None)
         hot_set_key = b"push:push_tickets:hot"
 
         async with redis.pipeline(transaction=False) as pipe:
-            await pipe.llen(hot_set_key)
-            await pipe.lindex(hot_set_key, 0)
+            await pipe.llen(hot_set_key)  # type: ignore
+            await pipe.lindex(hot_set_key, 0)  # type: ignore
             length, oldest_item = await pipe.execute()
 
         if oldest_item is not None:
@@ -56,7 +55,7 @@ async def read_receipt_cold_set_info(authorization: Optional[str] = Header(None)
             content=ReadReceiptHotSetInfoResponse(
                 length=length,
                 oldest_last_queued_at=oldest_last_queued_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

@@ -47,7 +47,7 @@ async def respond_to_interactive_prompt_numeric_prompt(
             interactive_prompt_jwt=args.interactive_prompt_jwt,
             interactive_prompt_uid=args.interactive_prompt_uid,
         )
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         interactive_prompt_sessions = Table("interactive_prompt_sessions")
@@ -118,7 +118,7 @@ async def respond_to_interactive_prompt_numeric_prompt(
                                     "A numeric prompt response can only be provided to a "
                                     "numeric prompt interactive prompt."
                                 ),
-                            ).json(),
+                            ).model_dump_json(),
                             headers={
                                 "Content-Type": "application/json; charset=utf-8",
                             },
@@ -157,7 +157,7 @@ async def respond_to_interactive_prompt_numeric_prompt(
                                     "The given rating is outside of the range of the "
                                     "interactive prompt's numeric prompt."
                                 ),
-                            ).json(),
+                            ).model_dump_json(),
                             headers={
                                 "Content-Type": "application/json; charset=utf-8",
                             },
@@ -185,6 +185,6 @@ async def respond_to_interactive_prompt_numeric_prompt(
                 ),
             ],
         )
-        if not result.success:
+        if result.result is None:
             return result.error_response
         return result.result.response

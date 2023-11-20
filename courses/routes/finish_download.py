@@ -24,7 +24,7 @@ async def finish_course_download(uid: str, authorization: Optional[str] = Header
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         if auth_result.result.course_uid != uid:

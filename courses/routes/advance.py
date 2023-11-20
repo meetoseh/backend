@@ -6,7 +6,6 @@ from typing import Literal, Optional
 from itgs import Itgs
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
-from journeys.lib.notifs import on_entering_lobby
 import users.lib.entitlements
 
 
@@ -36,7 +35,7 @@ NOT_FOUND_RESPONSE = Response(
             "You either have not started that course, have already finished it, "
             "or don't have access to it."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -51,7 +50,7 @@ JOURNEY_IS_NOT_NEXT_RESPONSE = Response(
             "the course was changed under you or the course was advanced "
             "in a different window/tab."
         ),
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -97,7 +96,7 @@ async def advance_course(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -156,7 +155,7 @@ async def advance_course(
         entitlement = await users.lib.entitlements.get_entitlement(
             itgs, user_sub=auth_result.result.sub, identifier=entitlement_iden
         )
-        if not entitlement.is_active:
+        if entitlement is None or not entitlement.is_active:
             return NOT_FOUND_RESPONSE
 
         if not is_next_journey:
@@ -221,7 +220,7 @@ async def advance_course(
         return Response(
             content=AdvanceCourseResponse(
                 new_next_journey_uid=next_journey_uid,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

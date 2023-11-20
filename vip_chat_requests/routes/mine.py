@@ -62,7 +62,7 @@ async def read_vip_chat_request(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -97,9 +97,17 @@ async def read_vip_chat_request(
             )
             return Response(status_code=204)
 
-        parsed_display_data = Phone04102023VariantInternal.parse_raw(
-            display_data, content_type="application/json"
+        parsed_display_data = Phone04102023VariantInternal.model_validate_json(
+            display_data
         )
+        assert parsed_display_data.background_image_uid is not None
+        assert parsed_display_data.image_uid is not None
+        assert parsed_display_data.phone_number is not None
+        assert parsed_display_data.text_prefill is not None
+        assert parsed_display_data.image_caption is not None
+        assert parsed_display_data.title is not None
+        assert parsed_display_data.message is not None
+        assert parsed_display_data.cta is not None
 
         return Response(
             content=ReadVIPChatResponse(
@@ -123,7 +131,7 @@ async def read_vip_chat_request(
                     message=parsed_display_data.message,
                     cta=parsed_display_data.cta,
                 ),
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

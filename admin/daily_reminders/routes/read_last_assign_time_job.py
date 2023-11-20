@@ -84,23 +84,23 @@ async def last_assign_time_job(
         if not auth_result.success:
             return auth_result.error_response
         redis = await itgs.redis()
-        result = await redis.hmget(
-            b"stats:daily_reminders:assign_time_job",
-            b"started_at",
-            b"finished_at",
-            b"running_time",
-            b"stop_reason",
-            b"start_unix_date",
-            b"end_unix_date",
-            b"unique_timezones",
-            b"pairs",
-            b"queries",
-            b"attempted",
-            b"overdue",
-            b"stale",
-            b"sms_queued",
-            b"push_queued",
-            b"email_queued",
+        result = await redis.hmget(  # type: ignore
+            b"stats:daily_reminders:assign_time_job",  # type: ignore
+            b"started_at",  # type: ignore
+            b"finished_at",  # type: ignore
+            b"running_time",  # type: ignore
+            b"stop_reason",  # type: ignore
+            b"start_unix_date",  # type: ignore
+            b"end_unix_date",  # type: ignore
+            b"unique_timezones",  # type: ignore
+            b"pairs",  # type: ignore
+            b"queries",  # type: ignore
+            b"attempted",  # type: ignore
+            b"overdue",  # type: ignore
+            b"stale",  # type: ignore
+            b"sms_queued",  # type: ignore
+            b"push_queued",  # type: ignore
+            b"email_queued",  # type: ignore
         )
 
         if result[0] is None or result[1] is None:
@@ -123,7 +123,7 @@ async def last_assign_time_job(
                 sms_queued=int(result[12]),
                 push_queued=int(result[13]),
                 email_queued=int(result[14]),
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

@@ -1,4 +1,11 @@
-from typing import Callable, Coroutine, List, NoReturn as Never, Optional
+from typing import (
+    Callable,
+    Coroutine,
+    List,
+    NoReturn as Never,
+    Optional,
+    cast as typing_cast,
+)
 from error_middleware import handle_error
 from itgs import Itgs
 from emotions.routes.read import Emotion
@@ -95,9 +102,7 @@ async def get_emotion_content_statistics_from_redis(
     raw = await redis.get(b"emotion_content_statistics")
     if raw is None:
         return None
-    parsed = CachedEmotionContentStatistics.parse_raw(
-        raw, content_type="application/json"
-    )
+    parsed = CachedEmotionContentStatistics.model_validate_json(raw)
     return parsed.stats
 
 
@@ -105,12 +110,10 @@ async def get_emotion_content_statistics_from_cache(
     itgs: Itgs,
 ) -> Optional[List[EmotionContentStatistics]]:
     cache = await itgs.local_cache()
-    raw = cache.get(b"emotion_content_statistics")
+    raw = typing_cast(bytes, cache.get(b"emotion_content_statistics"))
     if raw is None:
         return None
-    parsed = CachedEmotionContentStatistics.parse_raw(
-        raw, content_type="application/json"
-    )
+    parsed = CachedEmotionContentStatistics.model_validate_json(raw)
     return parsed.stats
 
 
@@ -128,7 +131,7 @@ async def get_emotion_content_statistics_from_db(
         for (word, antonym) in (response.results or [])
     ]
     if not all_emotions:
-        return all_emotions
+        return []
 
     response = await cursor.execute(
         """
@@ -174,8 +177,12 @@ async def set_emotion_content_statistics_in_cache(
     itgs: Itgs, *, stats: Optional[List[EmotionContentStatistics]]
 ):
     cache = await itgs.local_cache()
-    raw = CachedEmotionContentStatistics(stats=stats).json().encode("utf-8")
     if stats is not None:
+        raw = (
+            CachedEmotionContentStatistics(stats=stats)
+            .model_dump_json()
+            .encode("utf-8")
+        )
         cache.set(
             b"emotion_content_statistics",
             raw,
@@ -190,8 +197,12 @@ async def set_emotion_content_statistics_in_redis(
     itgs: Itgs, *, stats: Optional[List[EmotionContentStatistics]]
 ):
     redis = await itgs.redis()
-    raw = CachedEmotionContentStatistics(stats=stats).json().encode("utf-8")
     if stats is not None:
+        raw = (
+            CachedEmotionContentStatistics(stats=stats)
+            .model_dump_json()
+            .encode("utf-8")
+        )
         await redis.set(
             b"emotion_content_statistics",
             raw,
@@ -224,8 +235,14 @@ async def update_emotion_content_statistics_everywhere(
         stats (List[EmotionContentStatistics]): The statistics to update
             to
     """
-    msg = EmotionContentPurgeMessage(replace_stats=stats).json().encode("utf-8")
-    new_stats = CachedEmotionContentStatistics(stats=stats).json().encode("utf-8")
+    msg = (
+        EmotionContentPurgeMessage(replace_stats=stats)
+        .model_dump_json()
+        .encode("utf-8")
+    )
+    new_stats = (
+        CachedEmotionContentStatistics(stats=stats).model_dump_json().encode("utf-8")
+    )
 
     redis = await itgs.redis()
     async with redis.pipeline(transaction=True) as pipe:
@@ -253,7 +270,9 @@ async def purge_emotion_content_statistics_everywhere(
             specify them here. Currently unused, but left open for
             future use.
     """
-    message = EmotionContentPurgeMessage(replace_stats=None).json().encode("utf-8")
+    message = (
+        EmotionContentPurgeMessage(replace_stats=None).model_dump_json().encode("utf-8")
+    )
 
     redis = await itgs.redis()
     async with redis.pipeline(transaction=True) as pipe:
@@ -275,13 +294,14 @@ async def handle_emotion_content_purge_message(
         itgs (Itgs): The integrations to (re)use
         message (EmotionContentPurgeMessage): The message to handle
     """
+    global stats_listeners
     listeners = stats_listeners
     stats_listeners = []
 
     await set_emotion_content_statistics_in_cache(itgs, stats=message.replace_stats)
     for listener in listeners:
         try:
-            listener(message.replace_stats)
+            await listener(message.replace_stats)
         except Exception as e:
             await handle_error(
                 e, extra_info="while handling emotion content purge message listener"
@@ -292,12 +312,12 @@ async def emotion_content_statistics_purge_cache_loop() -> Never:
     """Loops indefinitely, listening for messages from the channel to
     purge the emotion content statistics cache.
     """
+    assert pps.instance is not None
+
     async with pps.PPSSubscription(
         pps.instance, "ps:emotion_content_statistics:push_cache", "emotion_content"
     ) as subscription:
         async for raw_message in subscription:
-            message = EmotionContentPurgeMessage.parse_raw(
-                raw_message, content_type="application/json"
-            )
+            message = EmotionContentPurgeMessage.model_validate_json(raw_message)
             async with Itgs() as itgs:
                 await handle_emotion_content_purge_message(itgs, message=message)

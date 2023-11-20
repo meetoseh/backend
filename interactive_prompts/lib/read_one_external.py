@@ -4,7 +4,16 @@ prompt using a 2-layer cooperative caching strategy (db -> local disk)
 import asyncio
 import json
 import random
-from typing import AsyncIterator, Dict, List, Literal, NoReturn, Optional, Union
+from typing import (
+    AsyncIterator,
+    Dict,
+    List,
+    Literal,
+    NoReturn,
+    Optional,
+    Union,
+    cast as typing_cast,
+)
 from fastapi.responses import Response, StreamingResponse
 from error_middleware import handle_contextless_error, handle_error
 from itgs import Itgs
@@ -63,7 +72,7 @@ async def read_one_external(
         itgs, interactive_prompt_uid=interactive_prompt_uid
     )
     if local_stored_format is not None:
-        if isinstance(local_stored_format, bytes):
+        if isinstance(local_stored_format, (bytes, bytearray, memoryview)):
             local_stored_format = io.BytesIO(local_stored_format)
         return StreamingResponse(
             content=convert_stored_format_to_response(
@@ -111,7 +120,7 @@ async def read_one_external(
                 )
                 # fall down into the got-lock scenario
             else:
-                if isinstance(local_stored_format, bytes):
+                if isinstance(local_stored_format, (bytes, bytearray, memoryview)):
                     local_stored_format = io.BytesIO(local_stored_format)
                 return StreamingResponse(
                     content=convert_stored_format_to_response(
@@ -187,9 +196,12 @@ async def read_local_cache(
             or None if it is not available in the local cache
     """
     cache = await itgs.local_cache()
-    return cache.get(
-        f"interactive_prompts:external:{interactive_prompt_uid}".encode("ascii"),
-        read=True,
+    return typing_cast(
+        Union[bytes, io.BytesIO],
+        cache.get(
+            f"interactive_prompts:external:{interactive_prompt_uid}".encode("ascii"),
+            read=True,
+        ),
     )
 
 
@@ -420,6 +432,7 @@ async def cache_push_loop() -> NoReturn:
     background task that is started when the server starts, as it will mostly
     idle.
     """
+    assert pps.instance is not None
     try:
         async with pps.PPSSubscription(
             pps.instance, "ps:interactive_prompts:push_cache", "ip-cpl"
@@ -451,7 +464,7 @@ async def cache_push_loop() -> NoReturn:
                                 event.set()
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
-            return
+            return  # type: ignore
         await handle_error(e)
     finally:
         print("interactive_prompts read_one_external cache_push_loop exiting")

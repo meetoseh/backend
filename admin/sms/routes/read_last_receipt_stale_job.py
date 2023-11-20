@@ -53,14 +53,14 @@ async def read_last_receipt_stale_job(authorization: Optional[str] = Header(None
         redis = await itgs.redis()
         async with redis.pipeline(transaction=False) as pipe:
             await pipe.hmget(
-                b"stats:sms:receipt_stale_job",
-                b"started_at",
-                b"finished_at",
-                b"running_time",
-                b"callbacks_queued",
-                b"stop_reason",
-            )
-            await pipe.llen(b"sms:recovery")
+                b"stats:sms:receipt_stale_job",  # type: ignore
+                b"started_at",  # type: ignore
+                b"finished_at",  # type: ignore
+                b"running_time",  # type: ignore
+                b"callbacks_queued",  # type: ignore
+                b"stop_reason",  # type: ignore
+            )  # type: ignore
+            await pipe.llen(b"sms:recovery")  # type: ignore
             result, recovery_queue_size = await pipe.execute()
 
         if result[0] is None or result[1] is None:
@@ -76,7 +76,7 @@ async def read_last_receipt_stale_job(authorization: Optional[str] = Header(None
                 if isinstance(result[4], bytes)
                 else result[4],
                 recovery_queue_size=recovery_queue_size,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

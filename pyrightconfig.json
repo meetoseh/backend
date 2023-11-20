@@ -1,0 +1,4 @@
+{
+  "reportDeprecated": "warning",
+  "reportUnusedImport": "warning"
+}

@@ -1,6 +1,6 @@
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, ExistsCriterion
+from pypika.terms import Term
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -29,6 +29,9 @@ class InterestFilter(BaseModel):
     slug: Optional[FilterTextItemModel] = Field(
         None, description="the slug of the interest"
     )
+
+    def __init__(self, *, slug: Optional[FilterTextItemModel] = None):
+        super().__init__(slug=slug)
 
 
 class ReadInterestRequest(BaseModel):
@@ -103,7 +106,7 @@ async def read_interests(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -148,4 +151,4 @@ async def raw_read_interests(
 def item_pseudocolumns(item: Interest) -> dict:
     """returns the dictified item such that the keys in the return dict match
     the keys of the sort options"""
-    return item.dict()
+    return {"slug": item.slug}

@@ -3,13 +3,12 @@ import secrets
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
-from typing import Optional, List
+from typing import Optional, List, Union, cast as typing_cast
 from pydantic import BaseModel, Field
 from itgs import Itgs
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from content_files.lib.serve_s3_file import read_in_parts, read_file_in_parts
-from temp_files import temp_file
 import unix_dates
 import pytz
 import datetime
@@ -95,9 +94,9 @@ async def read_utm_conversion_stats(
     Requires standard authorization for an admin user.
     """
     async with Itgs() as itgs:
-        # auth_result = await auth_admin(itgs, authorization)
-        # if not auth_result.success:
-        #     return auth_result.error_response
+        auth_result = await auth_admin(itgs, authorization)
+        if not auth_result.success:
+            return auth_result.error_response
 
         cur_unix_date = unix_dates.unix_date_today(tz=tz)
         req_unix_date = unix_dates.date_to_unix_date(datetime.date(year, month, day))
@@ -106,7 +105,7 @@ async def read_utm_conversion_stats(
             return Response(
                 content=UTMConversionStatsResponse(
                     rows=[], retrieved_at=time.time()
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                 },
@@ -145,7 +144,7 @@ async def get_response_for_date(
         return Response(
             content=UTMConversionStatsResponse(
                 rows=[], retrieved_at=time.time()
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
             },
@@ -179,7 +178,7 @@ async def get_response_for_date(
         return Response(
             content=UTMConversionStatsResponse(
                 rows=[], retrieved_at=time.time()
-            ).json(),
+            ).model_dump_json(),
             headers=headers,
         )
 
@@ -190,7 +189,7 @@ async def get_response_for_date(
 
 
 async def get_response_from_redis_as_temp_file(
-    itgs: Itgs, unix_date: str
+    itgs: Itgs, unix_date: int
 ) -> Optional[str]:
     """Writes the utm conversion stats for the given date from redis to a temp file,
     if they are available in redis, and returns the path to the temp file.
@@ -263,8 +262,9 @@ async def get_response_from_local_cache(
         (Response or None): The response if available, or None if not
     """
     local_cache = await itgs.local_cache()
-    res = local_cache.get(
-        f"utm_conversion_stats:{unix_date}".encode("ascii"), read=True
+    res = typing_cast(
+        Union[bytes, io.BytesIO, None],
+        local_cache.get(f"utm_conversion_stats:{unix_date}".encode("ascii"), read=True),
     )
     if res is None:
         return None
@@ -274,7 +274,7 @@ async def get_response_from_local_cache(
         "Cache-Control": "private, max-age=86400, stale-while-revalidate=86400, stale-if-error=86400",
     }
 
-    if isinstance(res, bytes):
+    if isinstance(res, (bytes, bytearray, memoryview)):
         return Response(
             content=res,
             status_code=200,
@@ -289,7 +289,7 @@ async def get_response_from_local_cache(
 
 
 async def set_response_in_local_cache(
-    itgs: Itgs, unix_date: int, raw: io.BytesIO
+    itgs: Itgs, unix_date: int, raw: io.BufferedReader
 ) -> None:
     """Writes the given raw response to the local cache for the given date
 
@@ -308,7 +308,7 @@ async def set_response_in_local_cache(
 
 
 async def write_response_from_redis(
-    itgs: Itgs, req_unix_date: int, out: io.BytesIO
+    itgs: Itgs, req_unix_date: int, out: io.BufferedWriter
 ) -> bool:
     """If the utm conversion stats are available in redis for the given day,
     writes those stats to the given writer. Otherwise, returns False
@@ -334,7 +334,7 @@ async def write_response_from_redis(
     out.write(b'{"rows":[')
     first = True
 
-    cursor: Optional[bytes] = None
+    cursor: Optional[int] = None
     utms_set_key = f"stats:visitors:daily:{req_unix_date}:utms".encode("utf-8")
     while cursor is None or int(cursor) != 0:
         cursor, utms_bytes = await redis.sscan(
@@ -349,6 +349,7 @@ async def write_response_from_redis(
                 raise Exception(f"Unexpected type for {raw_utm=}: {type(raw_utm)}")
 
             utm_parts = get_utm_parts(utm)
+            assert utm_parts is not None, utm
             (
                 visits_raw,
                 holdover_preexisting_raw,
@@ -357,8 +358,8 @@ async def write_response_from_redis(
                 preexisting_raw,
                 last_click_signups_raw,
                 any_click_signups_raw,
-            ) = await redis.hmget(
-                f"stats:visitors:daily:{utm}:{req_unix_date}:counts".encode("utf-8"),
+            ) = await redis.hmget(  # type: ignore
+                f"stats:visitors:daily:{utm}:{req_unix_date}:counts".encode("utf-8"),  # type: ignore
                 [
                     b"visits",
                     b"holdover_preexisting",
@@ -438,7 +439,7 @@ async def write_response_from_redis(
 
 
 async def write_response_from_db(
-    itgs: Itgs, req_unix_date: int, out: io.BytesIO
+    itgs: Itgs, req_unix_date: int, out: io.BufferedWriter
 ) -> bool:
     """If the utm conversion stats are available in the database for the given day,
     writes those stats to the given writer. Otherwise, returns False

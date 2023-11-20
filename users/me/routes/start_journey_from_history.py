@@ -29,7 +29,7 @@ JOURNEY_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="journey_not_found",
         message="There is no journey with that uid, or its been deleted, or the user hasn't taken it before",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -39,7 +39,7 @@ RACED_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_503_TYPES](
         type="failed_to_fetch",
         message="A journey was selected, but it could not be retrieved",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -68,7 +68,7 @@ async def start_journey_from_history(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -89,6 +89,7 @@ async def start_journey_from_history(
             """,
             (auth_result.result.sub, args.journey_uid),
         )
+        assert response.results
         if not response.results[0][0]:
             return JOURNEY_NOT_FOUND_RESPONSE
 
@@ -121,7 +122,7 @@ async def start_journey_from_history(
         )
         if response.rows_affected is None or response.rows_affected < 1:
             await handle_contextless_error(
-                f"failed to store user_journey for {auth_result.result.sub=} and {args.journey_uid=} from history"
+                extra_info=f"failed to store user_journey for {auth_result.result.sub=} and {args.journey_uid=} from history"
             )
 
         await on_entering_lobby(

@@ -1,4 +1,4 @@
-from typing import Dict, List, Literal, Optional, Tuple, Union, get_args, Any
+from typing import Dict, Iterable, List, Literal, Optional, Union, get_args, Any
 from fastapi.responses import Response, JSONResponse
 from resources.sort_dir import SortDir
 from resources.sort_item import SortItem
@@ -65,7 +65,7 @@ class UnknownSortItemError(InvalidSortError):
 
 
 def cleanup_sort(
-    options: Tuple[type], sort: List[SortItem], unique_keys: List[str]
+    options: Iterable[type], sort: List[SortItem], unique_keys: List[str]
 ) -> List[SortItem]:
     """Cleans up a sort options that may have come from a client, raising
     the appropriate InvalidSortError if they are invalid.
@@ -141,7 +141,7 @@ def cleanup_sort(
 
     if any(s.key not in valid_items for s in sort):
         unknown_keys = [s.key for s in sort if s.key not in valid_items]
-        raise UnknownSortItemError(unknown_keys)
+        raise UnknownSortItemError(key=",".join(unknown_keys))
 
     if any(s.__valuet__() != valid_items[s.key] for s in sort):
         incorrectly_optional_keys = [
@@ -185,7 +185,7 @@ def cleanup_sort(
         key = unique_keys[0]
         key_type = Literal[key]  # type: ignore
         cleaned_sort.append(
-            SortItem[key_type, valid_items[key]](
+            SortItem[key_type, valid_items[key]](  # type: ignore
                 unique_keys[0], SortDir.ASCENDING, None, None
             )
         )

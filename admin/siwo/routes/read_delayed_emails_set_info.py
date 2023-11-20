@@ -1,4 +1,3 @@
-import json
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -51,7 +50,7 @@ async def read_receipt_cold_set_info(authorization: Optional[str] = Header(None)
 
         async with redis.pipeline(transaction=False) as pipe:
             await pipe.zcard(zset_key)
-            await pipe.zcount(zset_key, b"-inf", request_at)
+            await pipe.zcount(zset_key, b"-inf", request_at)  # type: ignore
             await pipe.zrange(zset_key, 0, 0, withscores=True)
             length, overdue, oldest_item = await pipe.execute()
 
@@ -65,7 +64,7 @@ async def read_receipt_cold_set_info(authorization: Optional[str] = Header(None)
                 length=length,
                 overdue=overdue,
                 oldest_due_at=oldest_due_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

@@ -4,6 +4,7 @@ the integration is only loaded upon request.
 from typing import Callable, Coroutine, List, Optional
 import rqdb
 import rqdb.async_connection
+import rqdb.logging
 import redis.asyncio
 import diskcache
 import os
@@ -88,7 +89,7 @@ class Itgs:
             if self._conn is not None:
                 return self._conn
 
-            rqlite_ips = os.environ.get("RQLITE_IPS").split(",")
+            rqlite_ips = os.environ["RQLITE_IPS"].split(",")
             if not rqlite_ips:
                 raise ValueError("RQLITE_IPS not set -> cannot connect to rqlite")
 
@@ -98,19 +99,60 @@ class Itgs:
                     me._conn = None
 
             self._closures.append(cleanup)
+
+            def _err_log(msg: str):
+                loguru.logger.exception(msg)
+
+            def _dbg_log(msg: str, *, exc_info: bool = False):
+                if exc_info:
+                    _err_log(msg)
+                else:
+                    loguru.logger.debug(msg)
+
+            def _info_log(msg: str, *, exc_info: bool = False):
+                if exc_info:
+                    _err_log(msg)
+                else:
+                    loguru.logger.info(msg)
+
+            def _warning_log(msg: str, *, exc_info: bool = False):
+                if exc_info:
+                    _err_log(msg)
+                else:
+                    loguru.logger.warning(msg)
+
+            def _critical_log(msg: str, *, exc_info: bool = False):
+                if exc_info:
+                    _err_log(msg)
+                else:
+                    loguru.logger.critical(msg)
+
+            lvl_dbg = lambda: rqdb.logging.LogMessageConfig(
+                enabled=True, method=_dbg_log, level=10, max_length=None
+            )
+            lvl_info = lambda: rqdb.logging.LogMessageConfig(
+                enabled=True, method=_info_log, level=20, max_length=None
+            )
+            lvl_warning = lambda: rqdb.logging.LogMessageConfig(
+                enabled=True, method=_warning_log, level=30, max_length=None
+            )
+            lvl_critical = lambda: rqdb.logging.LogMessageConfig(
+                enabled=True, method=_critical_log, level=40, max_length=None
+            )
+
             c = rqdb.connect_async(
                 hosts=rqlite_ips,
                 log=rqdb.LogConfig(
-                    read_start={"method": loguru.logger.debug},
-                    read_response={"method": loguru.logger.debug},
-                    read_stale={"method": loguru.logger.debug},
-                    write_start={"method": loguru.logger.debug},
-                    write_response={"method": loguru.logger.debug},
-                    connect_timeout={"method": loguru.logger.warning},
-                    hosts_exhausted={"method": loguru.logger.critical},
-                    non_ok_response={"method": loguru.logger.warning},
-                    backup_start={"method": loguru.logger.info},
-                    backup_end={"method": loguru.logger.info},
+                    read_start=lvl_dbg(),
+                    read_response=lvl_dbg(),
+                    read_stale=lvl_dbg(),
+                    write_start=lvl_dbg(),
+                    write_response=lvl_dbg(),
+                    connect_timeout=lvl_warning(),
+                    hosts_exhausted=lvl_critical(),
+                    non_ok_response=lvl_warning(),
+                    backup_start=lvl_info(),
+                    backup_end=lvl_info(),
                 ),
             )
             await c.__aenter__()
@@ -127,7 +169,7 @@ class Itgs:
             if self._redis_main is not None:
                 return self._redis_main
 
-            redis_ips = os.environ.get("REDIS_IPS").split(",")
+            redis_ips = os.environ["REDIS_IPS"].split(",")
             if not redis_ips:
                 raise ValueError(
                     "REDIS_IPs is not set and so a redis connection cannot be established"
@@ -161,7 +203,7 @@ class Itgs:
             await s.__aenter__()
 
             async def cleanup(me: "Itgs") -> None:
-                await me._slack.__aexit__(None, None, None)
+                await s.__aexit__(None, None, None)
                 me._slack = None
 
             self._closures.append(cleanup)
@@ -183,7 +225,7 @@ class Itgs:
             await j.__aenter__()
 
             async def cleanup(me: "Itgs") -> None:
-                await me._jobs.__aexit__(None, None, None)
+                await j.__aexit__(None, None, None)
                 me._jobs = None
 
             self._closures.append(cleanup)
@@ -211,7 +253,7 @@ class Itgs:
             await fs.__aenter__()
 
             async def cleanup(me: "Itgs") -> None:
-                await me._file_service.__aexit__(None, None, None)
+                await fs.__aexit__(None, None, None)
                 me._file_service = None
 
             self._closures.append(cleanup)
@@ -240,7 +282,7 @@ class Itgs:
             await rc.__aenter__()
 
             async def cleanup(me: "Itgs") -> None:
-                await me._revenue_cat.__aexit__(None, None, None)
+                await rc.__aexit__(None, None, None)
                 me._revenue_cat = None
 
             self._closures.append(cleanup)

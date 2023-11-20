@@ -100,22 +100,22 @@ async def read_partial_push_receipt_stats(authorization: Optional[str] = Header(
         checked_at = time.time()
         async with redis.pipeline(transaction=False) as pipe:
             for unix_date in (unix_date_today - 1, unix_date_today):
-                await pipe.hmget(
-                    f"stats:push_receipts:daily:{unix_date}".encode("ascii"),
-                    b"succeeded",
-                    b"abandoned",
-                    b"failed_due_to_device_not_registered",
-                    b"failed_due_to_message_too_big",
-                    b"failed_due_to_message_rate_exceeded",
-                    b"failed_due_to_mismatched_sender_id",
-                    b"failed_due_to_invalid_credentials",
-                    b"failed_due_to_client_error_other",
-                    b"failed_due_to_internal_error",
-                    b"retried",
-                    b"failed_due_to_not_ready_yet",
-                    b"failed_due_to_server_error",
-                    b"failed_due_to_client_error_429",
-                    b"failed_due_to_network_error",
+                await pipe.hmget(  # type: ignore
+                    f"stats:push_receipts:daily:{unix_date}".encode("ascii"),  # type: ignore
+                    b"succeeded",  # type: ignore
+                    b"abandoned",  # type: ignore
+                    b"failed_due_to_device_not_registered",  # type: ignore
+                    b"failed_due_to_message_too_big",  # type: ignore
+                    b"failed_due_to_message_rate_exceeded",  # type: ignore
+                    b"failed_due_to_mismatched_sender_id",  # type: ignore
+                    b"failed_due_to_invalid_credentials",  # type: ignore
+                    b"failed_due_to_client_error_other",  # type: ignore
+                    b"failed_due_to_internal_error",  # type: ignore
+                    b"retried",  # type: ignore
+                    b"failed_due_to_not_ready_yet",  # type: ignore
+                    b"failed_due_to_server_error",  # type: ignore
+                    b"failed_due_to_client_error_429",  # type: ignore
+                    b"failed_due_to_network_error",  # type: ignore
                 )
             result = await pipe.execute()
 
@@ -162,7 +162,7 @@ async def read_partial_push_receipt_stats(authorization: Optional[str] = Header(
                 yesterday=day_stats[0],
                 today=day_stats[1],
                 checked_at=checked_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

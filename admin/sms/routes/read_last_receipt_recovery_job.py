@@ -77,21 +77,21 @@ async def read_last_receipt_recovery_job(authorization: Optional[str] = Header(N
         redis = await itgs.redis()
         async with redis.pipeline() as pipe:
             pipe.multi()
-            await pipe.hmget(
-                b"stats:sms:receipt_recovery_job",
-                b"started_at",
-                b"finished_at",
-                b"running_time",
-                b"attempted",
-                b"pending",
-                b"succeeded",
-                b"failed",
-                b"lost",
-                b"permanent_error",
-                b"transient_error",
-                b"stop_reason",
+            await pipe.hmget(  # type: ignore
+                b"stats:sms:receipt_recovery_job",  # type: ignore
+                b"started_at",  # type: ignore
+                b"finished_at",  # type: ignore
+                b"running_time",  # type: ignore
+                b"attempted",  # type: ignore
+                b"pending",  # type: ignore
+                b"succeeded",  # type: ignore
+                b"failed",  # type: ignore
+                b"lost",  # type: ignore
+                b"permanent_error",  # type: ignore
+                b"transient_error",  # type: ignore
+                b"stop_reason",  # type: ignore
             )
-            await pipe.llen(b"sms:recovery_purgatory")
+            await pipe.llen(b"sms:recovery_purgatory")  # type: ignore
             result, num_in_purgatory = await pipe.execute()
 
         if result[0] is None or result[1] is None:
@@ -113,7 +113,7 @@ async def read_last_receipt_recovery_job(authorization: Optional[str] = Header(N
                 if isinstance(result[10], bytes)
                 else result[10],
                 purgatory_size=num_in_purgatory,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

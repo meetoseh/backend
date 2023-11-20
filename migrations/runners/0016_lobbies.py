@@ -1,7 +1,6 @@
 """Adds lobbies to journeys to reduce distractions during the actual content"""
 from typing import List, Optional
 from itgs import Itgs
-import journeys.lib.stats
 import secrets
 import time
 
@@ -151,7 +150,7 @@ async def up(itgs: Itgs) -> None:
         journey_id: int = row[1]
 
         old_index: Optional[int] = None
-        for i, journey_row in enumerate(journeys.results):
+        for i, journey_row in enumerate(journeys.results or []):
             if journey_row[0] == journey_id:
                 old_index = i
                 break

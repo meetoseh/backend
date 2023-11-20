@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal
 from itgs import Itgs
 import time
 
@@ -31,7 +30,7 @@ async def create_visitor(source: VisitorSource):
         )
 
         return Response(
-            content=CreateVisitorResponse(uid=uid).json(),
+            content=CreateVisitorResponse(uid=uid).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )

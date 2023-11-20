@@ -1,12 +1,10 @@
 from fastapi import APIRouter, Cookie
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
-from typing_extensions import Annotated
+from typing import Optional, Literal, Annotated, cast as typing_cast
 from error_middleware import handle_warning
-from lib.shared.clean_for_slack import clean_for_slack
 from models import StandardErrorResponse
-from oauth.siwo.lib.verify_email_stats_preparer import verify_stats
+from oauth.siwo.lib.verify_email_stats_preparer import VerifyFailedReason, verify_stats
 from oauth.siwo.jwt.core import CORE_ERRORS_BY_STATUS, auth_jwt, INVALID_TOKEN_RESPONSE
 from itgs import Itgs
 from timing_attacks import coarsen_time_with_sleeps
@@ -31,7 +29,7 @@ INVALID_CODE_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_400_TYPE](
         type="invalid_code",
         message="The code you provided was invalid",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=400,
 )
@@ -41,7 +39,7 @@ RATELIMITED_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_429_TYPE](
         type="ratelimited",
         message="You have tried too many verification codes, please try again later",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=429,
 )
@@ -76,12 +74,16 @@ async def complete_verification(
     verify_unix_date = unix_dates.unix_timestamp_to_unix_date(verify_at, tz=tz)
     async with coarsen_time_with_sleeps(1), Itgs() as itgs:
         auth_result = await auth_jwt(itgs, siwo_core, revoke=False)
-        if not auth_result.success:
+        if auth_result.result is None:
+            assert auth_result.error is not None
             async with verify_stats(itgs) as stats:
                 stats.incr_verify_attempted(unix_date=verify_unix_date)
                 stats.incr_verify_failed(
                     unix_date=verify_unix_date,
-                    reason=f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    reason=typing_cast(
+                        VerifyFailedReason,
+                        f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    ),
                 )
             return auth_result.error.response
 

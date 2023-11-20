@@ -68,7 +68,7 @@ async def unsubscribe_by_email(
                 content=StandardErrorResponse[ERROR_403_TYPE](
                     type="invalid_code",
                     message="The provided code does not link to the unsubscribe page",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=403,
             )

@@ -1,4 +1,3 @@
-import asyncio
 from typing import Literal, Optional
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -73,7 +72,7 @@ async def finish_checkout_stripe(
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         redis = await itgs.redis()
@@ -88,7 +87,7 @@ async def finish_checkout_stripe(
                 content=StandardErrorResponse[ERROR_429_TYPES](
                     type="ratelimited",
                     message="You have exceeded the rate limit for this endpoint.",
-                ).json(),
+                ).model_dump_json(),
                 status_code=429,
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
@@ -123,7 +122,7 @@ async def finish_checkout_stripe(
                         "already been detected as completed, or it could have expired, or "
                         "it could be for a different user."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 status_code=404,
             )
 
@@ -141,7 +140,7 @@ async def finish_checkout_stripe(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="stripe_error",
                     message=("There was an error communicating with Stripe"),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "15",
@@ -150,7 +149,7 @@ async def finish_checkout_stripe(
             )
 
         if checkout_session.status != "complete":
-            cursor.execute(
+            await cursor.execute(
                 """
                 UPDATE open_stripe_checkout_sessions
                 SET last_checked_at=?
@@ -162,7 +161,7 @@ async def finish_checkout_stripe(
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="incomplete",
                     message="That checkout is not yet complete. You might need to wait a moment.",
-                ).json(),
+                ).model_dump_json(),
                 status_code=409,
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
@@ -183,7 +182,7 @@ async def finish_checkout_stripe(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="revenue_cat_error",
                     message=("There was an error communicating with RevenueCat"),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "15",
@@ -202,7 +201,7 @@ async def finish_checkout_stripe(
             force=True,
         )
         return Response(
-            content=FinishCheckoutStripeResponse().json(),
+            content=FinishCheckoutStripeResponse().model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

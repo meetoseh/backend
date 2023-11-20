@@ -1,8 +1,8 @@
 import secrets
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr, validator
-from typing import List, Optional, Literal, Union
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Optional, Literal, Annotated, cast as typing_cast
 from auth import auth_admin
 from image_files.models import ImageFileRef
 import image_files.auth
@@ -33,12 +33,12 @@ class CreateJourneyRequest(BaseModel):
     instructor_uid: str = Field(
         description="The UID of the instructor we are crediting for this journey"
     )
-    title: constr(strip_whitespace=True, min_length=1, max_length=48) = Field(
-        description="The display title"
-    )
-    description: constr(strip_whitespace=True, min_length=1, max_length=255) = Field(
-        description="The display description"
-    )
+    title: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=48)
+    ] = Field(description="The display title")
+    description: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+    ] = Field(description="The display description")
     prompt: Prompt = Field(
         description="The prompt style, text, and options to display to the user"
     )
@@ -231,29 +231,32 @@ async def create_journey(
             ),
         )
 
+        assert response.results is not None, "expected results for query"
         assert len(response.results) == 1, "expected exactly one row"
 
-        content_file_uid: Optional[str] = response.results[0][0]
-        image_file_uid: Optional[str] = response.results[0][1]
-        subcategory_internal_name: Optional[str] = response.results[0][2]
-        subcategory_external_name: Optional[str] = response.results[0][3]
-        instructor_name: Optional[str] = response.results[0][4]
-        instructor_picture_image_file_uid: Optional[str] = response.results[0][5]
-        instructor_created_at: Optional[float] = response.results[0][6]
-        blurred_image_file_uid: Optional[str] = response.results[0][7]
-        darkened_image_file_uid: Optional[str] = response.results[0][8]
-        subcategory_bias: Optional[float] = response.results[0][9]
-        instructor_bias: Optional[float] = response.results[0][10]
-        variation_uid: Optional[str] = response.results[0][11]
-        variation_variation_id: Optional[int] = response.results[0][12]
-        variation_deleted_at: Optional[float] = response.results[0][13]
+        content_file_uid = typing_cast(Optional[str], response.results[0][0])
+        image_file_uid = typing_cast(Optional[str], response.results[0][1])
+        subcategory_internal_name = typing_cast(Optional[str], response.results[0][2])
+        subcategory_external_name = typing_cast(Optional[str], response.results[0][3])
+        instructor_name = typing_cast(Optional[str], response.results[0][4])
+        instructor_picture_image_file_uid = typing_cast(
+            Optional[str], response.results[0][5]
+        )
+        instructor_created_at = typing_cast(Optional[float], response.results[0][6])
+        blurred_image_file_uid = typing_cast(Optional[str], response.results[0][7])
+        darkened_image_file_uid = typing_cast(Optional[str], response.results[0][8])
+        subcategory_bias = typing_cast(Optional[float], response.results[0][9])
+        instructor_bias = typing_cast(Optional[float], response.results[0][10])
+        variation_uid = typing_cast(Optional[str], response.results[0][11])
+        variation_variation_id = typing_cast(Optional[int], response.results[0][12])
+        variation_deleted_at = typing_cast(Optional[float], response.results[0][13])
 
         if content_file_uid is None:
             return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_audio_content_not_found",
                     message="No journey audio content with that uid exists, it may have been deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -267,7 +270,7 @@ async def create_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_background_image_not_found",
                     message="No journey background image with that uid exists, it may have been deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -277,7 +280,7 @@ async def create_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_subcategory_not_found",
                     message="No journey subcategory with that uid exists, it may have been deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -287,7 +290,7 @@ async def create_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="instructor_not_found",
                     message="No instructor with that uid exists, it may have been deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -297,7 +300,7 @@ async def create_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="variation_journey_not_found",
                     message="The variation_of_journey does not exist",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -307,7 +310,7 @@ async def create_journey(
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="variation_journey_is_variation",
                     message="The variation_of_journey is a variation itself",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
@@ -317,7 +320,7 @@ async def create_journey(
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="variation_journey_deleted",
                     message="The variation_of_journey is deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=409,
             )
@@ -344,7 +347,7 @@ async def create_journey(
                     """,
                     (
                         interactive_prompt_uid,
-                        args.prompt.json(),
+                        args.prompt.model_dump_json(),
                         args.lobby_duration_seconds,
                         now,
                     ),
@@ -425,7 +428,7 @@ async def create_journey(
                         "Retry for a more specific error message, or contact support if the "
                         "problem persists."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "3",
@@ -486,7 +489,7 @@ async def create_journey(
                 sample=None,
                 video=None,
                 variation_of_journey_uid=args.variation_of_journey_uid,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )

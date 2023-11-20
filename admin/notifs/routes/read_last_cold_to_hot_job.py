@@ -48,12 +48,12 @@ async def read_last_cold_to_hot_job(authorization: Optional[str] = Header(None))
             return auth_result.error_response
 
         redis = await itgs.redis()
-        result = await redis.hmget(
-            b"stats:push_receipts:cold_to_hot_job",
-            b"last_started_at",
-            b"last_finished_at",
-            b"last_running_time",
-            b"last_num_moved",
+        result = await redis.hmget(  # type: ignore
+            b"stats:push_receipts:cold_to_hot_job",  # type: ignore
+            b"last_started_at",  # type: ignore
+            b"last_finished_at",  # type: ignore
+            b"last_running_time",  # type: ignore
+            b"last_num_moved",  # type: ignore
         )
 
         if result[0] is None or result[1] is None:
@@ -65,7 +65,7 @@ async def read_last_cold_to_hot_job(authorization: Optional[str] = Header(None))
                 finished_at=float(result[1]),
                 running_time=float(result[2]),
                 num_moved=int(result[3]),
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

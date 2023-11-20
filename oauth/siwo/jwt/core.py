@@ -92,7 +92,7 @@ INVALID_TOKEN_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_403_TYPE](
         type="invalid",
         message="The SIWO_Core cookie was invalid",
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Set-Cookie": "SIWO_Core=; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
         "Content-Type": "application/json; charset=utf-8",
@@ -121,7 +121,7 @@ async def auth_jwt(itgs: Itgs, core: Optional[str], *, revoke: bool) -> AuthResu
                     content=StandardErrorResponse[ERROR_401_TYPE](
                         type="not_set",
                         message="The SIWO_Core cookie was not set",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={"Content-Type": "application/json; charset=utf-8"},
                     status_code=401,
                 ),

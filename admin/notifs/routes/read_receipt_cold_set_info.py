@@ -61,7 +61,7 @@ async def read_receipt_cold_set_info(authorization: Optional[str] = Header(None)
                 length=length,
                 num_overdue=num_overdue,
                 oldest_last_queued_at=oldest_last_queued_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

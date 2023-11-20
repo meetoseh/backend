@@ -18,7 +18,7 @@ NONE_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="none_found",
         message="There were no ai journeys that the user hasn't already completed.",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -28,7 +28,7 @@ RACED_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_503_TYPES](
         type="failed_to_fetch",
         message="A journey was selected, but it could not be retrieved",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
     status_code=503,
 )
@@ -53,7 +53,7 @@ async def start_ai_journey(authorization: Optional[str] = Header(None)):
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()

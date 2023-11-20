@@ -71,20 +71,20 @@ async def read_last_reconciliation_job(authorization: Optional[str] = Header(Non
         redis = await itgs.redis()
         async with redis.pipeline(transaction=False) as pipe:
             await pipe.hmget(
-                b"stats:email_events:reconciliation_job",
-                b"started_at",
-                b"finished_at",
-                b"running_time",
-                b"attempted",
-                b"succeeded_and_found",
-                b"succeeded_but_abandoned",
-                b"bounced_and_found",
-                b"bounced_but_abandoned",
-                b"complaint_and_found",
-                b"complaint_and_abandoned",
-                b"stop_reason",
+                b"stats:email_events:reconciliation_job",  # type: ignore
+                b"started_at",  # type: ignore
+                b"finished_at",  # type: ignore
+                b"running_time",  # type: ignore
+                b"attempted",  # type: ignore
+                b"succeeded_and_found",  # type: ignore
+                b"succeeded_but_abandoned",  # type: ignore
+                b"bounced_and_found",  # type: ignore
+                b"bounced_but_abandoned",  # type: ignore
+                b"complaint_and_found",  # type: ignore
+                b"complaint_and_abandoned",  # type: ignore
+                b"stop_reason",  # type: ignore
             )
-            await pipe.llen(b"email:reconciliation_purgatory")
+            await pipe.llen(b"email:reconciliation_purgatory")  # type: ignore
             result, purgatory_size = await pipe.execute()
 
         if result[0] is None or result[1] is None:
@@ -106,7 +106,7 @@ async def read_last_reconciliation_job(authorization: Optional[str] = Header(Non
                 if isinstance(result[10], bytes)
                 else result[10],
                 in_purgatory=purgatory_size,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

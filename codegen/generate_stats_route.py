@@ -1,7 +1,7 @@
 import argparse
 from dataclasses import dataclass
 import os
-from typing import Dict, List, Optional, TextIO, Tuple
+from typing import Dict, List, TextIO, Tuple
 
 
 @dataclass
@@ -350,7 +350,7 @@ def read_fields(f: TextIO) -> List[Field]:
 
 def interpret_fields(
     args: GenerateStatsRouteArgs, fields: List[Field]
-) -> Tuple[List[Field], List[Field]]:
+) -> Tuple[Dict[str, Field], Dict[str, FancyField], List[str]]:
     fields = [
         f for f in fields if f.name not in ("id", "retrieved_for", "retrieved_at")
     ]

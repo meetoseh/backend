@@ -1,15 +1,17 @@
 import secrets
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Optional, Annotated
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from itgs import Itgs
 
 
 class CreateJourneySubcategoryRequest(BaseModel):
-    internal_name: constr(min_length=1, strip_whitespace=True) = Field(
+    internal_name: Annotated[
+        str, StringConstraints(min_length=1, strip_whitespace=True)
+    ] = Field(
         description=(
             "The internal name for the journey subcategory, which would generally be "
             "unique, but might not be while we're recategorizing. Statistics for "
@@ -17,7 +19,9 @@ class CreateJourneySubcategoryRequest(BaseModel):
         )
     )
 
-    external_name: constr(min_length=1, strip_whitespace=True) = Field(
+    external_name: Annotated[
+        str, StringConstraints(min_length=1, strip_whitespace=True)
+    ] = Field(
         description=(
             "The external name for the journey subcategory, which is shown on "
             "the experience screen"
@@ -80,7 +84,7 @@ async def create_journey_subcategory(
                 internal_name=args.internal_name,
                 external_name=args.external_name,
                 bias=args.bias,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )

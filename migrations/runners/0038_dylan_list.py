@@ -1,6 +1,11 @@
-from typing import Optional
+from typing import List, Optional
 from itgs import Itgs
-import os
+
+
+# Used to have a klaviyo integration
+class KlaviyoStub:
+    async def add_profile_to_list(self, profile_id: List[str], list_id: str):
+        ...
 
 
 async def up(itgs: Itgs):
@@ -14,7 +19,8 @@ async def up(itgs: Itgs):
     batch_size = 50
     list_id = "RmASTZ"
 
-    klaviyo = await itgs.klaviyo()
+    # klaviyo = await itgs.klaviyo()
+    klaviyo = KlaviyoStub()
 
     while True:
         response = await cursor.execute(

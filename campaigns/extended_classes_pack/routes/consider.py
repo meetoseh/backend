@@ -49,7 +49,7 @@ async def consider_extended_classes_pack(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         # If they are already entitled to the pack, then don't show the offer

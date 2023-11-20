@@ -38,7 +38,7 @@ ERROR_INAPP_NOTIFICATION_NOT_FOUND = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="inapp_notification_not_found",
         message="There is no in-app notification with that uid",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -67,7 +67,7 @@ async def start_inapp_notification(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         redis = await itgs.redis()
@@ -80,7 +80,7 @@ async def start_inapp_notification(
             return Response(
                 content=StartInappNotificationResponse(
                     inapp_notification_user_uid=cached.decode("utf-8")
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
@@ -117,6 +117,6 @@ async def start_inapp_notification(
         return Response(
             content=StartInappNotificationResponse(
                 inapp_notification_user_uid=session_uid
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )

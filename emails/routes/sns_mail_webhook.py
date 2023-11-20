@@ -45,8 +45,8 @@ async def sns_mail(request: Request):
             async with redis.pipeline() as pipe:
                 pipe.multi()
                 await set_if_lower(pipe, earliest_key, today)
-                await pipe.hincrby(key, b"received", 1)
-                await pipe.hincrby(key, evt, 1)
+                await pipe.hincrby(key, b"received", 1)  # type: ignore
+                await pipe.hincrby(key, evt, 1)  # type: ignore
                 await pipe.execute()
 
         await run_with_prep(prepare, execute)

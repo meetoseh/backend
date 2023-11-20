@@ -144,13 +144,13 @@ async def siwo_check_account(
     Raises:
         NoScriptError: If the script is not loaded into redis
     """
-    res = await redis.evalsha(
-        SIWO_CHECK_ACCOUNT_LUA_SCRIPT_HASH,
+    res = await redis.evalsha(  # type: ignore
+        SIWO_CHECK_ACCOUNT_LUA_SCRIPT_HASH,  # type: ignore
         0,
-        email,
-        csrf,
-        b"" if visitor is None else visitor,
-        now,
+        email,  # type: ignore
+        csrf,  # type: ignore
+        b"" if visitor is None else visitor,  # type: ignore
+        now,  # type: ignore
     )
     if res is redis:
         return None
@@ -166,6 +166,17 @@ def parse_siwo_check_account(res) -> SiwoCheckResult:
         assert res[1] is None
         return SiwoCheckResult(acceptable=True, reason=None)
 
-    assert isinstance(res[1], (str, bytes)), res
-    reason = res[1].decode("utf-8") if isinstance(res[1], bytes) else res[1]
-    return SiwoCheckResult(acceptable=False, reason=reason)
+    reason_raw = res[1]
+    assert isinstance(reason_raw, (str, bytes, bytearray, memoryview)), res
+    reason = (
+        str(reason_raw, "utf-8")
+        if isinstance(reason_raw, (bytes, bytearray, memoryview))
+        else reason_raw
+    )
+    return SiwoCheckResult.model_validate(
+        {
+            "acceptable": False,
+            "reason": reason,
+        },
+        strict=True,
+    )

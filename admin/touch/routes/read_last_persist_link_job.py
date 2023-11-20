@@ -71,19 +71,19 @@ async def read_last_persist_link_job(authorization: Optional[str] = Header(None)
             return auth_result.error_response
         redis = await itgs.redis()
         async with redis.pipeline(transaction=False) as pipe:
-            await pipe.hmget(
-                b"stats:touch_links:persist_link_job",
-                b"started_at",
-                b"finished_at",
-                b"running_time",
-                b"attempted",
-                b"lost",
-                b"integrity_error",
-                b"persisted",
-                b"persisted_without_clicks",
-                b"persisted_with_one_click",
-                b"persisted_with_multiple_clicks",
-                b"stop_reason",
+            await pipe.hmget(  # type: ignore
+                b"stats:touch_links:persist_link_job",  # type: ignore
+                b"started_at",  # type: ignore
+                b"finished_at",  # type: ignore
+                b"running_time",  # type: ignore
+                b"attempted",  # type: ignore
+                b"lost",  # type: ignore
+                b"integrity_error",  # type: ignore
+                b"persisted",  # type: ignore
+                b"persisted_without_clicks",  # type: ignore
+                b"persisted_with_one_click",  # type: ignore
+                b"persisted_with_multiple_clicks",  # type: ignore
+                b"stop_reason",  # type: ignore
             )
             await pipe.zcard(b"touch_links:persist_purgatory")
             result, purgatory_size = await pipe.execute()
@@ -105,7 +105,7 @@ async def read_last_persist_link_job(authorization: Optional[str] = Header(None)
                 persisted_with_multiple_clicks=int(result[9]),
                 stop_reason=result[10].decode("utf-8"),
                 in_purgatory=purgatory_size,
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

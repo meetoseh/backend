@@ -60,25 +60,26 @@ async def on_interactive_prompt_session_started(
             unix_month,
         )
         if subcategory is not None:
-            await pipe.sadd(
+            await pipe.sadd(  # type: ignore
                 f"stats:interactive_prompt_sessions:{subcategory}:{unix_date}:subs".encode(
                     "utf-8"
-                ),
-                user_sub,
+                ),  # type: ignore
+                user_sub.encode("utf-8"),
             )
             await set_if_lower(
                 pipe,
                 b"stats:interactive_prompt_sessions:bysubcat:earliest",
                 unix_date,
             )
-            await pipe.sadd(
-                b"stats:interactive_prompt_sessions:bysubcat:subcategories", subcategory
+            await pipe.sadd(  # type: ignore
+                b"stats:interactive_prompt_sessions:bysubcat:subcategories",  # type: ignore
+                subcategory.encode("utf-8"),
             )
-            await pipe.hincrby(
+            await pipe.hincrby(  # type: ignore
                 f"stats:interactive_prompt_sessions:bysubcat:total_views:{unix_date}".encode(
                     "utf-8"
-                ),
-                subcategory,
+                ),  # type: ignore
+                subcategory.encode("utf-8"),  # type: ignore
                 1,
             )
         await pipe.execute()

@@ -53,7 +53,7 @@ async def undelete_instructor(uid: str, authorization: Optional[str] = Header(No
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="instructor_not_found",
                     message="The instructor was not found or is not deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 

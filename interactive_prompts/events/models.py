@@ -1,5 +1,4 @@
 from fastapi.responses import Response
-from pydantic.generics import GenericModel
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, TypeVar, Generic
 from image_files.models import ImageFileRef
@@ -21,7 +20,7 @@ class NameEventData(BaseModel):
     )
 
 
-class CreateInteractivePromptEventRequest(GenericModel, Generic[EventDataT]):
+class CreateInteractivePromptEventRequest(BaseModel, Generic[EventDataT]):
     interactive_prompt_uid: str = Field(
         description="The UID of the interactive prompt you are attempting to create an event in."
     )
@@ -50,9 +49,7 @@ class CreateInteractivePromptEventRequest(GenericModel, Generic[EventDataT]):
     )
 
 
-class CreateInteractivePromptEventResponse(
-    GenericModel, Generic[EventTypeT, EventDataT]
-):
+class CreateInteractivePromptEventResponse(BaseModel, Generic[EventTypeT, EventDataT]):
     uid: str = Field(description="The UID of the newly created event")
     user_sub: str = Field(description="The sub of the user who created the event")
     session_uid: str = Field(
@@ -119,7 +116,7 @@ ERROR_INTERACTIVE_PROMPT_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[CREATE_INTERACTIVE_PROMPT_EVENT_404_TYPES](
         type="not_found",
         message="There is no interactive prompt with that uid; it may have been deleted",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
 )
@@ -133,7 +130,7 @@ ERROR_INTERACTIVE_PROMPT_SESSION_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[CREATE_INTERACTIVE_PROMPT_EVENT_409_TYPES](
         type="session_not_found",
         message="The specified interactive prompt session was not found or is for a different prompt",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -143,7 +140,7 @@ ERROR_INTERACTIVE_PROMPT_SESSION_NOT_STARTED_RESPONSE = Response(
     content=StandardErrorResponse[CREATE_INTERACTIVE_PROMPT_EVENT_409_TYPES](
         type="session_not_started",
         message="The specified interactive prompt session has not been started yet",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -153,7 +150,7 @@ ERROR_INTERACTIVE_PROMPT_SESSION_ALREADY_STARTED_RESPONSE = Response(
     content=StandardErrorResponse[CREATE_INTERACTIVE_PROMPT_EVENT_409_TYPES](
         type="session_already_started",
         message="The specified interactive prompt session was already started (via a join event)",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -166,7 +163,7 @@ ERROR_INTERACTIVE_PROMPT_SESSION_ALREADY_ENDED_RESPONSE = Response(
     content=StandardErrorResponse[CREATE_INTERACTIVE_PROMPT_EVENT_409_TYPES](
         type="session_already_ended",
         message="The specified interactive prompt session has already ended",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -176,7 +173,7 @@ ERROR_INTERACTIVE_PROMPT_SESSION_HAS_LATER_EVENT_RESPONSE = Response(
     content=StandardErrorResponse[CREATE_INTERACTIVE_PROMPT_EVENT_409_TYPES](
         type="session_has_later_event",
         message="The specified interactive prompt session already has an event with a later prompt_time",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -189,7 +186,7 @@ ERROR_INTERACTIVE_PROMPT_SESSION_HAS_SAME_EVENT_AT_SAME_TIME_RESPONSE = Response
     content=StandardErrorResponse[CREATE_INTERACTIVE_PROMPT_EVENT_409_TYPES](
         type="session_has_same_event_at_same_time",
         message="The specified interactive prompt session already has an event with the same type with the same prompt_time",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
@@ -203,7 +200,7 @@ ERROR_INTERACTIVE_PROMPT_IMPOSSIBLE_PROMPT_TIME_RESPONSE = Response(
     content=StandardErrorResponse[CREATE_INTERACTIVE_PROMPT_EVENT_409_TYPES](
         type="impossible_prompt_time",
         message="The prompt time is negative or after the end of the interactive portion of the prompt",
-    ).json(),
+    ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )

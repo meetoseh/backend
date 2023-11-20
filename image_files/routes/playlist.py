@@ -1,5 +1,5 @@
-from typing import Dict, Generator, List, Literal, Optional, Union
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from typing import Dict, Generator, List, Literal, Optional, Union, cast as typing_cast
+from fastapi.responses import Response, StreamingResponse
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 from image_files.auth import auth_any, auth_public, create_jwt
@@ -146,7 +146,7 @@ async def get_image_playlist(
         else:
             auth_result = await auth_public(itgs, uid)
 
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         if auth_result.result.image_file_uid != uid:
@@ -159,11 +159,14 @@ async def get_image_playlist(
 
         if not presign:
             local_cache = await itgs.local_cache()
-            result: Optional[Union[io.BytesIO, bytes]] = local_cache.get(
-                f"image_files:playlist:{uid}".encode("utf-8"), read=True
+            result = typing_cast(
+                Optional[Union[io.BytesIO, bytes]],
+                local_cache.get(
+                    f"image_files:playlist:{uid}".encode("utf-8"), read=True
+                ),
             )
             if result is not None:
-                if isinstance(result, (bytes, bytearray)):
+                if isinstance(result, (bytes, bytearray, memoryview)):
                     return Response(
                         content=result,
                         status_code=200,
@@ -200,7 +203,7 @@ async def get_image_playlist(
         )
 
         if not response.results:
-            return JSONResponse(
+            return Response(
                 content=StandardErrorResponse[ERROR_404_TYPE](
                     type="not_found",
                     message=(
@@ -208,18 +211,19 @@ async def get_image_playlist(
                         "just created, it may take a few seconds to be available. otherwise, "
                         "the image was probably deleted."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
 
-        items: Dict[str, List[PlaylistItemResponse]] = dict()
+        items: Dict[Literal["jpeg", "png", "webp"], List[PlaylistItemResponse]] = dict()
         last_fmt: Optional[str] = None
         cur_list: Optional[List[PlaylistItemResponse]] = None
 
         root_backend_url = os.environ["ROOT_BACKEND_URL"]
         presign_suffix = (
             "?" + urlencode({"jwt": checked_jwt.split(" ", 1)[1].strip()})
-            if presign
+            if presign and not public and checked_jwt is not None
             else ""
         )
         for row in response.results:
@@ -231,7 +235,7 @@ async def get_image_playlist(
                 size_bytes=row[4],
             )
 
-            if last_fmt is None:
+            if last_fmt is None or cur_list is None:
                 last_fmt = item.format
                 cur_list = [item]
             elif last_fmt != item.format:
@@ -241,24 +245,24 @@ async def get_image_playlist(
             else:
                 cur_list.append(item)
 
-        if cur_list is not None:
+        if cur_list is not None and last_fmt is not None:
             items[last_fmt] = cur_list
 
         result = PlaylistResponse(items=items)
         if presign:
-            return JSONResponse(
-                content=result.dict(),
+            return Response(
+                content=result.model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=200,
             )
 
-        content_bytes = bytes(result.json(), "utf-8")
+        content_bytes = bytes(result.model_dump_json(), "utf-8")
         local_cache = await itgs.local_cache()
         local_cache.set(
             f"image_files:playlist:{uid}".encode("utf-8"), content_bytes, expire=60
         )
         return Response(
             content=content_bytes,
-            status_code=200,
             headers=headers,
-            media_type="application/json",
+            status_code=200,
         )

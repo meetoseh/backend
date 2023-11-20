@@ -126,7 +126,7 @@ async def dev_login(args: DevLoginRequest):
                 id_token=response.id_token,
                 refresh_token=response.refresh_token,
                 onboard=response.onboard,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

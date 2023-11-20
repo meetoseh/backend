@@ -139,12 +139,12 @@ async def siwo_reset_password_part1(
     Raises:
         NoScriptError: If the script is not loaded into redis
     """
-    res = await redis.evalsha(
+    res = await redis.evalsha(  # type: ignore
         SIWO_RESET_PASSWORD_PART1_LUA_SCRIPT_HASH,
         0,
-        identity_uid,
-        code_uid,
-        str(reset_at).encode("utf-8"),
+        identity_uid,  # type: ignore
+        code_uid,  # type: ignore
+        str(reset_at).encode("utf-8"),  # type: ignore
     )
     if res is redis:
         return None

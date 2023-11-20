@@ -47,7 +47,7 @@ async def respond_to_interactive_prompt_word_prompt(
             interactive_prompt_jwt=args.interactive_prompt_jwt,
             interactive_prompt_uid=args.interactive_prompt_uid,
         )
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         interactive_prompt_sessions = Table("interactive_prompt_sessions")
@@ -114,7 +114,7 @@ async def respond_to_interactive_prompt_word_prompt(
                                     "A word prompt response can only be provided to a "
                                     "word prompt interactive prompt."
                                 ),
-                            ).json(),
+                            ).model_dump_json(),
                             headers={
                                 "Content-Type": "application/json; charset=utf-8",
                             },
@@ -149,7 +149,7 @@ async def respond_to_interactive_prompt_word_prompt(
                                     "The given index is outside of the range of the "
                                     "interactive prompt's word prompt."
                                 ),
-                            ).json(),
+                            ).model_dump_json(),
                             headers={
                                 "Content-Type": "application/json; charset=utf-8",
                             },
@@ -177,6 +177,6 @@ async def respond_to_interactive_prompt_word_prompt(
                 ),
             ],
         )
-        if not result.success:
+        if result.result is None:
             return result.error_response
         return result.result.response

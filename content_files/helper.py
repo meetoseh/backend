@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional, Tuple, Union
+from typing import List, Literal, Optional, Tuple, Union, cast as typing_cast
 from fastapi.responses import Response
 from dataclasses import dataclass
 import diskcache
@@ -8,6 +8,7 @@ from itgs import Itgs
 from collections import deque
 from urllib.parse import urlencode
 from content_files.lib.serve_s3_file import serve_s3_file, ServableS3File
+import tempfile
 
 
 @dataclass
@@ -32,7 +33,10 @@ async def get_cached_cfep_metadata(
     """Gets the cached metadata for the content file export with the given
     uid, if it's in the cache.
     """
-    raw_bytes = local_cache.get(f"content_files:exports:parts:{uid}".encode("utf-8"))
+    raw_bytes = typing_cast(
+        Optional[bytes],
+        local_cache.get(f"content_files:exports:parts:{uid}".encode("utf-8")),
+    )
     if raw_bytes is not None:
         return CachedContentFileExportPartMetadata(**json.loads(raw_bytes))
 
@@ -137,8 +141,12 @@ class M3UPresigner(io.RawIOBase):
     paths with the given presign bytes. This only works on well-formed m3u8 files
     """
 
-    def __init__(self, source: io.BytesIO, presign: bytes) -> None:
-        self.source: io.BytesIO = source
+    def __init__(
+        self,
+        source: Union[io.BytesIO, tempfile.SpooledTemporaryFile[bytes]],
+        presign: bytes,
+    ) -> None:
+        self.source: Union[io.BytesIO, tempfile.SpooledTemporaryFile[bytes]] = source
         self.start_of_line: bool = True
         self.line_needs_presigning: bool = False
         self.presign: bytes = presign
@@ -176,7 +184,10 @@ class M3UPresigner(io.RawIOBase):
         fewer or more bytes than n, but if there are bytes available this
         will prepare at least 1 byte.
         """
-        taken = self.source.read(n)
+        if n is not None:
+            taken = self.source.read(n)
+        else:
+            taken = self.source.read()
         if not taken:
             return
 
@@ -234,7 +245,7 @@ class M3UPresigner(io.RawIOBase):
 
 async def get_cached_m3u(
     local_cache: diskcache.Cache, *, key: str, jwt: Optional[str]
-) -> Optional[Union[bytes, io.BytesIO]]:
+) -> Optional[Union[bytes, io.BytesIO, M3UPresigner]]:
     """Loads the m3u file (either a playlist or a vod) from the cache, if it
     exists, and presigns it if a jwt is specified, otherwise returns None.
 
@@ -243,8 +254,9 @@ async def get_cached_m3u(
     well formatted, presigning can be done effectively without loading the
     entire file into memory, or even parsing most of it.
     """
-    cached_data: Optional[Union[bytes, io.BytesIO]] = local_cache.get(
-        key.encode("utf-8"), read=True
+    cached_data = typing_cast(
+        Optional[Union[bytes, io.BytesIO]],
+        local_cache.get(key.encode("utf-8"), read=True),
     )
     if cached_data is None:
         return None
@@ -252,7 +264,7 @@ async def get_cached_m3u(
     if jwt is None:
         return cached_data
 
-    if isinstance(cached_data, (bytes, bytearray)):
+    if isinstance(cached_data, (bytes, bytearray, memoryview)):
         cached_data = io.BytesIO(cached_data)
 
     return M3UPresigner(cached_data, ("?" + urlencode({"jwt": jwt})).encode("utf-8"))

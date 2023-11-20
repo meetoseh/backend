@@ -1,7 +1,7 @@
 import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, Function, ExistsCriterion
+from pypika.terms import Term, Function
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -21,9 +21,7 @@ from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from image_files.models import ImageFileRef
-import image_files.auth as img_file_auth
 from itgs import Itgs
-from resources.standard_text_operator import StandardTextOperator
 
 
 class IntroductoryJourney(BaseModel):
@@ -78,7 +76,8 @@ class IntroductoryJourneyFilter(BaseModel):
 
 class ReadIntroductoryJourneyRequest(BaseModel):
     filters: IntroductoryJourneyFilter = Field(
-        default_factory=IntroductoryJourneyFilter, description="the filters to apply"
+        default_factory=lambda: IntroductoryJourneyFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[IntroductoryJourneySortOption]] = Field(
         None, description="the order to sort by"
@@ -157,7 +156,7 @@ async def read_introductory_journeys(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -172,6 +171,7 @@ async def raw_read_introductory_journeys(
     introductory_journeys = Table("introductory_journeys")
     introductory_journey_users = Table("users").as_("ij_users")
     journeys = Table("journeys")
+    variation_journeys = journeys.as_("variation_journeys")
     content_files = Table("content_files")
     image_files = Table("image_files")
     blurred_image_files = image_files.as_("blurred_image_files")
@@ -192,9 +192,11 @@ async def raw_read_introductory_journeys(
             journey_subcategories.uid,
             journey_subcategories.internal_name,
             journey_subcategories.external_name,
+            journey_subcategories.bias,
             instructors.uid,
             instructors.name,
             instructor_pictures.uid,
+            instructors.bias,
             instructors.created_at,
             instructors.deleted_at,
             journeys.title,
@@ -207,6 +209,8 @@ async def raw_read_introductory_journeys(
             videos.uid,
             darkened_image_files.uid,
             introductory_journeys.uid,
+            journeys.special_category,
+            variation_journeys.uid,
             introductory_journey_users.sub,
             introductory_journeys.created_at,
         )
@@ -234,6 +238,8 @@ async def raw_read_introductory_journeys(
         .on(videos.id == journeys.video_content_file_id)
         .left_outer_join(introductory_journey_users)
         .on(introductory_journey_users.id == introductory_journeys.user_id)
+        .left_outer_join(variation_journeys)
+        .on(variation_journeys.id == journeys.variation_of_journey_id)
     )
 
     qargs = []
@@ -259,8 +265,16 @@ async def raw_read_introductory_journeys(
             return journey_subcategories.internal_name
         elif key == "subcategory_external_name":
             return journey_subcategories.external_name
+        elif key == "subcategory_bias":
+            return journey_subcategories.bias
         elif key == "instructor_uid":
             return instructors.uid
+        elif key == "instructor_name":
+            return instructors.name
+        elif key == "instructor_picture_file_uid":
+            return instructor_pictures.uid
+        elif key == "instructor_bias":
+            return instructors.bias
         elif key == "prompt_style":
             return Function("json_extract", interactive_prompts.prompt, "style")
         elif key == "blurred_background_image_file_uid":
@@ -301,55 +315,62 @@ async def raw_read_introductory_journeys(
                         uid=row[2], jwt=await image_files_auth.create_jwt(itgs, row[2])
                     ),
                     subcategory=JourneySubcategory(
-                        uid=row[3], internal_name=row[4], external_name=row[5]
+                        uid=row[3],
+                        internal_name=row[4],
+                        external_name=row[5],
+                        bias=row[6],
                     ),
                     instructor=Instructor(
-                        uid=row[6],
-                        name=row[7],
+                        uid=row[7],
+                        name=row[8],
                         picture=(
                             ImageFileRef(
-                                uid=row[8],
+                                uid=row[9],
                                 jwt=await image_files_auth.create_jwt(itgs, row[8]),
                             )
-                            if row[8] is not None
+                            if row[9] is not None
                             else None
                         ),
-                        created_at=row[9],
-                        deleted_at=row[10],
+                        bias=row[10],
+                        created_at=row[11],
+                        deleted_at=row[12],
                     ),
-                    title=row[11],
-                    description=row[12],
-                    prompt=json.loads(row[13]),
-                    created_at=row[14],
-                    deleted_at=row[15],
+                    title=row[13],
+                    description=row[14],
+                    prompt=json.loads(row[15]),
+                    created_at=row[16],
+                    deleted_at=row[17],
                     blurred_background_image=ImageFileRef(
-                        uid=row[16],
-                        jwt=await image_files_auth.create_jwt(itgs, row[16]),
+                        uid=row[18],
+                        jwt=await image_files_auth.create_jwt(itgs, row[18]),
                     ),
                     sample=(
                         ContentFileRef(
-                            uid=row[17],
-                            jwt=await content_files_auth.create_jwt(itgs, row[17]),
+                            uid=row[19],
+                            jwt=await content_files_auth.create_jwt(itgs, row[19]),
                         )
-                        if row[17] is not None
+                        if row[19] is not None
                         else None
                     ),
                     video=(
                         ContentFileRef(
-                            uid=row[18],
-                            jwt=await content_files_auth.create_jwt(itgs, row[18]),
+                            uid=row[20],
+                            jwt=await content_files_auth.create_jwt(itgs, row[20]),
                         )
-                        if row[18] is not None
+                        if row[20] is not None
                         else None
                     ),
                     darkened_background_image=ImageFileRef(
-                        uid=row[19],
-                        jwt=await image_files_auth.create_jwt(itgs, row[19]),
+                        uid=row[21],
+                        jwt=await image_files_auth.create_jwt(itgs, row[21]),
                     ),
+                    introductory_journey_uid=row[22],
+                    special_category=row[23],
+                    variation_of_journey_uid=row[24],
                 ),
-                uid=row[20],
-                user_sub=row[21],
-                created_at=row[22],
+                uid=row[22],
+                user_sub=row[25],
+                created_at=row[26],
             )
         )
     return items

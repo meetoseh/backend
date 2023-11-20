@@ -38,14 +38,14 @@ UNKNOWN_TOKEN = Response(
     content=StandardErrorResponse[ERROR_403_TYPES](
         type="unknown_token",
         message="That refresh token is invalid, expired, or revoked.",
-    ).json(),
+    ).model_dump_json(),
     status_code=403,
 )
 TOO_CLOSE_TO_EXPIRATION = Response(
     content=StandardErrorResponse[ERROR_403_TYPES](
         type="too_close_to_expiration",
         message="That refresh token is too close to expiration to be refreshed.",
-    ).json(),
+    ).model_dump_json(),
     status_code=403,
 )
 
@@ -230,14 +230,14 @@ async def refresh(args: RefreshRequest):
 
         jwt_email, jwt_email_verified = select_best_current_email(
             payload.get("email"),
-            bool(payload.get("email_verified")) or claim_email_verified,
+            bool(payload.get("email_verified")) or bool(claim_email_verified),
             email,
             email_verified,
         )
 
         jwt_phone, jwt_phone_verified = select_best_current_phone(
             payload.get("phone_number"),
-            bool(payload.get("phone_number_verified")) or claim_phone_verified,
+            bool(payload.get("phone_number_verified")) or bool(claim_phone_verified),
             phone_number,
             phone_number_verified,
         )
@@ -305,7 +305,7 @@ async def refresh(args: RefreshRequest):
             content=RefreshResponse(
                 id_token=new_id_token,
                 refresh_token=new_refresh_token,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",
@@ -360,7 +360,7 @@ async def sorted_set_exchange_and_expire_with_score(
         str(new_score).encode("ascii"),
     )
     try:
-        result = await redis.evalsha(*evalsha_args)
+        result = await redis.evalsha(*evalsha_args)  # type: ignore
     except NoScriptError:
         correct_hash = await redis.script_load(
             SORTED_SET_EXCHANGE_AND_EXPIRE_WITH_SCORE
@@ -370,6 +370,6 @@ async def sorted_set_exchange_and_expire_with_score(
                 f"Script hash mismatch: {correct_hash=} != {SORTED_SET_EXCHANGE_AND_EXPIRE_WITH_SCORE_SHA1=}"
             )
 
-        result = await redis.evalsha(*evalsha_args)
+        result = await redis.evalsha(*evalsha_args)  # type: ignore
 
     return int(result) == 1

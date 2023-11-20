@@ -3,7 +3,7 @@ import secrets
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Literal, Optional, cast as typing_cast
 from auth import auth_any
 from error_middleware import handle_warning
 from lib.daily_reminders.registration_stats import (
@@ -16,7 +16,6 @@ from lib.daily_reminders.setting_stats import (
 from lib.shared.describe_user import enqueue_send_described_user_slack_message
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
-from loguru import logger
 import unix_dates
 import pytz
 import time
@@ -54,7 +53,7 @@ async def unsubscribe_daily_reminders(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         conn = await itgs.conn()
@@ -212,6 +211,7 @@ async def unsubscribe_daily_reminders(
                 f"but got\n```\n{response=}\n```",
             )
 
+        channel = None
         if logged_udrs:
             response = await cursor.execute(
                 "SELECT channel, json_extract(reason, '$.old') FROM daily_reminder_settings_log WHERE uid = ?",
@@ -225,7 +225,9 @@ async def unsubscribe_daily_reminders(
                     f"Created a log entry but could not fetch it `{new_drsl_uid=}`, not updating stats",
                 )
             else:
-                channel: str = response.results[0][0]
+                channel = typing_cast(
+                    Literal["sms", "email", "push"], response.results[0][0]
+                )
                 old_raw: str = response.results[0][1]
                 old_parsed = json.loads(old_raw)
                 old_day_of_week_mask: Optional[int] = old_parsed["day_of_week_mask"]
@@ -234,7 +236,9 @@ async def unsubscribe_daily_reminders(
                 time_range = (
                     DailyReminderTimeRange.parse_db_obj(old_time_range_raw)
                     if old_time_range_raw is not None
-                    else DailyReminderTimeRange(preset="unspecified")
+                    else DailyReminderTimeRange(
+                        preset="unspecified", start=None, end=None
+                    )
                 )
 
                 async with daily_reminder_settings_stats(itgs) as stats:
@@ -252,15 +256,21 @@ async def unsubscribe_daily_reminders(
                     )
 
         if deleted_udr:
-            await (
-                DailyReminderRegistrationStatsPreparer()
-                .incr_unsubscribed(
-                    unix_date,
-                    channel,
-                    "user",
+            if channel is None:
+                await handle_warning(
+                    f"{__name__}:no_channel_for_stats",
+                    "Deleted a user daily reminder row but the channel is unavailable; stats will be off",
                 )
-                .store(itgs)
-            )
+            else:
+                await (
+                    DailyReminderRegistrationStatsPreparer()
+                    .incr_unsubscribed(
+                        unix_date,
+                        channel,
+                        "user",
+                    )
+                    .store(itgs)
+                )
 
         await enqueue_send_described_user_slack_message(
             itgs,

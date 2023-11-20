@@ -2,11 +2,10 @@ from fastapi import APIRouter, Cookie
 from fastapi.datastructures import Headers
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Optional
-from typing_extensions import Annotated
+from typing import Optional, Annotated, cast as typing_cast
 from error_middleware import handle_warning
 from lib.shared.clean_for_slack import clean_for_slack
-from oauth.siwo.lib.authorize_stats_preparer import auth_stats
+from oauth.siwo.lib.authorize_stats_preparer import CreateFailedReason, auth_stats
 from oauth.siwo.jwt.login import (
     INVALID_TOKEN_RESPONSE,
     LOGIN_ERRORS_BY_STATUS,
@@ -62,12 +61,16 @@ async def create_identity(
 
     async with coarsen_time_with_sleeps(1), Itgs() as itgs:
         auth_result = await auth_login_jwt(itgs, siwo_login, revoke=True)
-        if not auth_result.success:
+        if auth_result.result is None:
+            assert auth_result.error is not None
             async with auth_stats(itgs) as stats:
                 stats.incr_create_attempted(unix_date=create_unix_date)
                 stats.incr_create_failed(
                     unix_date=create_unix_date,
-                    reason=f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    reason=typing_cast(
+                        CreateFailedReason,
+                        f"bad_jwt:{auth_result.error.reason}".encode("utf-8"),
+                    ),
                 )
             return auth_result.error.response
 
@@ -107,7 +110,7 @@ async def create_identity(
             (
                 new_uid,
                 auth_result.result.sub,
-                key_derivation_method.json(),
+                key_derivation_method.model_dump_json(),
                 base64.b64encode(derived_password).decode("utf-8"),
                 create_at,
                 email_verified_at,
@@ -136,7 +139,7 @@ async def create_identity(
             oseh_redirect_url=auth_result.result.oseh_redirect_url,
             oseh_client_id=auth_result.result.oseh_client_id,
             duration=7200,
-            iat=create_at,
+            iat=int(create_at),
         )
 
         async with auth_stats(itgs) as stats:
@@ -151,7 +154,7 @@ async def create_identity(
         return Response(
             content=CreateAccountResponse(
                 email_verified=email_verified_at is not None
-            ).json(),
+            ).model_dump_json(),
             headers=Headers(
                 raw=[
                     (b"content-type", b"application/json; charset=utf-8"),

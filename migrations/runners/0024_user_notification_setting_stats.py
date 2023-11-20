@@ -98,8 +98,8 @@ async def up(itgs: Itgs) -> None:
 
     redis = await itgs.redis()
     for preferred_notification_time, total in response.results or []:
-        await redis.hset(
-            f"stats:daily_user_notification_settings:{cur_unix_date}".encode("ascii"),
+        await redis.hset(  # type: ignore
+            f"stats:daily_user_notification_settings:{cur_unix_date}".encode("ascii"),  # type: ignore
             mapping={
                 f"unset:text-{preferred_notification_time}".encode("ascii"): str(
                     total
@@ -129,8 +129,8 @@ async def up(itgs: Itgs) -> None:
     )
 
     for preferred_notification_time, total in response.results or []:
-        await redis.hset(
-            b"stats:user_notification_settings:counts",
+        await redis.hset(  # type: ignore
+            b"stats:user_notification_settings:counts",  # type: ignore
             mapping={
                 f"text-{preferred_notification_time}".encode("ascii"): str(
                     total

@@ -5,8 +5,13 @@ This is a two-stage cache: RevenueCat -> redis -> diskcache
 """
 import asyncio
 import time
-from typing import Dict, Optional, Set
-from typing import NoReturn as Never
+from typing import (
+    Awaitable,
+    Dict,
+    Optional,
+    NoReturn as Never,
+    cast as typing_cast,
+)
 import perpetual_pub_sub as pps
 from pydantic import BaseModel, Field
 from error_middleware import handle_error
@@ -129,11 +134,16 @@ async def get_entitlement_from_redis(
     """
     redis = await itgs.redis()
 
-    raw: Optional[bytes] = await redis.hget(f"entitlements:{user_sub}", identifier)
+    raw = await typing_cast(
+        Awaitable[Optional[bytes]],
+        redis.hget(
+            f"entitlements:{user_sub}".encode("utf-8"), identifier.encode("utf-8")  # type: ignore
+        ),
+    )
     if raw is None:
         return None
 
-    return CachedEntitlement.parse_raw(raw, content_type="application/json")
+    return CachedEntitlement.model_validate_json(raw)
 
 
 async def upsert_entitlements_to_redis(
@@ -159,9 +169,9 @@ async def upsert_entitlements_to_redis(
     async with redis.pipeline(transaction=True) as pipe:
         pipe.multi()
         await pipe.hset(
-            f"entitlements:{user_sub}",
+            f"entitlements:{user_sub}".encode("utf-8"),  # type: ignore
             mapping=dict(
-                (key, value.json().encode("utf-8"))
+                (key, value.model_dump_json().encode("utf-8"))
                 for (key, value) in entitlements.items()
             ),
         )
@@ -201,11 +211,13 @@ async def get_entitlements_from_local(
     """
     local_cache = await itgs.local_cache()
 
-    raw: Optional[bytes] = local_cache.get(f"entitlements:{user_sub}".encode("utf-8"))
+    raw = typing_cast(
+        Optional[bytes], local_cache.get(f"entitlements:{user_sub}".encode("utf-8"))
+    )
     if raw is None:
         return None
 
-    return LocalCachedEntitlements.parse_raw(raw, content_type="application/json")
+    return LocalCachedEntitlements.model_validate_json(raw)
 
 
 async def set_entitlements_to_local(
@@ -226,7 +238,7 @@ async def set_entitlements_to_local(
 
     local_cache.set(
         f"entitlements:{user_sub}".encode("utf-8"),
-        entitlements.json().encode("utf-8"),
+        entitlements.model_dump_json().encode("utf-8"),
         expire=60 * 60 * 24,
         tag="collab",
     )
@@ -362,19 +374,19 @@ async def is_revenue_cat_outage(itgs: Itgs) -> bool:
     redis = await itgs.redis()
     now = time.time()
     try:
-        num_recent_errors = await redis.evalsha(
-            COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH, 1, "revenue_cat_errors", now - 60 * 5
+        num_recent_errors = await redis.evalsha(  # type: ignore
+            COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH, 1, "revenue_cat_errors", now - 60 * 5  # type: ignore
         )
     except NoScriptError:
         correct_sha = await redis.script_load(COUNT_REVENUE_CAT_ERRORS_SCRIPT)
         assert (
             correct_sha == COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH
         ), f"{correct_sha=} != {COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH=}"
-        num_recent_errors = await redis.evalsha(
-            COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH, 1, "revenue_cat_errors", now - 60 * 5
+        num_recent_errors = await redis.evalsha(  # type: ignore
+            COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH, 1, "revenue_cat_errors", now - 60 * 5  # type: ignore
         )
 
-    return num_recent_errors >= 10
+    return num_recent_errors >= 10  # type: ignore
 
 
 async def record_revenue_cat_error(itgs: Itgs, *, now: float) -> None:
@@ -442,7 +454,7 @@ async def publish_purge_message(
     await redis.publish(
         b"ps:entitlements:purge",
         EntitlementsPurgePubSubMessage(user_sub=user_sub, min_checked_at=min_checked_at)
-        .json()
+        .model_dump_json()
         .encode("utf-8"),
     )
 
@@ -451,15 +463,14 @@ async def purge_cache_loop_async() -> Never:
     """The main function run to handle purging the cache when a notification
     is received on the appropriate redis channel
     """
+    assert pps.instance is not None
     try:
         async with pps.PPSSubscription(
             pps.instance, "ps:entitlements:purge", "entitlements"
         ) as sub:
             while True:
                 raw_data = await sub.read()
-                data = EntitlementsPurgePubSubMessage.parse_raw(
-                    raw_data, content_type="application/json"
-                )
+                data = EntitlementsPurgePubSubMessage.model_validate_json(raw_data)
 
                 async with Itgs() as itgs:
                     local = await get_entitlements_from_local(
@@ -480,7 +491,7 @@ async def purge_cache_loop_async() -> Never:
                         )
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
-            return
+            return  # type: ignore
         await handle_error(e)
     finally:
         print("entitlements purge loop exiting")

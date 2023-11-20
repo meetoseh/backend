@@ -132,16 +132,14 @@ the keys that we use in redis
   The value is generated just before the instance shuts down and stored via the diskcache
   key `updater-lock-key`
 
-- `oauth:states:{state}`: goes to a string representing a json object if we have
-  recently generated a state for oauth with the associated csrf token. The json
-  object is as if by the trivial serialization of:
+- `builds:frontend-web:hash` goes to the string representing the git commit sha
+  of the current frontend-web build in s3. Frontend-web instances atomically
+  swap this to the current sha when opening, triggering a build if this causes
+  a change.
 
-  ```py
-  class OauthStateInfo:
-      provider: Literal["Google", "SignInWithApple", "Direct", "Dev"]
-      refresh_token_desired: bool
-      redirect_uri: str
-  ```
+- `oauth:states:{state}`: goes to a string representing a json object if we have
+  recently generated a state for oauth with the associated secret. See
+  `oauth/models/oauth_state.py` for the corresponding model and details.
 
 - `oauth:valid_refresh_tokens:{user_sub}` goes to a sorted set where the
   values correspond to JTI's of refresh tokens and the scores correspond to
@@ -2684,6 +2682,16 @@ These are regular keys used by the personalization module
 - `ps:job:{job_uid}`: used, if supported, when a job is able to report when it's completed
 
 - `updates:{repo}`: used to indicate that the main branch of the given repository was updated
+
+- `updates:frontend-web:build_ready`: the frontend-web repository goes through a separate build
+  server to handle the much larger RAM requirements of building a create-react-app project
+  compared to actually serving requests. Hence `update:frontend-web` spins up a server to build
+  the project which then publishes to this key when the build is ready. The frontend-web instance
+  which launched the build server then terminates the instance and publishes to
+  `updates:frontend-web:do_update`
+
+- `updates:frontend-web:do_update` see `updates:frontend-web:build_ready`; triggers actually
+  downloading the frontend-web build artifact and updating instances.
 
 - `ps:interactive_prompts:{uid}:events`: used to indicate that a new interactive prompt event was
   created for the interactive prompt with the given uid. The body of the message should

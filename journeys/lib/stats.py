@@ -10,7 +10,7 @@ import unix_dates
 import pytz
 
 
-async def on_journey_created(itgs: Itgs, *, created_at: str) -> None:
+async def on_journey_created(itgs: Itgs, *, created_at: float) -> None:
     """Updates the appropriate journey related statistics for when a
     journey is created.
 

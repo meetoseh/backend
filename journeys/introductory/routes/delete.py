@@ -51,6 +51,6 @@ async def delete_introductory_journey(
             content=StandardErrorResponse[ERROR_404_TYPES](
                 type="introductory_journey_not_found",
                 message="There is no introductory journey with that uid",
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )

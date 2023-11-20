@@ -65,7 +65,8 @@ class UserTokenFilter(BaseModel):
 
 class ReadUserTokenRequest(BaseModel):
     filters: UserTokenFilter = Field(
-        default_factory=UserTokenFilter, description="the filters to apply"
+        default_factory=lambda: UserTokenFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[UserTokenSortOption]] = Field(
         None, description="the order to sort by"
@@ -103,7 +104,7 @@ async def read_user_tokens(
     sort = cleanup_sort(USER_TOKEN_SORT_OPTIONS, sort, ["uid"])
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
         args.filters.user_sub = FilterTextItemModel(
             operator=StandardTextOperator.EQUAL_CASE_SENSITIVE,
@@ -138,7 +139,7 @@ async def read_user_tokens(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 
@@ -205,4 +206,9 @@ async def raw_read_user_tokens(
 def item_pseudocolumns(item: UserToken) -> dict:
     """returns the dictified item such that the keys in the return dict match
     the keys of the sort options"""
-    return item.dict()
+    return {
+        "uid": item.uid,
+        "name": item.name,
+        "created_at": item.created_at,
+        "expires_at": item.expires_at,
+    }

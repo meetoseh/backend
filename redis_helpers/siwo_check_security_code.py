@@ -1,4 +1,4 @@
-from typing import Literal, Optional, List, Tuple, Union
+from typing import Literal, Optional, List, Tuple, Union, cast as typing_cast
 import hashlib
 import time
 import redis.asyncio.client
@@ -87,6 +87,18 @@ SiwoCheckSecurityCodeStatus = Literal[
 ]
 
 
+SiwoSecurityCodeHiddenInfoReason = Literal[
+    "visitor",
+    "email",
+    "global",
+    "ratelimit",
+    "email_ratelimit",
+    "visitor_ratelimit",
+    "strange",
+    "disposable",
+]
+
+
 class SiwoSecurityCodeHiddenInfo(BaseModel):
     acknowledged_at: float = Field(
         description="when the user acknowledged the elevation request, in seconds since the epoch"
@@ -97,16 +109,9 @@ class SiwoSecurityCodeHiddenInfo(BaseModel):
     sent_at: float = Field(
         description="when we intended for the email to be sent, in seconds since the epoch"
     )
-    reason: Literal[
-        "visitor",
-        "email",
-        "global",
-        "ratelimit",
-        "email_ratelimit",
-        "visitor_ratelimit",
-        "strange",
-        "disposable",
-    ] = Field(description="the reason we sent them this code in the first place")
+    reason: SiwoSecurityCodeHiddenInfoReason = Field(
+        description="the reason we sent them this code in the first place"
+    )
 
 
 SiwoCheckSecurityCodeResult = Tuple[
@@ -140,8 +145,8 @@ async def siwo_check_security_code(
     Raises:
         NoScriptError: If the script is not loaded into redis
     """
-    res = await redis.evalsha(
-        SIWO_CHECK_SECURITY_CODE_LUA_SCRIPT_HASH, 0, email, code, now
+    res = await redis.evalsha(  # type: ignore
+        SIWO_CHECK_SECURITY_CODE_LUA_SCRIPT_HASH, 0, email, code, now  # type: ignore
     )
     if res is redis:
         return None
@@ -175,14 +180,17 @@ def parse_siwo_check_security_code_result(res) -> SiwoCheckSecurityCodeResult:
     assert all(isinstance(x, (str, bytes)) for x in res[1]), res
 
     acknowledged_at_raw, delayed_raw, sent_at_raw, reason_raw = res[1]
+    reason_str = (
+        str(reason_raw, "utf-8")
+        if isinstance(reason_raw, (bytes, memoryview, bytearray))
+        else reason_raw
+    )
     return (
         "valid",
         SiwoSecurityCodeHiddenInfo(
             acknowledged_at=float(acknowledged_at_raw),
             delayed=bool(int(delayed_raw)),
             sent_at=float(sent_at_raw),
-            reason=reason_raw.decode("utf-8")
-            if isinstance(reason_raw, bytes)
-            else reason_raw,
+            reason=typing_cast(SiwoSecurityCodeHiddenInfoReason, reason_str),
         ),
     )

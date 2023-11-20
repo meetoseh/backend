@@ -1,4 +1,4 @@
-from typing import FrozenSet, Optional, Literal, Union, get_args as typing_get_args
+from typing import FrozenSet, Optional, Literal, get_args as typing_get_args
 from itgs import Itgs
 from lib.redis_stats_preparer import RedisStatsPreparer
 

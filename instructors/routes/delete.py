@@ -67,12 +67,12 @@ async def delete_instructor(uid: str, authorization: Optional[str] = Header(None
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="instructor_not_found",
                     message="The instructor was not found or is already deleted",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
         return Response(
             status_code=200,
-            content=DeleteInstructorResponse(deleted_at=now).json(),
+            content=DeleteInstructorResponse(deleted_at=now).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )

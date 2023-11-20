@@ -3,11 +3,10 @@ import math
 import re
 import secrets
 import time
-from typing import Any, Callable, Dict, Generic, List, Literal, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, Generic, Iterable, List, Literal, Optional, Tuple, TypeVar
 
-from fastapi.responses import Response, JSONResponse
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from pydantic.generics import GenericModel
 from image_files.models import ImageFileRef
 from image_files.auth import create_jwt as create_image_file_jwt
 from interactive_prompts.events.models import (
@@ -67,7 +66,7 @@ def compute_bins(duration_seconds: int) -> int:
 
 async def get_interactive_prompt_meta(
     itgs: Itgs, uid: str
-) -> InteractivePromptAugmentedMeta:
+) -> Optional[InteractivePromptAugmentedMeta]:
     """Reads the interactive prompt meta for the interactive prompt with the given
     uid. This will fetch from the nearest available source, filling intermediary
     caches as it goes.
@@ -77,9 +76,12 @@ async def get_interactive_prompt_meta(
         uid (str): The uid of the interactive prompt
 
     Returns:
-        InteractivePromptAugmentedMeta: The interactive prompt meta
+        InteractivePromptAugmentedMeta, None: The interactive prompt meta, or None
+            if there is no interactive prompt with that uid
     """
     meta = await read_interactive_prompt_meta(itgs, interactive_prompt_uid=uid)
+    if meta is None:
+        return None
     return InteractivePromptAugmentedMeta(
         uid=uid,
         prompt=meta.prompt,
@@ -146,14 +148,17 @@ async def auth_create_interactive_prompt_event(
         return AuthResult(
             result=None,
             error_type="bad_format",
-            error_response=JSONResponse(
+            error_response=Response(
                 content=StandardErrorResponse[ERROR_401_TYPE](
                     type="bad_format",
                     message=(
                         "The interactive prompt JWT should not be prefixed with `bearer ` when not sent "
                         "as a header parameter."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={
+                    "Content-Type": "application/json; charset=utf-8"
+                },
                 status_code=401,
             ),
         )
@@ -161,7 +166,7 @@ async def auth_create_interactive_prompt_event(
     interactive_prompt_auth_result = await interactive_prompts.auth.auth_any(
         itgs, f"bearer {interactive_prompt_jwt}"
     )
-    if not interactive_prompt_auth_result.success:
+    if interactive_prompt_auth_result.result is None:
         return AuthResult(
             result=None,
             error_type=interactive_prompt_auth_result.error_type,
@@ -175,7 +180,7 @@ async def auth_create_interactive_prompt_event(
         return AuthResult(
             result=None,
             error_type="invalid",
-            error_response=JSONResponse(
+            error_response=Response(
                 content=StandardErrorResponse[ERROR_403_TYPE](
                     type="invalid",
                     message=(
@@ -185,13 +190,16 @@ async def auth_create_interactive_prompt_event(
                         "JWT are not encrypted, and specifically the sub of the JWT should match "
                         "the interactive prompt uid. You can manually decode the JWT at jwt.io."
                     ),
-                ).dict(),
+                ).model_dump_json(),
+                headers={
+                    "Content-Type": "application/json; charset=utf-8"
+                },
                 status_code=403,
             ),
         )
 
     user_auth_result = await auth.auth_any(itgs, authorization)
-    if not user_auth_result.success:
+    if user_auth_result.result is None:
         return AuthResult(
             result=None,
             error_type=user_auth_result.error_type,
@@ -228,7 +236,7 @@ class CreateInteractivePromptEventSuccessResult(Generic[EventTypeT, EventDataT])
     def response(self) -> Response:
         """The response content wrapped in an actual response"""
         return Response(
-            content=self.content.json(),
+            content=self.content.model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=201,
         )
@@ -249,6 +257,7 @@ class CreateInteractivePromptEventResult(Generic[EventTypeT, EventDataT]):
             "session_already_started",
             "session_already_ended",
             "session_has_later_event",
+            "session_has_same_event_at_same_time",
             "impossible_prompt_time",
             "impossible_event",
             "impossible_event_data",
@@ -269,7 +278,7 @@ class CreateInteractivePromptEventResult(Generic[EventTypeT, EventDataT]):
 
 
 class InteractivePromptEventPubSubMessage(
-    GenericModel, Generic[EventTypeT, EventDataT]
+    BaseModel, Generic[EventTypeT, EventDataT]
 ):
     """Describes a message that is published to the pubsub topic for an interactive prompt"""
 
@@ -487,7 +496,7 @@ class PrefixSumUpdate:
             return [
                 (
                     re.sub(
-                        "\s+",
+                        r"\s+",
                         " ",
                         f"""
                         WITH indices(idx) AS (VALUES {qmark_list})
@@ -504,7 +513,7 @@ class PrefixSumUpdate:
                         DO UPDATE SET val = val + ?
                         """,
                     ).strip(),
-                    (
+                    [
                         *indices,
                         self.category,
                         self.category_value,
@@ -512,14 +521,14 @@ class PrefixSumUpdate:
                         interactive_prompt_meta.uid,
                         interactive_prompt_event_uid,
                         self.amount,
-                    ),
+                    ],
                 )
             ]
 
         return [
             (
                 re.sub(
-                    "\s+",
+                    r"\s+",
                     " ",
                     f"""
                     WITH indices(idx) AS (VALUES {qmark_list})
@@ -551,7 +560,7 @@ class PrefixSumUpdate:
                     DO UPDATE SET val = val + ?
                     """,
                 ).strip(),
-                (
+                [
                     *indices,
                     self.category,
                     f"$.{self.event_data_field}",
@@ -564,7 +573,7 @@ class PrefixSumUpdate:
                     interactive_prompt_event_uid,
                     self.amount,
                     self.amount,
-                ),
+                ],
             )
         ]
 
@@ -720,7 +729,7 @@ async def create_interactive_prompt_event(
 
     event_uid = f"oseh_ipe_{secrets.token_urlsafe(16)}"
     serd_event_data = (
-        event_data.json() if store_event_data is None else store_event_data.json()
+        event_data.model_dump_json() if store_event_data is None else store_event_data.model_dump_json()
     )
     created_at = time.time()
 
@@ -864,7 +873,7 @@ async def create_interactive_prompt_event(
             query = query.where(term)
             qargs.extend(term_qargs)
 
-    queries: List[Tuple[str, List[Any]]] = [(query.get_sql(), qargs)]
+    queries: List[Tuple[str, Iterable[Any]]] = [(query.get_sql(), qargs)]
 
     queries.append(
         (
@@ -883,6 +892,13 @@ async def create_interactive_prompt_event(
     interactive_prompt_meta = await get_interactive_prompt_meta(
         itgs, interactive_prompt_uid
     )
+    if interactive_prompt_meta is None:
+        return CreateInteractivePromptEventResult(
+            result=None,
+            error_type="not_found",
+            error_response=ERROR_INTERACTIVE_PROMPT_NOT_FOUND_RESPONSE,
+        )
+    
     if prompt_time > interactive_prompt_meta.duration_seconds:
         return CreateInteractivePromptEventResult(
             result=None,
@@ -901,7 +917,7 @@ async def create_interactive_prompt_event(
         queries.extend(
             update.to_queries(
                 interactive_prompt_event_uid=event_uid,
-                prompt_time=prompt_time,
+                prompt_time=int(prompt_time),
                 interactive_prompt_meta=interactive_prompt_meta,
             )
         )
@@ -1035,6 +1051,7 @@ async def create_interactive_prompt_event(
             qargs.extend(term_args)
 
         response = await cursor.execute(query.get_sql(), qargs)
+        assert response.results is not None
         for success, (_, _, error_fn) in zip(response.results[0], terms_and_args):
             if not success:
                 return error_fn()
@@ -1097,7 +1114,7 @@ async def create_interactive_prompt_event(
     redis = await itgs.redis()
     await redis.publish(
         f"ps:interactive_prompts:{interactive_prompt_uid}:events".encode("utf-8"),
-        message.json().encode("utf-8"),
+        message.model_dump_json().encode("utf-8"),
     )
 
     return result

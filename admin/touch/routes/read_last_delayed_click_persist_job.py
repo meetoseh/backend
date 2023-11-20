@@ -67,16 +67,16 @@ async def last_delayed_click_persist_job(
             return auth_result.error_response
         redis = await itgs.redis()
         result = await redis.hmget(
-            b"stats:touch_links:delayed_clicks_persist_job",
-            b"started_at",
-            b"finished_at",
-            b"running_time",
-            b"attempted",
-            b"persisted",
-            b"delayed",
-            b"lost",
-            b"duplicate",
-            b"stop_reason",
+            b"stats:touch_links:delayed_clicks_persist_job",  # type: ignore
+            b"started_at",  # type: ignore
+            b"finished_at",  # type: ignore
+            b"running_time",  # type: ignore
+            b"attempted",  # type: ignore
+            b"persisted",  # type: ignore
+            b"delayed",  # type: ignore
+            b"lost",  # type: ignore
+            b"duplicate",  # type: ignore
+            b"stop_reason",  # type: ignore
         )
 
         if result[0] is None or result[1] is None:
@@ -93,7 +93,7 @@ async def last_delayed_click_persist_job(
                 lost=int(result[6]),
                 duplicate=int(result[7]),
                 stop_reason=result[8].decode("utf-8"),
-            ).json(),
+            ).model_dump_json(),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

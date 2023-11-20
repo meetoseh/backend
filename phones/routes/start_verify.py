@@ -98,7 +98,7 @@ async def start_verify(
     """
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         redis = await itgs.redis()
@@ -122,7 +122,7 @@ async def start_verify(
                 content=StandardErrorResponse[ERROR_429_TYPES](
                     type="too_many_verification_attempts",
                     message="Too many verification attempts have been made",
-                ).json(),
+                ).model_dump_json(),
             )
 
         twilio = await itgs.twilio()
@@ -156,7 +156,7 @@ async def start_verify(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="provider_error",
                     message="There was an error with the phone verification provider. Try again later.",
-                ).json(),
+                ).model_dump_json(),
                 status_code=503,
                 headers={"Retry-After": "60"},
             )
@@ -172,7 +172,7 @@ async def start_verify(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="provider_error",
                     message="There was an error with the phone verification provider",
-                ).json(),
+                ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Retry-After": "600",
@@ -271,7 +271,7 @@ async def start_verify(
 
         return Response(
             status_code=201,
-            content=StartVerifyResponse(uid=uid).json(),
+            content=StartVerifyResponse(uid=uid).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

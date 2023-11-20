@@ -35,7 +35,7 @@ class ReadUserAttributionResponse(BaseModel):
             "most recent to least recent, but only including clicks from before the "
             "user signed up and not including more than 4 clicks in total."
         ),
-        max_items=4,
+        max_length=4,
     )
 
     journey_public_links: List[JourneyPublicLinkView] = Field(
@@ -44,7 +44,7 @@ class ReadUserAttributionResponse(BaseModel):
             "in order from most recent to least recent, but only including clicks from "
             "before the user signed up and not including more than 4 clicks in total."
         ),
-        max_items=4,
+        max_length=4,
     )
 
     first_seen_at: float = Field(
@@ -60,7 +60,7 @@ ERROR_404_TYPES = Literal["user_not_found"]
 USER_NOT_FOUND_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="user_not_found", message="There is no user with that sub"
-    ).json(),
+    ).model_dump_json(),
     headers={
         "Content-Type": "application/json; charset=utf-8",
     },
@@ -106,7 +106,7 @@ async def read_user_attribution_info(
                 utms=utms,
                 journey_public_links=journey_public_links,
                 first_seen_at=first_seen_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=600, stale-while-revalidate=600, stale-if-error=86400",
@@ -204,7 +204,7 @@ async def get_journey_public_links(itgs: Itgs, sub: str) -> List[JourneyPublicLi
 
     fetched_journeys = await raw_read_journeys(
         itgs,
-        [("uid", FilterInItem(list(incomplete_by_uid.keys())))],
+        [("uid", FilterInItem(list(incomplete_by_uid.keys())))],  # type: ignore
         [],
         len(incomplete_by_uid),
     )

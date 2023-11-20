@@ -15,11 +15,11 @@ from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
 from itgs import Itgs
 
-CONTACT_METHOD_LOG_SORT_OPTIONS = [
+CONTACT_METHOD_LOG_SORT_OPTIONS: Tuple[type, ...] = (
     SortItem[Literal["uid"], str],
     SortItem[Literal["user_sub"], str],
     SortItem[Literal["created_at"], float],
-]
+)
 ContactMethodLogSortOption = Union[
     SortItemModel[Literal["uid"], str],
     SortItemModel[Literal["user_sub"], str],
@@ -66,6 +66,25 @@ class ContactMethodLogFilter(BaseModel):
     created_at: Optional[FilterItemModel[float]] = Field(
         None, description="the time the log entry was inserted"
     )
+
+    def __init__(
+        self,
+        *,
+        uid: Optional[FilterTextItemModel] = None,
+        user_sub: Optional[FilterTextItemModel] = None,
+        channel: Optional[FilterTextItemModel] = None,
+        identifier: Optional[FilterTextItemModel] = None,
+        action: Optional[FilterTextItemModel] = None,
+        created_at: Optional[FilterItemModel[float]] = None,
+    ):
+        return super().__init__(
+            uid=uid,
+            user_sub=user_sub,
+            channel=channel,
+            identifier=identifier,
+            action=action,
+            created_at=created_at,
+        )
 
 
 class ReadContactMethodLogRequest(BaseModel):
@@ -146,7 +165,7 @@ async def read_contact_method_log(
                 next_page_sort=[s.to_model() for s in next_page_sort]
                 if next_page_sort is not None
                 else None,
-            ).json(),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
 

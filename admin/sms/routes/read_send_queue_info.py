@@ -40,8 +40,8 @@ async def read_send_queue_info(authorization: Optional[str] = Header(None)):
         to_send_key = b"sms:to_send"
 
         async with redis.pipeline(transaction=False) as pipe:
-            await pipe.llen(to_send_key)
-            await pipe.lindex(to_send_key, 0)
+            await pipe.llen(to_send_key)  # type: ignore
+            await pipe.lindex(to_send_key, 0)  # type: ignore
             length, oldest_item = await pipe.execute()
 
         if oldest_item is not None:
@@ -53,7 +53,7 @@ async def read_send_queue_info(authorization: Optional[str] = Header(None)):
             content=ReadSendQueueInfoResponse(
                 length=length,
                 oldest_last_queued_at=oldest_last_queued_at,
-            ).json(),
+            ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "no-store",

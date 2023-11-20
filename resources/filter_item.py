@@ -1,10 +1,8 @@
 from typing import Generic, TypeVar, get_args, Union, List
 from .standard_operator import StandardOperator
-from pydantic import Field, validator
-from pydantic.generics import GenericModel
+from pydantic import BaseModel, Field, validator
 from pypika import Parameter
-from pypika.terms import Term
-from pypika import Criterion
+from pypika.terms import Term, ValueWrapper
 from datetime import date
 
 
@@ -33,7 +31,7 @@ class FilterItem(Generic[ValueT]):
         self.operator = operator
         self.value = value
 
-    def applied_to(self, term: Term, qargs: list) -> Criterion:
+    def applied_to(self, term: Term, qargs: list) -> Term:
         """Returns the appropriate criterion for this filter item when the
         term is the pseudocolumn that the filter applies to.
 
@@ -94,7 +92,7 @@ class FilterItem(Generic[ValueT]):
             return term != p
         elif self.operator == StandardOperator.GREATER_THAN:
             if formattable_value is None:
-                return Term.wrap_constant(False)
+                return ValueWrapper(False)
             qargs.append(formattable_value)
             return term > p
         elif self.operator == StandardOperator.GREATER_THAN_OR_NULL:
@@ -114,7 +112,7 @@ class FilterItem(Generic[ValueT]):
             return term.isnull() | (term >= p)
         elif self.operator == StandardOperator.LESS_THAN:
             if formattable_value is None:
-                return Term.wrap_constant(False)
+                return ValueWrapper(False)
             qargs.append(formattable_value)
             return term < p
         elif self.operator == StandardOperator.LESS_THAN_OR_NULL:
@@ -133,23 +131,27 @@ class FilterItem(Generic[ValueT]):
             qargs.append(formattable_value)
             return term.isnull() | (term <= p)
         elif self.operator == StandardOperator.BETWEEN:
+            assert isinstance(formattable_value, (list, tuple))
             qargs.extend(formattable_value)
             return term.between(p, p)
         elif self.operator == StandardOperator.BETWEEN_OR_NULL:
+            assert isinstance(formattable_value, (list, tuple))
             qargs.extend(formattable_value)
             return term.isnull() | term.between(p, p)
         elif self.operator == StandardOperator.BETWEEN_EXCLUSIVE_END:
+            assert isinstance(formattable_value, (list, tuple))
             qargs.extend(formattable_value)
             return (term >= p) & (term < p)
         elif self.operator == StandardOperator.BETWEEN_EXCLUSIVE_END_OR_NULL:
+            assert isinstance(formattable_value, (list, tuple))
             qargs.extend(formattable_value)
             return term.isnull() | ((term >= p) & (term < p))
 
         raise ValueError(f"Unsupported operator: {self.operator}")
 
     def to_model(self) -> "FilterItemModel[ValueT]":
-        return FilterItemModel[self.__valuet__()](
-            operator=self.operator.value, value=self.value
+        return FilterItemModel[self.__valuet__()].model_validate(
+            {"operator": self.operator.value, "value": self.value}
         )
 
     def __repr__(self) -> str:
@@ -157,10 +159,12 @@ class FilterItem(Generic[ValueT]):
 
     def __valuet__(self) -> type:
         """The value type for this class"""
-        return get_args(self.__orig_class__)[0]
+        orig_class = getattr(self, "__orig_class__", None)
+        assert orig_class is not None, self
+        return get_args(orig_class)[0]
 
 
-class FilterItemModel(GenericModel, Generic[ValueT]):
+class FilterItemModel(BaseModel, Generic[ValueT]):
     operator: StandardOperator = Field(
         title="Operator",
         description=(
@@ -176,6 +180,8 @@ class FilterItemModel(GenericModel, Generic[ValueT]):
             "between-like operators, otherwise must be a single item"
         ),
     )
+
+    hidden: ValueT = Field(None, description="Ignore this field", exclude=True)
 
     @validator("value")
     def validate_value(cls, value, values):
@@ -196,6 +202,12 @@ class FilterItemModel(GenericModel, Generic[ValueT]):
                 )
         return value
 
+    @validator("hidden")
+    def validate_hidden(cls, value):
+        if value is not None:
+            raise ValueError("hidden field must be None")
+        return None
+
     def to_result(self) -> FilterItem[ValueT]:
         """Returns the standard internal representation"""
         return FilterItem[self.__valuet__()](
@@ -204,4 +216,10 @@ class FilterItemModel(GenericModel, Generic[ValueT]):
 
     def __valuet__(self) -> type:
         """The value type for this class"""
-        return self.__fields__["value"].type_.__args__[0]
+        # Note it's not possible to get the generic from our class directly,
+        # or from nested types, but we can get it from the hidden field. Not
+        # reall sure why.
+        hidden_field = self.model_fields["hidden"]
+        hidden_field_annotation = hidden_field.annotation
+        assert hidden_field_annotation is not None
+        return hidden_field_annotation

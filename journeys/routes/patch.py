@@ -1,10 +1,9 @@
-import json
 import secrets
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, constr
-from typing import Any, List, Optional, Literal
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Any, List, Optional, Literal, Annotated, cast as typing_cast
 from auth import auth_admin
 from content_files.models import ContentFileRef
 import content_files.auth as content_files_auth
@@ -26,7 +25,7 @@ from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from pypika import Query, Table, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import ExistsCriterion, Term
+from pypika.terms import ExistsCriterion, Term, NullValue
 from db.utils import ParenthisizeCriterion
 
 
@@ -69,11 +68,17 @@ class PatchJourneyRequest(BaseModel):
             "null to keep the instructor as is."
         ),
     )
-    title: Optional[constr(strip_whitespace=True, min_length=1, max_length=48)] = Field(
+    title: Optional[
+        Annotated[
+            str, StringConstraints(strip_whitespace=True, min_length=1, max_length=48)
+        ]
+    ] = Field(
         None, description="The display title, may be null to keep the title as is."
     )
     description: Optional[
-        constr(strip_whitespace=True, min_length=1, max_length=255)
+        Annotated[
+            str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)
+        ]
     ] = Field(
         None,
         description="The display description, may be null to keep the description as is.",
@@ -112,6 +117,7 @@ ERROR_404_TYPES = Literal[
     "journey_not_found",
     "journey_audio_content_not_found",
     "journey_background_image_not_found",
+    "variation_of_journey_not_found",
     "journey_subcategory_not_found",
     "instructor_not_found",
 ]
@@ -174,7 +180,7 @@ async def patch_journey(
                 content=StandardErrorResponse[ERROR_400_TYPES](
                     type="nothing_to_patch",
                     message="No fields were specified to be patched",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=400,
             )
@@ -192,6 +198,8 @@ async def patch_journey(
         journey_background_images = Table("journey_background_images")
         journey_subcategories = Table("journey_subcategories")
         content_files = Table("content_files")
+        samples = content_files.as_("samples")
+        videos = content_files.as_("videos")
         image_files = Table("image_files")
         blurred_image_files = image_files.as_("blurred_image_files")
         darkened_image_files = image_files.as_("darkened_image_files")
@@ -226,11 +234,17 @@ async def patch_journey(
                 instructors.bias,
                 journey_subcategories.bias,
                 parents.uid,
+                samples.uid,
+                videos.uid,
             )
             .left_join(journeys)
             .on((journeys.uid == Parameter("?")) & journeys.deleted_at.isnull())
             .join(interactive_prompts)
             .on(interactive_prompts.id == journeys.interactive_prompt_id)
+            .left_join(samples)
+            .on(samples.id == journeys.sample_content_file_id)
+            .left_join(videos)
+            .on(videos.id == journeys.video_content_file_id)
         )
         qargs = [uid]
 
@@ -336,50 +350,62 @@ async def patch_journey(
             query = query.left_outer_join(parents).on(
                 journeys.variation_of_journey_id == parents.id
             )
-        else:
+        elif args.variation_of_journey_uid.value is not None:
             query = query.left_outer_join(parents).on(
                 (parents.uid == Parameter("?"))
                 & parents.deleted_at.isnull()
                 & parents.variation_of_journey_id.isnull()
             )
-            qargs.append(args.variation_of_journey_uid.value)
+            if args.variation_of_journey_uid.value is not None:
+                qargs.append(args.variation_of_journey_uid.value)
+        else:
+            query = query.left_outer_join(parents).on(NullValue().isnotnull())
 
         response = await cursor.execute(query_prefix + query.get_sql(), qargs)
-        assert len(response.results) == 1
+        assert response.results is not None and len(response.results) == 1, response
 
-        journey_exists: bool = response.results[0][0]
-        content_file_uid: Optional[str] = response.results[0][1]
-        image_file_uid: Optional[str] = response.results[0][2]
-        journey_subcategory_uid: Optional[str] = response.results[0][3]
-        journey_subcategory_internal_name: Optional[str] = response.results[0][4]
-        journey_subcategory_external_name: Optional[str] = response.results[0][5]
-        instructor_uid: Optional[str] = response.results[0][6]
-        instructor_name: Optional[str] = response.results[0][7]
-        instructor_picture_file_uid: Optional[str] = response.results[0][8]
-        instructor_created_at: Optional[float] = response.results[0][9]
-        instructor_deleted_at: Optional[float] = response.results[0][10]
-        journey_created_at: Optional[float] = response.results[0][11]
-        journey_title: Optional[str] = response.results[0][12]
-        journey_description: Optional[str] = response.results[0][13]
-        journey_prompt: Optional[Prompt] = (
+        journey_exists = typing_cast(bool, response.results[0][0])
+        content_file_uid = typing_cast(Optional[str], response.results[0][1])
+        image_file_uid = typing_cast(Optional[str], response.results[0][2])
+        journey_subcategory_uid = typing_cast(Optional[str], response.results[0][3])
+        journey_subcategory_internal_name = typing_cast(
+            Optional[str], response.results[0][4]
+        )
+        journey_subcategory_external_name = typing_cast(
+            Optional[str], response.results[0][5]
+        )
+        instructor_uid = typing_cast(Optional[str], response.results[0][6])
+        instructor_name = typing_cast(Optional[str], response.results[0][7])
+        instructor_picture_file_uid = typing_cast(Optional[str], response.results[0][8])
+        instructor_created_at = typing_cast(Optional[float], response.results[0][9])
+        instructor_deleted_at = typing_cast(Optional[float], response.results[0][10])
+        journey_created_at = typing_cast(Optional[float], response.results[0][11])
+        journey_title = typing_cast(Optional[str], response.results[0][12])
+        journey_description = typing_cast(Optional[str], response.results[0][13])
+        journey_prompt = typing_cast(
+            Optional[Prompt],
             parse_prompt_from_json(response.results[0][14])
             if response.results[0][14] is not None
-            else None
+            else None,
         )
-        blurred_image_file_uid: Optional[str] = response.results[0][15]
-        darkened_image_file_uid: Optional[str] = response.results[0][16]
-        journey_lobby_duration_seconds: float = response.results[0][17]
-        original_interactive_prompt_uid: Optional[str] = response.results[0][18]
-        instructor_bias: Optional[float] = response.results[0][19]
-        journey_subcategory_bias: Optional[float] = response.results[0][20]
-        variation_of_journey_uid: Optional[str] = response.results[0][21]
+        blurred_image_file_uid = typing_cast(Optional[str], response.results[0][15])
+        darkened_image_file_uid = typing_cast(Optional[str], response.results[0][16])
+        journey_lobby_duration_seconds = typing_cast(float, response.results[0][17])
+        original_interactive_prompt_uid = typing_cast(
+            Optional[str], response.results[0][18]
+        )
+        instructor_bias = typing_cast(Optional[float], response.results[0][19])
+        journey_subcategory_bias = typing_cast(Optional[float], response.results[0][20])
+        variation_of_journey_uid = typing_cast(Optional[str], response.results[0][21])
+        sample_content_file_uid = typing_cast(Optional[str], response.results[0][22])
+        video_content_file_uid = typing_cast(Optional[str], response.results[0][23])
 
         if not journey_exists:
             return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_not_found",
                     message="The journey with the specified uid was not found.",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -389,7 +415,7 @@ async def patch_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_audio_content_not_found",
                     message="The journey audio content with the specified uid was not found.",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -403,7 +429,7 @@ async def patch_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_background_image_not_found",
                     message="The journey background image with the specified uid was not found.",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -413,7 +439,7 @@ async def patch_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="journey_subcategory_not_found",
                     message="The journey subcategory with the specified uid was not found.",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -423,7 +449,7 @@ async def patch_journey(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="instructor_not_found",
                     message="The instructor with the specified uid was not found.",
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -440,7 +466,7 @@ async def patch_journey(
                         "The variation of journey with the specified uid was not found, is "
                         "deleted, or is a variation itself."
                     ),
-                ).json(),
+                ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=404,
             )
@@ -593,20 +619,22 @@ async def patch_journey(
         )
         where_qargs.append(uid)
 
-        query = (
+        query_str = (
             update_and_set_query._update_sql(with_namespace=True)
             + update_and_set_query._set_sql(with_namespace=True)
             + " "
             + from_query.get_sql().lstrip("SELECT 1 ")
         )
         if standard_field_update:
-            response = await cursor.execute(query, set_qargs + join_qargs + where_qargs)
+            response = await cursor.execute(
+                query_str, set_qargs + join_qargs + where_qargs
+            )
             if response.rows_affected is None or response.rows_affected < 1:
                 return Response(
                     content=StandardErrorResponse[ERROR_503_TYPES](
                         type="raced",
                         message="The journey was updated by another request.",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
                         "Retry-After": "1",
@@ -632,14 +660,14 @@ async def patch_journey(
                             AND interactive_prompts.uid = ?
                     )
                 """,
-                (args.prompt.json(), uid, original_interactive_prompt_uid),
+                (args.prompt.model_dump_json(), uid, original_interactive_prompt_uid),
             )
             if response.rows_affected is None or response.rows_affected < 1:
                 return Response(
                     content=StandardErrorResponse[ERROR_503_TYPES](
                         type="raced",
                         message="The journey was updated by another request (failed to set prompt).",
-                    ).json(),
+                    ).model_dump_json(),
                     headers={
                         "Content-Type": "application/json; charset=utf-8",
                         "Retry-After": "1",
@@ -670,7 +698,7 @@ async def patch_journey(
                         """,
                         (
                             new_prompt_uid,
-                            new_prompt.json(),
+                            new_prompt.model_dump_json(),
                             new_lobby_duration_seconds,
                             now,
                         ),
@@ -782,9 +810,29 @@ async def patch_journey(
                 else journey_description,
                 prompt=args.prompt if args.prompt is not None else journey_prompt,
                 created_at=journey_created_at,
-                lobby_duration_seconds=journey_lobby_duration_seconds,
+                lobby_duration_seconds=int(journey_lobby_duration_seconds),
                 variation_of_journey_uid=variation_of_journey_uid,
-            ).json(),
+                sample=(
+                    None
+                    if sample_content_file_uid is None
+                    else ContentFileRef(
+                        uid=sample_content_file_uid,
+                        jwt=await content_files_auth.create_jwt(
+                            itgs, content_file_uid=sample_content_file_uid
+                        ),
+                    )
+                ),
+                video=(
+                    None
+                    if video_content_file_uid is None
+                    else ContentFileRef(
+                        uid=video_content_file_uid,
+                        jwt=await content_files_auth.create_jwt(
+                            itgs, content_file_uid=video_content_file_uid
+                        ),
+                    )
+                ),
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

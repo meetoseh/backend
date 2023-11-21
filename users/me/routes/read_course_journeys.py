@@ -37,31 +37,32 @@ UserCourseJourneySortOption = Union[
 
 class UserCourseJourneyFilter(BaseModel):
     journey_uid: Optional[FilterItemModel[str]] = Field(
-        description="the uid of the journey"
+        None, description="the uid of the journey"
     )
     journey_title: Optional[FilterTextItemModel] = Field(
-        description="the title of the journey"
+        None, description="the title of the journey"
     )
     journey_instructor_name: Optional[FilterTextItemModel] = Field(
-        description="the name of the instructor of the journey"
+        None, description="the name of the instructor of the journey"
     )
     journey_last_taken_at: Optional[FilterItemModel[float]] = Field(
-        description="the last time the journey was taken by the user"
+        None, description="the last time the journey was taken by the user"
     )
     journey_liked_at: Optional[FilterItemModel[float]] = Field(
-        description="the last time the journey was liked by the user"
+        None, description="the last time the journey was liked by the user"
     )
     course_uid: Optional[FilterItemModel[str]] = Field(
-        description="the uid of the course"
+        None, description="the uid of the course"
     )
     association_uid: Optional[FilterItemModel[str]] = Field(
-        description="the uid of the association between the course and the journey"
+        None,
+        description="the uid of the association between the course and the journey",
     )
     joined_course_at: Optional[FilterItemModel[float]] = Field(
-        description="the time the user was added to the course"
+        None, description="the time the user was added to the course"
     )
     priority: Optional[FilterItemModel[int]] = Field(
-        description="the priority of the journey within the course"
+        None, description="the priority of the journey within the course"
     )
 
 

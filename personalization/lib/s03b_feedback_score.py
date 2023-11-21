@@ -100,7 +100,7 @@ async def map_to_feedback_score_with_debug(
     """map_to_feedback_score with debug=True and more precise typing"""
     return typing_cast(
         List[FeedbackScoreWithDebugInfo],
-        map_to_feedback_score(
+        await map_to_feedback_score(
             itgs,
             combinations=combinations,
             feedback=typing_cast(List[JourneyFeedback], feedback),

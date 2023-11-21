@@ -264,10 +264,9 @@ async def get_by_category_from_tree(
         """,
         [uid, category, *indices],
     )
-    assert response.results is not None, response
 
     result: Dict[int, int] = dict()
-    for category_value, val in response.results:
+    for category_value, val in response.results or []:
         result[category_value] = val
 
     return dict(result or [])

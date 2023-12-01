@@ -360,14 +360,14 @@ async def get_monthly_active_users(
                 typing_cast(Union[bytes, bytearray, memoryview], as_bytes)
             )
             as_daily_chart = convert_monthly_to_daily(as_monthly_chart, unix_date)
-            encoded = as_daily_chart.model_dump_json().encode("utf-8")
+            encoded = as_daily_chart.__pydantic_serializer__.to_json(as_daily_chart)
             await set_monthly_active_users_in_local_cache(
                 itgs, unix_date, "day", encoded
             )
             return Response(content=encoded, headers=HEADERS, status_code=200)
 
     monthly_chart = await get_monthly_active_users_from_source(itgs, unix_date)
-    encoded_monthly_chart = monthly_chart.model_dump_json().encode("utf-8")
+    encoded_monthly_chart = monthly_chart.__pydantic_serializer__.to_json(monthly_chart)
     await set_monthly_active_users_in_local_cache(
         itgs, unix_date, "month", encoded_monthly_chart
     )
@@ -376,6 +376,6 @@ async def get_monthly_active_users(
         return Response(content=encoded_monthly_chart, headers=HEADERS, status_code=200)
 
     as_daily_chart = convert_monthly_to_daily(monthly_chart, unix_date)
-    encoded = as_daily_chart.model_dump_json().encode("utf-8")
+    encoded = as_daily_chart.__pydantic_serializer__.to_json(as_daily_chart)
     await set_monthly_active_users_in_local_cache(itgs, unix_date, "day", encoded)
     return Response(content=encoded, headers=HEADERS, status_code=200)

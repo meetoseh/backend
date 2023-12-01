@@ -261,7 +261,7 @@ async def describe_user(itgs: Itgs, sub: str) -> Optional[DescribedUser]:
 
     await redis.set(
         f"described_users:{sub}".encode("utf-8"),
-        real.model_dump_json().encode("utf-8"),
+        real.__pydantic_serializer__.to_json(real),
         ex=60 * 15,
     )
     return real

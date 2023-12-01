@@ -43,5 +43,5 @@ CREATE TABLE user_email_addresses(
 CREATE INDEX user_email_addresses_user_idx ON user_email_addresses(user_id);
 
 /* Search */
-CREATE INDEX user_email_addresses_email_idx ON user_email_addresses(email);
+CREATE INDEX user_email_addresses_email_idx ON user_email_addresses(email COLLATE NOCASE);
 ```

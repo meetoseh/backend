@@ -60,4 +60,4 @@ async def push_message_resource_event(itgs: Itgs, evt: MessageResourceEvent) -> 
         evt (MessageResourceEvent): the event to push
     """
     redis = await itgs.redis()
-    await redis.rpush(b"sms:event", evt.model_dump_json().encode("utf-8"))  # type: ignore
+    await redis.rpush(b"sms:event", evt.__pydantic_serializer__.to_json(evt))  # type: ignore

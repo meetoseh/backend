@@ -243,6 +243,6 @@ async def get_daily_active_users(itgs: Itgs, unix_date: int) -> Response:
         )
 
     response = await get_daily_active_users_from_source(itgs, unix_date)
-    encoded_response = response.model_dump_json().encode("utf-8")
+    encoded_response = response.__pydantic_serializer__.to_json(response)
     await set_daily_active_users_in_local_cache(itgs, unix_date, encoded_response)
     return Response(content=encoded_response, headers=HEADERS, status_code=200)

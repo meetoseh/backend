@@ -106,8 +106,12 @@ class EmailPending(BaseModel):
                 "utf-8"
             ),
             b"send_accepted_at": str(self.send_accepted_at).encode("utf-8"),
-            b"failure_job": self.failure_job.model_dump_json().encode("utf-8"),
-            b"success_job": self.success_job.model_dump_json().encode("utf-8"),
+            b"failure_job": self.failure_job.__pydantic_serializer__.to_json(
+                self.failure_job
+            ),
+            b"success_job": self.success_job.__pydantic_serializer__.to_json(
+                self.success_job
+            ),
         }
 
     @classmethod

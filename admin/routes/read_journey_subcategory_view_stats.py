@@ -468,6 +468,6 @@ async def get_journey_subcategory_view_stats(
         )
 
     data = await get_journey_subcategory_view_stats_from_source(itgs, unix_date, tz=tz)
-    encoded = data.model_dump_json().encode("utf-8")
+    encoded = data.__pydantic_serializer__.to_json(data)
     await notify_backend_instances_of_response(itgs, unix_date, encoded)
     return Response(content=encoded, headers=HEADERS, status_code=200)

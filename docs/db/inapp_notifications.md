@@ -178,6 +178,68 @@ particular inapp notification.
   - `skip`: Within our prompt, instead of selecting allow notifications they pressed
     skip, and thus we never opened the native prompt.
 
+- Merge Account (`oseh_ian_ez6eLf92Lbz1Odr6OKIw6A`) asks the user to try logging in with
+  a different provider in case they have another user they ought to merge in.
+
+  - `open`: always added as the first action to provide additional context. extra
+    is: `{"merge_suggestions": ["Google"]}`, where merge suggestions contains the
+    list of providers that are being suggested
+  - `continue_with_provider`: if the user clicks on on of the provider links
+    extra is formatted as `{"provider": "Google"}`
+  - `x`: the user rejects the request by clicking the x in the top-right
+
+- Confirm Merge Account (`oseh_ian_uKEDNejaLGNWKhDcgmHORg`) is shown after the user
+  is redirected back to oseh.io when the provider url was created for merging
+
+  - `open`: always added as the first action to provide additional context.
+    extra is
+    ```json
+    {
+      "token_original_user_sub": "string or null",
+      "provider": "string or null",
+      "provider_sub": "string or null"
+    }
+    ```
+    where these are parsed values from the merge token, null if any error occurs
+    while loading them. Regardless of if the merge token could successfully
+    be decoded the frontend will proceed by forwarding it to start merge
+  - `start`: called without user interaction after we get a response from the
+    server for the start merge step. The extra is just the response from the
+    server after frontend parsing (snake_case -> camelCase) or just of the shape
+    `{"error": "string"}`
+  - `no_change_required`: Used to indicate we are showing the no change required
+    text. Extra is unset
+  - `created_and_attached`: Used to indicate we are showing the created and attached
+    text. Extra is unset
+  - `trivial_merge`: Used to indicate we are showing the trivial merge text. Extra is
+    unset.
+  - `confirmation_required`: Used to indicate that we are showing the confirmation
+    text. Extra is of the shape
+    ```json
+    {
+      "emails": ["string"],
+      "phones": ["string"]
+    }
+    ```
+    where one list may instead be null if there is no conflict
+  - `confirm_select_email`: Used when the user selects one of the
+    emails, before submitting. Extra is `{"email": "string"}`
+  - `confirm_select_phone`: Used when the user selects one of the phone numbers,
+    before submitting. Extra is `{"phone": "string"}`
+  - `confirm_start`: Used when the user presses the merge button on confirmation
+    screen. Extra is `{"email": "string or null", "phone": "phone or null", "error": "string or null"}` where the error here is referring to client-side errors
+    (e.g., "You must select a phone number")
+  - `confirmed`: Used after `confirm_start` when `error` is `null` and a response
+    from the server is receives. Extra is `{"status": 204}` referring to the status
+    code from the response, or `{"error": "string"}` if a different type of error
+    occurred (e.g., fetch error)
+  - `confirm_finish`: Used to indicate that we showed the confirm finished screen
+  - `contact_support`: Used to indicate that we showed the contact support screen
+  - `dismiss`: Used if the user dismissed the screen via the X or equivalent action
+  - `review_notifications`: Used to indicate that we prompted them to review notifications
+  - `goto_review_notifications`: Used to indicate that they clicked the option to
+    review notifications
+
 ## Schema
 
 ```sql

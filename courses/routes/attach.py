@@ -16,6 +16,7 @@ from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_any
 import users.lib.entitlements
+import users.lib.revenue_cat
 import time
 import socket
 
@@ -62,12 +63,12 @@ async def attach_course(
         if auth_result.result is None:
             return auth_result.error_response
 
-        conn = await itgs.conn()
-        cursor = conn.cursor("weak")
-        response = await cursor.execute(
-            "SELECT revenue_cat_id FROM users WHERE sub=?", (auth_result.result.sub,)
+        revenue_cat_id = (
+            await users.lib.revenue_cat.get_or_create_latest_revenue_cat_id(
+                itgs, user_sub=auth_result.result.sub, now=request_at
+            )
         )
-        if not response.results:
+        if revenue_cat_id is None:
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="user_not_found",
@@ -80,8 +81,6 @@ async def attach_course(
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
-
-        revenue_cat_id = response.results[0][0]
 
         revenue_cat = await itgs.revenue_cat()
         customer = await revenue_cat.create_stripe_purchase(
@@ -106,6 +105,8 @@ async def attach_course(
         if not active_entitlement_idens:
             return Response(status_code=202)
 
+        conn = await itgs.conn()
+        cursor = conn.cursor("weak")
         response = await cursor.execute(
             f"""
             SELECT courses.uid, courses.slug FROM courses

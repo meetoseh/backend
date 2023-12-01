@@ -17,7 +17,7 @@ async def handle_event(itgs: Itgs, event: EmailEvent):
     webhook_earliest_key = b"stats:email_webhooks:daily:earliest"
     event_queue_key = b"email:event"
 
-    enc_event = event.model_dump_json().encode("utf-8")
+    enc_event = event.__pydantic_serializer__.to_json(event)
 
     redis = await itgs.redis()
 

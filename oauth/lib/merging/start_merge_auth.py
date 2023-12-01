@@ -19,7 +19,7 @@ and validated via `oauth.lib.confirm_merge_auth`
 """
 
 
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Literal, Optional, TYPE_CHECKING
 from error_middleware import handle_error
 from fastapi.responses import Response
 from dataclasses import dataclass
@@ -34,13 +34,16 @@ from models import (
     AUTHORIZATION_UNKNOWN_TOKEN,
 )
 
+if TYPE_CHECKING:
+    from users.me.routes.read_merge_account_suggestions import MergeProvider
+
 
 @dataclass
 class SuccessfulAuthResult:
     original_user_sub: str
     """The sub of the original user that has permission to merge in the provider identity"""
 
-    provider: str
+    provider: "MergeProvider"
     """The provider of the identity they are allowed to merge in, e.g., SignInWithApple"""
 
     provider_sub: str

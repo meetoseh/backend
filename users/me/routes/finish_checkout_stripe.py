@@ -11,8 +11,7 @@ import stripe
 import os
 import time
 import users.lib.entitlements as entitlements
-
-from users.me.routes.read_revenue_cat_id import get_revenue_cat_id
+import users.lib.revenue_cat
 
 
 class FinishCheckoutStripeRequest(BaseModel):
@@ -35,7 +34,9 @@ router = APIRouter()
 ERROR_404_TYPES = Literal["not_found"]
 ERROR_409_TYPES = Literal["incomplete"]
 ERROR_429_TYPES = Literal["ratelimited"]
-ERROR_503_TYPES = Literal["stripe_error", "revenue_cat_error", "not_found"]
+ERROR_503_TYPES = Literal[
+    "user_not_found", "stripe_error", "revenue_cat_error", "not_found"
+]
 
 
 @router.post(
@@ -70,6 +71,7 @@ async def finish_checkout_stripe(
 
     This is only used for stripe, and requires id token authentication.
     """
+    request_at = time.time()
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
         if auth_result.result is None:
@@ -155,7 +157,7 @@ async def finish_checkout_stripe(
                 SET last_checked_at=?
                 WHERE uid=?
                 """,
-                (time.time(), args.checkout_uid),
+                (request_at, args.checkout_uid),
             )
             return Response(
                 content=StandardErrorResponse[ERROR_409_TYPES](
@@ -165,10 +167,37 @@ async def finish_checkout_stripe(
                 status_code=409,
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
+        try:
+            revenue_cat_id = (
+                await users.lib.revenue_cat.get_or_create_latest_revenue_cat_id(
+                    itgs, user_sub=auth_result.result.sub, now=request_at
+                )
+            )
+        except Exception as exc:
+            await handle_error(exc)
+            return Response(
+                content=StandardErrorResponse[ERROR_503_TYPES](
+                    type="revenue_cat_error",
+                    message="There was an error initializing RevenueCat",
+                ).model_dump_json(),
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Retry-After": "15",
+                },
+                status_code=503,
+            )
 
-        revenue_cat_id = await get_revenue_cat_id(itgs, auth_result.result.sub)
-        if not isinstance(revenue_cat_id, str):
-            return revenue_cat_id
+        if revenue_cat_id is None:
+            return Response(
+                content=StandardErrorResponse[ERROR_503_TYPES](
+                    type="user_not_found",
+                    message=(
+                        "Your user account could not be found. Please try again later."
+                    ),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=503,
+            )
 
         rc = await itgs.revenue_cat()
         try:
@@ -181,7 +210,7 @@ async def finish_checkout_stripe(
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="revenue_cat_error",
-                    message=("There was an error communicating with RevenueCat"),
+                    message="There was an error assigning the purchase in RevenueCat",
                 ).model_dump_json(),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",

@@ -333,7 +333,9 @@ async def read_feedback_from_db_and_write_to_file(
                 )
                 assert len(raw_journeys) == 1
                 out.write(b'{"journey":')
-                out.write(raw_journeys[0].model_dump_json().encode("utf-8"))
+                out.write(
+                    raw_journeys[0].__pydantic_serializer__.to_json(raw_journeys[0])
+                )
                 out.write(b',"feedback":[')
             else:
                 out.write(b",")

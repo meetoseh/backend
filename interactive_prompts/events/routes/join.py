@@ -1,4 +1,4 @@
-from typing import Literal, Optional, cast as typing_cast
+from typing import Literal, Optional, Union, cast as typing_cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from interactive_prompts.events.models import (
@@ -134,15 +134,25 @@ async def get_user_created_at(itgs: Itgs, *, sub: str) -> Optional[float]:
 async def set_user_created_at_in_cache(
     itgs: Itgs, *, sub: str, created_at: float
 ) -> None:
+    assert isinstance(created_at, float)
     cache = await itgs.local_cache()
     cache.set(f"users:{sub}:created_at".encode("utf-8"), value=created_at, expire=86400)
 
 
 async def get_user_created_at_from_cache(itgs: Itgs, *, sub: str) -> Optional[float]:
     cache = await itgs.local_cache()
-    return typing_cast(
-        Optional[float], cache.get(f"users:{sub}:created_at".encode("utf-8"))
+    res = typing_cast(
+        Union[str, bytes, float, None],
+        cache.get(f"users:{sub}:created_at".encode("utf-8")),
     )
+    if isinstance(res, str):
+        return float(res)
+    if isinstance(res, (bytes, bytearray, memoryview)):
+        return float(str(res, "ascii"))
+    if res is None:
+        return None
+    assert isinstance(res, float), f"{res=} {type(res)=}"
+    return res
 
 
 async def get_user_created_at_from_db(itgs: Itgs, *, sub: str) -> Optional[float]:
@@ -156,4 +166,6 @@ async def get_user_created_at_from_db(itgs: Itgs, *, sub: str) -> Optional[float
     if not response.results:
         return None
 
-    return response.results[0][0]
+    res = response.results[0][0]
+    assert isinstance(res, float), f"{res=} {type(res)=}"
+    return res

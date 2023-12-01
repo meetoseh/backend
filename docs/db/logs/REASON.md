@@ -2,10 +2,11 @@
 
 This file documents the standard `reason` column on log tables
 
-A json object whose format varies. Always has the fields `repo` and `file` which
+A json object whose format varies. Usually has the fields `repo` and `file` which
 refer to the github repository and path to the file (as if via `__name__`)
-respectively. If further broken down, the next key is general `reason` as a
-string and `context` as a dict
+respectively (omitted if extremely repetitive, see `Sequence of related logs`).
+If further broken down, the next key is general `reason` as a string and
+`context` as a dict
 
 Fictitious examples:
 
@@ -48,3 +49,9 @@ the extra key "old" is typically used, e.g.
   }
 }
 ```
+
+## Sequence of related logs
+
+In the case of related logs, e.g., the merge account log uses `operation_uid` to
+join entries, the related entries may omit the repo/file to reduce the size of
+columns and to make viewing the logs a bit easier.

@@ -70,8 +70,8 @@ class User(BaseModel):
     given_name: Optional[str] = Field(description="The user's first name")
     family_name: Optional[str] = Field(description="The user's last name")
     admin: bool = Field(description="Whether or not the user is an admin")
-    revenue_cat_id: str = Field(
-        description="The ID of this user on revenuecat, for purchase history"
+    revenue_cat_ids: List[str] = Field(
+        description="The IDs of this user on revenuecat, for purchase history"
     )
     profile_picture: Optional[ImageFileRef] = Field(
         description="The users profile picture, if they have one"

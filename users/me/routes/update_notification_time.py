@@ -5,6 +5,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
 from typing import Awaitable, Callable, List, Literal, Optional
+from admin.logs.routes.read_daily_reminder_settings_log import create_day_of_week_mask
 from auth import AuthResult, auth_any
 from error_middleware import handle_warning
 from lib.daily_reminders.registration_stats import (
@@ -125,11 +126,7 @@ async def update_notification_time(
             args.timezone_technique
         )
 
-        args_days_of_week = set(args.days_of_week)
-        day_of_week_mask = 0
-        for idx, day_of_week in enumerate(SORTED_DAYS_OF_WEEK_FOR_MASK):
-            if day_of_week in args_days_of_week:
-                day_of_week_mask |= 1 << idx
+        day_of_week_mask = create_day_of_week_mask(args.days_of_week)
 
         now = time.time()
         tz = pytz.timezone("America/Los_Angeles")

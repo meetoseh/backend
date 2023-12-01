@@ -305,7 +305,7 @@ def serialize_and_compress(raw: ReadDailySMSPollingResponse) -> bytes:
     Returns:
         bytes: The serialized and compressed data
     """
-    return gzip.compress(raw.model_dump_json().encode("utf-8"), mtime=0)
+    return gzip.compress(raw.__pydantic_serializer__.to_json(raw), mtime=0)
 
 
 async def write_daily_sms_polling_to_cache(

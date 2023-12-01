@@ -116,7 +116,7 @@ async def _yield_response_from_nested(
             first = False
         else:
             yield b","
-        yield voter_picture.model_dump_json().encode("utf-8")
+        yield voter_picture.__pydantic_serializer__.to_json(voter_picture)
     yield b"]}"
 
 

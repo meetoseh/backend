@@ -34,6 +34,8 @@ lists, or `user_daily_reminder_settings`
     all records in `user_daily_reminders` and added them back post-reconciliation
   - `update_notification_time`: the user set their notification time to a non-zero
     day mask from a previously zero day mask
+  - `merge_consistency`: after merging accounts we recheck their settings to ensure
+    they are internally consistent
 - `unsubscribed (integer not null)`: how many daily reminder notifications were
   removed by deleting a row in `user_daily_reminders`
 - `unsubscribed_breakdown (text not null)`: goes to a json object where the
@@ -49,6 +51,8 @@ lists, or `user_daily_reminder_settings`
     for push notifications
   - `migration_0096`: when we first added daily reminder settings we cleared
     all records in `user_daily_reminders` and then added them back post-reconciliation
+  - `merge_consistency`: after merging accounts we recheck their settings to ensure
+    they are internally consistent
 
 ## Schema
 

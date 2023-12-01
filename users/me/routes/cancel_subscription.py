@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from typing import Literal, Optional
+from typing import List, Literal, Optional, cast
 from auth import auth_id
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -142,7 +142,6 @@ async def cancel_subscription(authorization: Optional[str] = Header(None)):
             response = await cursor.execute(
                 """
                 SELECT 
-                  users.revenue_cat_id,
                   stripe_customers.stripe_customer_id
                 FROM users 
                 LEFT OUTER JOIN stripe_customers ON users.id = stripe_customers.user_id
@@ -154,87 +153,116 @@ async def cancel_subscription(authorization: Optional[str] = Header(None)):
             if not response.results:
                 return MULTIPLE_UPDATES_RESPONSE
 
-            revenue_cat_id: str = response.results[0][0]
-            stripe_customer_id: Optional[str] = response.results[0][1]
-            revenue_cat = await itgs.revenue_cat()
+            stripe_customer_ids: List[str] = []
+            for row in response.results:
+                row_stripe_customer_id = cast(Optional[str], row[0])
+                if row_stripe_customer_id is not None:
+                    stripe_customer_ids.append(row_stripe_customer_id)
 
-            customer_info = await revenue_cat.get_customer_info(
-                revenue_cat_id=revenue_cat_id
+            response = await cursor.execute(
+                """
+                SELECT
+                    user_revenue_cat_ids.revenue_cat_id
+                FROM users
+                LEFT OUTER JOIN user_revenue_cat_ids ON user_revenue_cat_ids.user_id = users.id
+                WHERE users.sub = ?
+                """,
+                (auth_result.result.sub,),
             )
+            if not response.results:
+                return MULTIPLE_UPDATES_RESPONSE
+
+            revenue_cat_ids: List[str] = []
+            for row in response.results:
+                row_revenue_cat_id = cast(Optional[str], row[0])
+                if row_revenue_cat_id is not None:
+                    revenue_cat_ids.append(row_revenue_cat_id)
+
+            if not revenue_cat_ids:
+                return NO_ACTIVE_SUBSCRIPTION_RESPONSE
+
             now = time.time()
             canceled_something = False
-            for (
-                product_id,
-                subscription,
-            ) in customer_info.subscriber.subscriptions.items():
-                is_active = (
-                    subscription.expires_date is None
-                    or subscription.expires_date.timestamp() > now
+            revenue_cat = await itgs.revenue_cat()
+
+            for revenue_cat_id in revenue_cat_ids:
+                customer_info = await revenue_cat.get_customer_info(
+                    revenue_cat_id=revenue_cat_id
                 )
-                if (
-                    is_active
-                    and subscription.unsubscribe_detected_at is None
-                    and subscription.refunded_at is None
-                ):
-                    if subscription.store == "play_store":
-                        # we may be less generous with refunds in the future if people
-                        # abuse this
-                        await revenue_cat.refund_and_revoke_google_play_subscription(
-                            revenue_cat_id=revenue_cat_id, product_id=product_id
-                        )
-                        canceled_something = True
-                    elif subscription.store == "stripe":
-                        if stripe_customer_id is None:
+                for (
+                    product_id,
+                    subscription,
+                ) in customer_info.subscriber.subscriptions.items():
+                    is_active = (
+                        subscription.expires_date is None
+                        or subscription.expires_date.timestamp() > now
+                    )
+                    if (
+                        is_active
+                        and subscription.unsubscribe_detected_at is None
+                        and subscription.refunded_at is None
+                    ):
+                        if subscription.store == "play_store":
+                            # we may be less generous with refunds in the future if people
+                            # abuse this
+                            await revenue_cat.refund_and_revoke_google_play_subscription(
+                                revenue_cat_id=revenue_cat_id, product_id=product_id
+                            )
+                            canceled_something = True
+                        elif subscription.store == "stripe":
+                            if not stripe_customer_ids:
+                                slack = await itgs.slack()
+                                await slack.send_web_error_message(
+                                    f"While canceling {auth_result.result.sub=}, {revenue_cat_id=}, found "
+                                    f"an active subscription with store {subscription.store=}, but no "
+                                    f"stripe_customer_ids",
+                                    "Delete stripe subscription with no stripe customer",
+                                )
+                                return MULTIPLE_UPDATES_RESPONSE
+
+                            for stripe_customer_id in stripe_customer_ids:
+                                stripe_subscriptions = await run_in_threadpool(
+                                    stripe.Subscription.list,
+                                    customer=stripe_customer_id,
+                                    price=os.environ["OSEH_STRIPE_PRICE_ID"],
+                                    api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
+                                    limit=3,
+                                )
+
+                                if len(stripe_subscriptions) >= 3:
+                                    slack = await itgs.slack()
+                                    await slack.send_web_error_message(
+                                        f"While canceling `{auth_result.result.sub=}`, `{revenue_cat_id=}`, found "
+                                        f"an active subscription with store `{subscription.store=}`, but too many "
+                                        f"stripe subscriptions on customer `{stripe_customer_id=}`.",
+                                        "Delete stripe subscription with multiple stripe subscriptions",
+                                    )
+                                    return MULTIPLE_UPDATES_RESPONSE
+
+                                # May be empty for a while after the cancellation before revenue cat
+                                # processes the cancellation
+                                for stripe_subscription in stripe_subscriptions:
+                                    await run_in_threadpool(
+                                        stripe.Subscription.delete,
+                                        stripe_subscription.id,  # type: ignore
+                                        prorate=True,
+                                        api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
+                                    )
+                                    canceled_something = True
+
+                        elif subscription.store == "app_store":
+                            return HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE
+                        elif subscription.store == "promotional":
+                            return HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE
+                        else:
                             slack = await itgs.slack()
                             await slack.send_web_error_message(
                                 f"While canceling {auth_result.result.sub=}, {revenue_cat_id=}, found "
                                 f"an active subscription with store {subscription.store=}, but no "
-                                f"stripe_customer_id: {stripe_customer_id=}",
-                                "Delete stripe subscription with no stripe customer",
+                                f"support for that store.",
+                                "Delete subscription with unknown store",
                             )
                             return MULTIPLE_UPDATES_RESPONSE
-
-                        stripe_subscriptions = await run_in_threadpool(
-                            stripe.Subscription.list,
-                            customer=stripe_customer_id,
-                            price=os.environ["OSEH_STRIPE_PRICE_ID"],
-                            api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
-                            limit=3,
-                        )
-
-                        if len(stripe_subscriptions) >= 3:
-                            slack = await itgs.slack()
-                            await slack.send_web_error_message(
-                                f"While canceling {auth_result.result.sub=}, {revenue_cat_id=}, found "
-                                f"an active subscription with store {subscription.store=}, but too many "
-                                f"stripe subscriptions.",
-                                "Delete stripe subscription with multiple stripe subscriptions",
-                            )
-                            return MULTIPLE_UPDATES_RESPONSE
-
-                        # May be empty for a while after the cancellation before revenue cat
-                        # processes the cancellation
-                        for stripe_subscription in stripe_subscriptions:
-                            await run_in_threadpool(
-                                stripe.Subscription.delete,
-                                stripe_subscription.id,  # type: ignore
-                                prorate=True,
-                                api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
-                            )
-                            canceled_something = True
-                    elif subscription.store == "app_store":
-                        return HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE
-                    elif subscription.store == "promotional":
-                        return HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE
-                    else:
-                        slack = await itgs.slack()
-                        await slack.send_web_error_message(
-                            f"While canceling {auth_result.result.sub=}, {revenue_cat_id=}, found "
-                            f"an active subscription with store {subscription.store=}, but no "
-                            f"support for that store.",
-                            "Delete subscription with unknown store",
-                        )
-                        return MULTIPLE_UPDATES_RESPONSE
 
             if not canceled_something:
                 return NO_ACTIVE_SUBSCRIPTION_RESPONSE

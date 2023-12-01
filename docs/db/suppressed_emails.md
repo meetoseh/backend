@@ -34,4 +34,6 @@ CREATE TABLE suppressed_emails (
     reason TEXT NOT NULL,
     created_at REAL NOT NULL
 );
+
+CREATE INDEX suppressed_emails_email_case_insens_idx ON suppressed_emails(email_address COLLATE NOCASE);
 ```

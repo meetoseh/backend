@@ -495,7 +495,7 @@ def _create_historical(
 
     def serialize_and_compress(raw: BaseModel) -> bytes:
         # brotli would probably be better but not built-in
-        return gzip.compress(raw.model_dump_json().encode("utf-8"), mtime=0)
+        return gzip.compress(raw.__pydantic_serializer__.to_json(raw), mtime=0)
 
     async def write_to_cache(
         itgs: Itgs, *, start_unix_date: int, end_unix_date: int, data: bytes

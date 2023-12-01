@@ -3,7 +3,7 @@ import aioboto3
 import botocore.exceptions
 import aiofiles
 import os
-import logging
+from loguru import logger as logging
 from temp_files import temp_file
 import io
 
@@ -97,13 +97,13 @@ class S3:
                     await self._s3.put_object(Bucket=bucket, Key=key, Body=f2)
             return
 
-        if not isinstance(f, io.IOBase) and hasattr(f, "read"):
+        if not isinstance(f, io.IOBase):
             # Typically this is from e.g., SpooledTemporaryFile, which is nearly an io-like
             # file since introduced, but not actually one until python 3.11. We take a pretty
             # big performance hit for converting spooled files this way, but since it goes
             # away once our python version is higher, we can live with it.
 
-            sync_file = typing_cast(io.IOBase, f)
+            sync_file = typing_cast(SyncReadableBytesIO, f)
             with temp_file() as tmp:
                 async with aiofiles.open(tmp, "wb") as f2:
                     data = sync_file.read(8192)

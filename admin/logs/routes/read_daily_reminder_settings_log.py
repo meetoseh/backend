@@ -2,7 +2,7 @@ import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple, Union
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -242,6 +242,16 @@ def interpret_day_of_week_mask(mask: int) -> List[DayOfWeek]:
         for idx, day in enumerate(SORTED_DAYS_OF_WEEK_FOR_MASK)
         if (mask & (1 << idx)) != 0
     ]
+
+
+def create_day_of_week_mask(days: Sequence[DayOfWeek]) -> int:
+    """Converts the list of days of the week to a day of week mask"""
+    days_set = days if isinstance(days, (set, frozenset)) else frozenset(days)
+    day_of_week_mask = 0
+    for idx, day_of_week in enumerate(SORTED_DAYS_OF_WEEK_FOR_MASK):
+        if day_of_week in days_set:
+            day_of_week_mask |= 1 << idx
+    return day_of_week_mask
 
 
 def item_pseudocolumns(item: DailyReminderSettingsLog) -> dict:

@@ -10,17 +10,15 @@ from models import STANDARD_ERRORS_BY_CODE
 from auth import auth_any
 from itgs import Itgs
 from users.me.routes.read_streak import DayOfWeek, days_of_week
-from dataclasses import dataclass
 
 
 router = APIRouter()
 
 
-@dataclass
-class RealDailyReminderChannelSettings:
-    channel: str
-    days: List[DayOfWeek]
-    time_range: DailyReminderTimeRange
+class RealDailyReminderChannelSettings(BaseModel):
+    channel: str = Field()
+    days: List[DayOfWeek] = Field(max_length=7)
+    time_range: DailyReminderTimeRange = Field()
 
 
 class DailyReminderChannelSettings(BaseModel):
@@ -57,6 +55,11 @@ class ReadDailyReminderSettingsResponse(BaseModel):
     push: DailyReminderChannelSettings = Field(
         description="The users current push daily reminder settings"
     )
+
+
+EMAIL_PREFERRED_CHANNELS = ["sms"]
+SMS_PREFERRED_CHANNELS = ["push"]
+PUSH_PREFERRED_CHANNELS = ["email"]
 
 
 @router.get(
@@ -108,9 +111,15 @@ async def read_daily_reminder_settings(authorization: Optional[str] = Header(Non
         return Response(
             status_code=200,
             content=ReadDailyReminderSettingsResponse(
-                email=get_implied_settings(settings_by_channel, "email", ["sms"]),
-                sms=get_implied_settings(settings_by_channel, "sms", ["push"]),
-                push=get_implied_settings(settings_by_channel, "push", ["email"]),
+                email=get_implied_settings(
+                    settings_by_channel, "email", EMAIL_PREFERRED_CHANNELS
+                ),
+                sms=get_implied_settings(
+                    settings_by_channel, "sms", SMS_PREFERRED_CHANNELS
+                ),
+                push=get_implied_settings(
+                    settings_by_channel, "push", PUSH_PREFERRED_CHANNELS
+                ),
             ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )

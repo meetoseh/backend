@@ -3,7 +3,17 @@ import secrets
 import phonenumbers
 from pydantic import BaseModel, Field, validator
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Union
+from typing import (
+    Any,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Union,
+)
 from error_middleware import handle_warning
 from itgs import Itgs
 import aiohttp
@@ -27,7 +37,7 @@ from redis.exceptions import NoScriptError
 from pypika import Table, Query, Parameter
 from pypika.terms import ExistsCriterion
 from loguru import logger
-import oauth.lib.start_merge_auth
+import oauth.lib.merging.start_merge_auth
 import users.lib.stats
 import jwt
 import time
@@ -213,7 +223,7 @@ async def use_standard_merge_exchange(
         state.merging_with_user_sub is not None
     ), "cannot use merge exchange without original user sub"
     claims = await fetch_provider_token_claims(itgs, code, provider, state)
-    merge_jwt = await oauth.lib.start_merge_auth.create_jwt(
+    merge_jwt = await oauth.lib.merging.start_merge_auth.create_jwt(
         itgs,
         original_user_sub=state.merging_with_user_sub,
         provider=provider.name,
@@ -961,7 +971,7 @@ def _update_email(
                         "  SELECT 1 FROM user_email_addresses AS uea"
                         "  WHERE"
                         "   uea.user_id = users.id"
-                        "   AND uea.email = ?"
+                        "   AND uea.email = ? COLLATE NOCASE"
                         "   AND uea.uid <> ?"
                         "   AND uea.verified = 0"
                         " )"
@@ -973,7 +983,7 @@ def _update_email(
                         "verify",
                         contact_method_log_reason,
                         now,
-                        interpreted_claims.sub,
+                        user.user_sub,
                         interpreted_claims.email,
                         new_uea_uid,
                     ],
@@ -984,7 +994,7 @@ def _update_email(
                     query=(
                         "UPDATE user_email_addresses SET verified = 1 "
                         "WHERE"
-                        " user_email_addresses.email = ?"
+                        " user_email_addresses.email = ? COLLATE NOCASE"
                         " AND user_email_addresses.uid <> ?"
                         " AND user_email_addresses.verified = 0"
                         " AND EXISTS ("
@@ -997,7 +1007,7 @@ def _update_email(
                     qargs=[
                         interpreted_claims.email,
                         new_uea_uid,
-                        interpreted_claims.sub,
+                        user.user_sub,
                     ],
                     response_handler=partial(handler, "verify"),
                 ),
@@ -1202,7 +1212,7 @@ def _update_phone(
                         "verify",
                         contact_method_log_reason,
                         now,
-                        interpreted_claims.sub,
+                        user.user_sub,
                         interpreted_claims.phone_number,
                         new_upn_uid,
                     ],
@@ -1226,7 +1236,7 @@ def _update_phone(
                     qargs=[
                         interpreted_claims.phone_number,
                         new_upn_uid,
-                        interpreted_claims.sub,
+                        user.user_sub,
                     ],
                     response_handler=partial(handler, "verify"),
                 ),
@@ -1282,7 +1292,7 @@ async def _try_create_new_account_with_identity(
     identity_uid = f"oseh_ui_{secrets.token_urlsafe(16)}"
 
     queries: List[_CreateQuery] = [
-        _insert_user(
+        *_insert_user(
             user_sub=user_sub,
             provider=provider,
             interpreted_claims=interpreted_claims,
@@ -1382,7 +1392,8 @@ def _insert_user(
     provider: str,
     interpreted_claims: InterpretedClaims,
     now: float,
-) -> _CreateQuery:
+) -> Sequence[_CreateQuery]:
+    revenue_cat_uid = f"oseh_iurc_{secrets.token_urlsafe(16)}"
     revenue_cat_id = f"oseh_u_rc_{secrets.token_urlsafe(16)}"
 
     def slack_context():
@@ -1393,40 +1404,64 @@ def _insert_user(
         )
 
     async def handler(
-        itgs: Itgs, item: ResultItem, stats: RedisStatsPreparer, created: bool
+        step: Literal["user", "revenue_cat"],
+        itgs: Itgs,
+        item: ResultItem,
+        stats: RedisStatsPreparer,
+        created: bool,
     ):
         inserted = item.rows_affected is not None and item.rows_affected > 0
-        assert inserted is created, f"{inserted=} is not {created=}"
+        assert inserted is created, f"{inserted=} is not {created=} for {step=}"
         if inserted and item.rows_affected != 1:
             await handle_warning(
-                f"{__name__}:insert_user:multiple_rows_affected",
+                f"{__name__}:insert_user:multiple_rows_affected:{step}",
                 f"Expected 1 row affected, got {item.rows_affected}{slack_context()}",
             )
-        if inserted:
+        if inserted and step == "user":
             await users.lib.stats.on_user_created(itgs, user_sub, now)
 
-    return _CreateQuery(
-        query=(
-            "INSERT INTO users ("
-            " sub, given_name, family_name, admin, revenue_cat_id, timezone, created_at"
-            ") SELECT"
-            " ?, ?, ?, 0, ?, NULL, ? "
-            "WHERE NOT EXISTS ("
-            "SELECT 1 FROM user_identities "
-            "WHERE user_identities.provider = ? AND user_identities.sub = ?"
-            ")"
+    return [
+        _CreateQuery(
+            query=(
+                "INSERT INTO users ("
+                " sub, given_name, family_name, admin, timezone, created_at"
+                ") SELECT"
+                " ?, ?, ?, 0, NULL, ? "
+                "WHERE NOT EXISTS ("
+                "SELECT 1 FROM user_identities "
+                "WHERE user_identities.provider = ? AND user_identities.sub = ?"
+                ")"
+            ),
+            qargs=[
+                user_sub,
+                interpreted_claims.given_name,
+                interpreted_claims.family_name,
+                now,
+                provider,
+                interpreted_claims.sub,
+            ],
+            response_handler=partial(handler, "user"),
         ),
-        qargs=[
-            user_sub,
-            interpreted_claims.given_name,
-            interpreted_claims.family_name,
-            revenue_cat_id,
-            now,
-            provider,
-            interpreted_claims.sub,
-        ],
-        response_handler=handler,
-    )
+        _CreateQuery(
+            query=(
+                "INSERT INTO user_revenue_cat_ids ("
+                " uid, user_id, revenue_cat_id, revenue_cat_attributes, created_at, checked_at"
+                ") SELECT"
+                " ?, users.id, ?, ?, ?, ? "
+                "FROM users "
+                "WHERE users.sub = ?"
+            ),
+            qargs=[
+                revenue_cat_uid,
+                revenue_cat_id,
+                "{}",
+                now,
+                now,
+                user_sub,
+            ],
+            response_handler=partial(handler, "revenue_cat"),
+        ),
+    ]
 
 
 def _insert_identity(

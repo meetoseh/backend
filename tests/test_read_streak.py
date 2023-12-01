@@ -27,13 +27,12 @@ async def temp_user(itgs: Itgs, *, created_at: Optional[float] = None):
 
     new_sub = f"oseh_u_{secrets.token_urlsafe(16)}"
     new_email = f"{secrets.token_urlsafe(8)}@oseh.com"
-    new_rc_id = f"oseh_u_rc_{secrets.token_urlsafe(16)}"
     await cursor.execute(
         """
         INSERT INTO users (
-            sub, email, email_verified, given_name, family_name, admin, revenue_cat_id, created_at
+            sub, email, email_verified, given_name, family_name, admin, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         (
             new_sub,
@@ -42,7 +41,6 @@ async def temp_user(itgs: Itgs, *, created_at: Optional[float] = None):
             "Test",
             "User",
             0,
-            new_rc_id,
             created_at,
         ),
     )

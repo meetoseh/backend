@@ -8,6 +8,7 @@ import time
 from typing import (
     Awaitable,
     Dict,
+    List,
     Optional,
     NoReturn as Never,
     cast as typing_cast,
@@ -78,41 +79,86 @@ async def get_entitlements_from_source(
     conn = await itgs.conn()
     cursor = conn.cursor("none")
 
-    response = await cursor.execute(
-        "SELECT revenue_cat_id FROM users WHERE sub=?",
-        (user_sub,),
+    query = (
+        "SELECT user_revenue_cat_ids.revenue_cat_id "
+        "FROM users, user_revenue_cat_ids "
+        "WHERE"
+        " users.sub = ?"
+        " AND users.id = user_revenue_cat_ids.user_id"
     )
+    qargs = (user_sub,)
+
+    response = await cursor.execute(query, qargs)
     if not response.results:
-        cursor = conn.cursor("strong")
-        response = await cursor.execute(
-            "SELECT revenue_cat_id FROM users WHERE sub=?",
-            (user_sub,),
-        )
+        response = await cursor.execute(query, qargs, read_consistency="strong")
         if not response.results:
             return None
 
-    revenue_cat_id: str = response.results[0][0]
+    revenue_cat_ids: List[str] = [row[0] for row in response.results]
     rc = await itgs.revenue_cat()
 
-    truth = await rc.get_customer_info(revenue_cat_id=revenue_cat_id)
+    unjoined: List[LocalCachedEntitlements] = []
     dnow = datetime.datetime.fromtimestamp(now, tz=datetime.timezone.utc)
-    return LocalCachedEntitlements(
-        entitlements=dict(
-            (
-                key,
-                CachedEntitlement(
-                    is_active=(value.expires_date is None or value.expires_date > dnow),
+
+    for revenue_cat_id in revenue_cat_ids:
+        truth = await rc.get_customer_info(
+            revenue_cat_id=revenue_cat_id, handle_ratelimits=True
+        )
+        unjoined.append(
+            LocalCachedEntitlements(
+                entitlements=dict(
+                    (
+                        key,
+                        CachedEntitlement(
+                            is_active=(
+                                value.expires_date is None or value.expires_date > dnow
+                            ),
+                            expires_at=(
+                                None
+                                if value.expires_date is None
+                                else value.expires_date.timestamp()
+                            ),
+                            checked_at=now,
+                        ),
+                    )
+                    for (key, value) in truth.subscriber.entitlements.items()
+                )
+            )
+        )
+
+    return merge_revenue_cat_user_entitlements(unjoined)
+
+
+def merge_revenue_cat_user_entitlements(
+    arr: List[LocalCachedEntitlements],
+) -> LocalCachedEntitlements:
+    """Returns the maximally permissive union of the given entitlements."""
+    if len(arr) == 1:
+        return arr[0]
+
+    result = LocalCachedEntitlements(entitlements={})
+    for entitlements in arr:
+        for key, value in entitlements.entitlements.items():
+            if key not in result.entitlements:
+                result.entitlements[key] = value
+            else:
+                current = result.entitlements[key]
+                if current.is_active and not value.is_active:
+                    continue
+                if not current.is_active and value.is_active:
+                    result.entitlements[key] = value
+                    continue
+
+                result.entitlements[key] = CachedEntitlement(
+                    is_active=current.is_active or value.is_active,
                     expires_at=(
                         None
-                        if value.expires_date is None
-                        else value.expires_date.timestamp()
+                        if (current.expires_at is None or value.expires_at is None)
+                        else max(current.expires_at, value.expires_at)
                     ),
-                    checked_at=now,
-                ),
-            )
-            for (key, value) in truth.subscriber.entitlements.items()
-        )
-    )
+                    checked_at=min(current.checked_at, value.checked_at),
+                )
+    return result
 
 
 async def get_entitlement_from_redis(
@@ -171,7 +217,7 @@ async def upsert_entitlements_to_redis(
         await pipe.hset(
             f"entitlements:{user_sub}".encode("utf-8"),  # type: ignore
             mapping=dict(
-                (key, value.model_dump_json().encode("utf-8"))
+                (key, value.__pydantic_serializer__.to_json(value))
                 for (key, value) in entitlements.items()
             ),
         )
@@ -238,7 +284,7 @@ async def set_entitlements_to_local(
 
     local_cache.set(
         f"entitlements:{user_sub}".encode("utf-8"),
-        entitlements.model_dump_json().encode("utf-8"),
+        entitlements.__pydantic_serializer__.to_json(entitlements),
         expire=60 * 60 * 24,
         tag="collab",
     )

@@ -3,7 +3,18 @@ import math
 import re
 import secrets
 import time
-from typing import Any, Callable, Dict, Generic, Iterable, List, Literal, Optional, Tuple, TypeVar
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    TypeVar,
+)
 
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -156,9 +167,7 @@ async def auth_create_interactive_prompt_event(
                         "as a header parameter."
                     ),
                 ).model_dump_json(),
-                headers={
-                    "Content-Type": "application/json; charset=utf-8"
-                },
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=401,
             ),
         )
@@ -191,9 +200,7 @@ async def auth_create_interactive_prompt_event(
                         "the interactive prompt uid. You can manually decode the JWT at jwt.io."
                     ),
                 ).model_dump_json(),
-                headers={
-                    "Content-Type": "application/json; charset=utf-8"
-                },
+                headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=403,
             ),
         )
@@ -277,9 +284,7 @@ class CreateInteractivePromptEventResult(Generic[EventTypeT, EventDataT]):
         return self.result is not None
 
 
-class InteractivePromptEventPubSubMessage(
-    BaseModel, Generic[EventTypeT, EventDataT]
-):
+class InteractivePromptEventPubSubMessage(BaseModel, Generic[EventTypeT, EventDataT]):
     """Describes a message that is published to the pubsub topic for an interactive prompt"""
 
     uid: str = Field(description="the uid of the new event")
@@ -729,7 +734,9 @@ async def create_interactive_prompt_event(
 
     event_uid = f"oseh_ipe_{secrets.token_urlsafe(16)}"
     serd_event_data = (
-        event_data.model_dump_json() if store_event_data is None else store_event_data.model_dump_json()
+        event_data.model_dump_json()
+        if store_event_data is None
+        else store_event_data.model_dump_json()
     )
     created_at = time.time()
 
@@ -898,7 +905,7 @@ async def create_interactive_prompt_event(
             error_type="not_found",
             error_response=ERROR_INTERACTIVE_PROMPT_NOT_FOUND_RESPONSE,
         )
-    
+
     if prompt_time > interactive_prompt_meta.duration_seconds:
         return CreateInteractivePromptEventResult(
             result=None,
@@ -1114,7 +1121,7 @@ async def create_interactive_prompt_event(
     redis = await itgs.redis()
     await redis.publish(
         f"ps:interactive_prompts:{interactive_prompt_uid}:events".encode("utf-8"),
-        message.model_dump_json().encode("utf-8"),
+        message.__pydantic_serializer__.to_json(message),
     )
 
     return result

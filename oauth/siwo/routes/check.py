@@ -32,6 +32,7 @@ import pytz
 import disposable_email_domains
 import base64
 import secrets
+import os
 from loguru import logger
 
 
@@ -483,6 +484,11 @@ async def is_strange_email(itgs: Itgs, email: str) -> bool:
     # We don't want to post to slack here in case this is overridden later
     name, _, domain = email.partition("@")
     if domain not in ("gmail.com", "hotmail.com", "yahoo.com", "outlook.com"):
+        if os.environ["ENVIRONMENT"] == "dev" and domain == "oseh.com":
+            logger.info(
+                f"Sign in with Oseh - Check {email} - Strange Email - allowing in development"
+            )
+            return False
         return True
 
     if not all(is_std_email_character(c) for c in name):

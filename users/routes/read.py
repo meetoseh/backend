@@ -62,7 +62,7 @@ class UserFilter(BaseModel):
         None, description="whether or not the user is an admin"
     )
     revenue_cat_id: Optional[FilterTextItemModel] = Field(
-        None, description="the revenue cat id of the user"
+        None, description="any revenue cat id of the user"
     )
     primary_interest: Optional[FilterTextItemModel] = Field(
         None, description="the users primary interest"
@@ -84,7 +84,8 @@ class UserFilter(BaseModel):
 
 class ReadUserRequest(BaseModel):
     filters: UserFilter = Field(
-        default_factory=lambda: UserFilter.model_validate({}), description="the filters to apply"
+        default_factory=lambda: UserFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[UserSortOption]] = Field(
         None, description="the order to sort by"
@@ -165,7 +166,6 @@ base_keys = frozenset(
         "given_name",
         "family_name",
         "admin",
-        "revenue_cat_id",
         "created_at",
     )
 )
@@ -194,6 +194,9 @@ async def raw_read_users(
     user_phone_numbers = Table("user_phone_numbers")
     suppressed_phone_numbers = Table("suppressed_phone_numbers")
     aggregated_phone_numbers = Table("aggregated_phone_numbers")
+
+    user_revenue_cat_ids = Table("user_revenue_cat_ids")
+    aggregated_user_revenue_cat_ids = Table("aggregated_user_revenue_cat_ids")
 
     query: QueryBuilder = (
         Query.with_(
@@ -257,6 +260,17 @@ async def raw_read_users(
             .groupby(user_phone_numbers.user_id),
             aggregated_phone_numbers.get_table_name(),
         )
+        .with_(
+            Query.from_(user_revenue_cat_ids)
+            .select(
+                user_revenue_cat_ids.user_id.as_("user_id"),
+                AggregateFunction(
+                    "json_group_array", user_revenue_cat_ids.revenue_cat_id
+                ).as_("revenue_cat_ids"),
+            )
+            .groupby(user_revenue_cat_ids.user_id),
+            aggregated_user_revenue_cat_ids.get_table_name(),
+        )
         .from_(users)
         .select(
             users.sub,
@@ -265,7 +279,7 @@ async def raw_read_users(
             users.given_name,
             users.family_name,
             users.admin,
-            users.revenue_cat_id,
+            Coalesce(aggregated_user_revenue_cat_ids.revenue_cat_ids, "[]"),
             image_files.uid,
             users.created_at,
             Coalesce(last_seen_ats.last_seen_at, users.created_at).as_("last_seen_at"),
@@ -274,6 +288,8 @@ async def raw_read_users(
         .on(aggregated_email_addresses.user_id == users.id)
         .left_outer_join(aggregated_phone_numbers)
         .on(aggregated_phone_numbers.user_id == users.id)
+        .left_outer_join(aggregated_user_revenue_cat_ids)
+        .on(aggregated_user_revenue_cat_ids.user_id == users.id)
         .left_outer_join(user_profile_pictures)
         .on(
             (user_profile_pictures.user_id == users.id)
@@ -309,8 +325,12 @@ async def raw_read_users(
                 .when(
                     users.field("given_name").isnotnull()
                     & users.field("family_name").isnotnull(),
-                    sqlite_string_concat(
-                        users.given_name, sqlite_string_concat(" ", users.family_name)
+                    Function(
+                        "TRIM",  # our index is trimmed
+                        sqlite_string_concat(
+                            users.given_name,
+                            sqlite_string_concat(" ", users.family_name),
+                        ),
                     ),
                 )
                 .when(users.field("given_name").isnotnull(), users.given_name)
@@ -374,17 +394,34 @@ async def raw_read_users(
             .where(filter.applied_to(upn.verified, qargs))
         )
 
+    def revenue_cat_id_term(filter: FilterTextItem, qargs: list) -> Term:
+        urci = user_revenue_cat_ids.as_("urci")
+        return ExistsCriterion(
+            Query.from_(urci)
+            .select(1)
+            .where(urci.user_id == users.id)
+            .where(filter.applied_to(urci.revenue_cat_id, qargs))
+        )
+
     for key, filter in filters_to_apply:
         if key == "utm":
             query = query.where(utm_term(typing_cast(FilterTextItem, filter), qargs))
         elif key == "email":
             query = query.where(email_term(typing_cast(FilterTextItem, filter), qargs))
         elif key == "email_verified":
-            query = query.where(email_verified_term(typing_cast(FilterItem[bool], filter), qargs))
+            query = query.where(
+                email_verified_term(typing_cast(FilterItem[bool], filter), qargs)
+            )
         elif key == "phone_number":
             query = query.where(phone_term(typing_cast(FilterTextItem, filter), qargs))
         elif key == "phone_number_verified":
-            query = query.where(phone_verified_term(typing_cast(FilterItem[bool], filter), qargs))
+            query = query.where(
+                phone_verified_term(typing_cast(FilterItem[bool], filter), qargs)
+            )
+        elif key == "revenue_cat_id":
+            query = query.where(
+                revenue_cat_id_term(typing_cast(FilterTextItem, filter), qargs)
+            )
         else:
             query = query.where(filter.applied_to(pseudocolumn(key), qargs))
 
@@ -415,7 +452,7 @@ async def raw_read_users(
                 given_name=row[3],
                 family_name=row[4],
                 admin=bool(row[5]),
-                revenue_cat_id=row[6],
+                revenue_cat_ids=parse_revenue_cat_ids(typing_cast(str, row[6])),
                 profile_picture=image_file_ref,
                 created_at=row[8],
                 last_seen_at=row[9],
@@ -458,6 +495,16 @@ def parse_phones(col: str) -> List[UserPhone]:
         )
         for row in json.loads(col)
     ]
+
+
+def parse_revenue_cat_ids(col: str) -> List[str]:
+    """parses the aggregated revenue cat ids column from the users query into
+    the list of revenue cat ids it represents. we use json aggregation on this
+    column since the vast majority of users have 1 revenue cat id, and
+    this aggregation lends itself well to those rows while degrading gracefully
+    for users with more than one revenue cat id
+    """
+    return json.loads(col)
 
 
 def item_pseudocolumns(item: User) -> dict:

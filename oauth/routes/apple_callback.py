@@ -12,7 +12,7 @@ from itgs import Itgs
 from urllib.parse import urlencode
 import oauth.lib.exchange
 from oauth.models.oauth_state import OauthState
-import oauth.lib.start_merge_auth
+import oauth.lib.merging.start_merge_auth
 import aiohttp
 import jwt
 import jwt.algorithms
@@ -151,7 +151,7 @@ async def callback(
         )
 
         if state_info.merging_with_user_sub is not None:
-            merge_jwt = await oauth.lib.start_merge_auth.create_jwt(
+            merge_jwt = await oauth.lib.merging.start_merge_auth.create_jwt(
                 itgs,
                 original_user_sub=state_info.merging_with_user_sub,
                 provider="SignInWithApple",

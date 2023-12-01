@@ -197,6 +197,6 @@ async def associate_state_secret_with_info(
     redis = await itgs.redis()
     await redis.set(
         f"oauth:states:{secret}".encode("utf-8"),
-        info.model_dump_json().encode("utf-8"),
+        info.__pydantic_serializer__.to_json(info),
         ex=3600,
     )

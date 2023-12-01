@@ -344,6 +344,6 @@ async def get_retention_stats(
         )
 
     chart = await get_retention_stats_from_source(itgs, unix_date, period)
-    encoded = chart.model_dump_json().encode("utf-8")
+    encoded = chart.__pydantic_serializer__.to_json(chart)
     await set_retention_stats_in_local_cache(itgs, unix_date, period, encoded)
     return Response(content=encoded, headers=HEADERS, status_code=200)

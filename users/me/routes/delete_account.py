@@ -1,6 +1,7 @@
+import socket
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, cast
 import pytz
 from auth import auth_id
 from lib.contact_methods.contact_method_stats import contact_method_stats
@@ -164,7 +165,6 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
             response = await cursor.execute(
                 """
                 SELECT 
-                  users.revenue_cat_id,
                   stripe_customers.stripe_customer_id
                 FROM users 
                 LEFT OUTER JOIN stripe_customers ON users.id = stripe_customers.user_id
@@ -176,91 +176,120 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
             if not response.results:
                 return MULTIPLE_UPDATES_RESPONSE
 
-            revenue_cat_id: str = response.results[0][0]
-            stripe_customer_id: Optional[str] = response.results[0][1]
+            stripe_customer_ids: List[str] = []
+
+            for row in response.results:
+                row_stripe_customer_id = cast(Optional[str], row[0])
+                if row_stripe_customer_id is not None:
+                    stripe_customer_ids.append(row_stripe_customer_id)
+
+            response = await cursor.execute(
+                """
+                SELECT 
+                  user_revenue_cat_ids.revenue_cat_id
+                FROM users 
+                LEFT OUTER JOIN user_revenue_cat_ids ON users.id = user_revenue_cat_ids.user_id
+                WHERE 
+                    users.sub = ?
+                """,
+                (auth_result.result.sub,),
+            )
+
+            if not response.results:
+                return MULTIPLE_UPDATES_RESPONSE
+
+            revenue_cat_ids: List[str] = []
+            for row in response.results:
+                row_revenue_cat_id = cast(Optional[str], row[0])
+                if row_revenue_cat_id is not None:
+                    revenue_cat_ids.append(row_revenue_cat_id)
+
             revenue_cat = await itgs.revenue_cat()
 
-            customer_info = await revenue_cat.get_customer_info(
-                revenue_cat_id=revenue_cat_id
-            )
-            now = time.time()
-            for (
-                product_id,
-                subscription,
-            ) in customer_info.subscriber.subscriptions.items():
-                is_active = (
-                    subscription.expires_date is None
-                    or subscription.expires_date.timestamp() > now
+            for revenue_cat_id in revenue_cat_ids:
+                customer_info = await revenue_cat.get_customer_info(
+                    revenue_cat_id=revenue_cat_id
                 )
-                if is_active and not force:
-                    if subscription.store == "app_store":
-                        return HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE
-                    elif subscription.store == "play_store":
-                        return HAS_ACTIVE_GOOGLE_SUBSCRIPTION_RESPONSE
-                    elif subscription.store == "stripe":
-                        return HAS_ACTIVE_STRIPE_SUBSCRIPTION_RESPONSE
-                    else:
-                        if subscription.store != "promotional":
-                            slack = await itgs.slack()
-                            await slack.send_web_error_message(
-                                f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
-                                f"an active subscription with an unknown store: {subscription.store=}: "
-                                "treating as promotional for the warning message",
-                                "Unknown subscription store",
+                now = time.time()
+                for (
+                    product_id,
+                    subscription,
+                ) in customer_info.subscriber.subscriptions.items():
+                    is_active = (
+                        subscription.expires_date is None
+                        or subscription.expires_date.timestamp() > now
+                    )
+                    if is_active and not force:
+                        if subscription.store == "app_store":
+                            return HAS_ACTIVE_IOS_SUBSCRIPTION_RESPONSE
+                        elif subscription.store == "play_store":
+                            return HAS_ACTIVE_GOOGLE_SUBSCRIPTION_RESPONSE
+                        elif subscription.store == "stripe":
+                            return HAS_ACTIVE_STRIPE_SUBSCRIPTION_RESPONSE
+                        else:
+                            if subscription.store != "promotional":
+                                slack = await itgs.slack()
+                                await slack.send_web_error_message(
+                                    f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
+                                    f"an active subscription with an unknown store: {subscription.store=}: "
+                                    "treating as promotional for the warning message",
+                                    "Unknown subscription store",
+                                )
+
+                            return HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE
+
+                    if (
+                        is_active
+                        and subscription.unsubscribe_detected_at is None
+                        and subscription.refunded_at is None
+                    ):
+                        if subscription.store == "play_store":
+                            # we may be less generous with refunds in the future if people
+                            # abuse this
+                            await revenue_cat.refund_and_revoke_google_play_subscription(
+                                revenue_cat_id=revenue_cat_id, product_id=product_id
                             )
+                        elif subscription.store == "stripe":
+                            if not stripe_customer_ids:
+                                slack = await itgs.slack()
+                                await slack.send_web_error_message(
+                                    f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
+                                    f"an active subscription with store {subscription.store=}, but no "
+                                    f"stripe_customer_ids. Preventing them from "
+                                    "deleting their account.",
+                                    "Delete stripe subscription with no stripe customer",
+                                )
+                                return MULTIPLE_UPDATES_RESPONSE
 
-                        return HAS_ACTIVE_PROMOTIONAL_SUBSCRIPTION_RESPONSE
+                            for stripe_customer_id in stripe_customer_ids:
+                                stripe_subscriptions = await run_in_threadpool(
+                                    stripe.Subscription.list,
+                                    customer=stripe_customer_id,
+                                    price=os.environ["OSEH_STRIPE_PRICE_ID"],
+                                    api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
+                                    limit=3,
+                                )
 
-                if (
-                    is_active
-                    and subscription.unsubscribe_detected_at is None
-                    and subscription.refunded_at is None
-                ):
-                    if subscription.store == "play_store":
-                        # we may be less generous with refunds in the future if people
-                        # abuse this
-                        await revenue_cat.refund_and_revoke_google_play_subscription(
-                            revenue_cat_id=revenue_cat_id, product_id=product_id
-                        )
-                    elif subscription.store == "stripe":
-                        if stripe_customer_id is None:
-                            slack = await itgs.slack()
-                            await slack.send_web_error_message(
-                                f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
-                                f"an active subscription with store {subscription.store=}, but no "
-                                f"stripe_customer_id: {stripe_customer_id=}. Preventing them from "
-                                "deleting their account.",
-                                "Delete stripe subscription with no stripe customer",
-                            )
-                            return MULTIPLE_UPDATES_RESPONSE
+                                if len(stripe_subscriptions) >= 3:
+                                    slack = await itgs.slack()
+                                    await slack.send_web_error_message(
+                                        f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
+                                        f"an active subscription with store {subscription.store=}, but too many "
+                                        f"stripe subscriptions on {stripe_customer_id=}. Preventing them from "
+                                        "deleting their account.",
+                                        "Delete stripe subscription with multiple stripe subscriptions",
+                                    )
+                                    return MULTIPLE_UPDATES_RESPONSE
 
-                        stripe_subscriptions = await run_in_threadpool(
-                            stripe.Subscription.list,
-                            customer=stripe_customer_id,
-                            price=os.environ["OSEH_STRIPE_PRICE_ID"],
-                            api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
-                            limit=3,
-                        )
-
-                        if len(stripe_subscriptions) >= 3:
-                            slack = await itgs.slack()
-                            await slack.send_web_error_message(
-                                f"While deleting {auth_result.result.sub=}, {revenue_cat_id=}, found "
-                                f"an active subscription with store {subscription.store=}, but too many "
-                                f"stripe subscriptions. Preventing them from deleting their account.",
-                                "Delete stripe subscription with multiple stripe subscriptions",
-                            )
-                            return MULTIPLE_UPDATES_RESPONSE
-
-                        # May be empty for a while after the cancellation before revenue cat
-                        # processes the cancellation
-                        for stripe_subscription in stripe_subscriptions:
-                            await run_in_threadpool(
-                                stripe.Subscription.delete,
-                                stripe_subscription.id,  # type: ignore
-                                prorate=True,
-                                api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
-                            )
+                                # May be empty for a while after the cancellation before revenue cat
+                                # processes the cancellation
+                                for stripe_subscription in stripe_subscriptions:
+                                    await run_in_threadpool(
+                                        stripe.Subscription.delete,
+                                        stripe_subscription.id,  # type: ignore
+                                        prorate=True,
+                                        api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
+                                    )
 
             await cleanup_user_daily_reminders(itgs, auth_result.result.sub)
             await cleanup_user_push_tokens(itgs, auth_result.result.sub)
@@ -287,8 +316,8 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
             if os.environ["ENVIRONMENT"] != "dev":
                 slack = await itgs.slack()
                 await slack.send_ops_message(
-                    f"Deleted {auth_result.result.sub=}, {revenue_cat_id=}, {stripe_customer_id=} by "
-                    f"request from the user ({force=}). {os.environ.get('ENVIRONMENT')=}",
+                    f"{socket.gethostname()} Deleted `{auth_result.result.sub=}`, `{revenue_cat_ids=}`, `{stripe_customer_ids=}` by "
+                    f"request from the user (`{force=}`). `{os.environ.get('ENVIRONMENT')=}`",
                     "Deleted user",
                 )
 

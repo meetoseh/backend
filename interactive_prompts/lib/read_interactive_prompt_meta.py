@@ -94,7 +94,7 @@ async def write_interactive_prompt_meta_to_cache(
     cache = await itgs.local_cache()
     cache.set(
         f"interactive_prompts:{interactive_prompt_uid}:meta".encode("utf-8"),
-        meta.model_dump_json().encode("utf-8"),
+        meta.__pydantic_serializer__.to_json(meta),
         tag="collab",
         expire=86400,
     )

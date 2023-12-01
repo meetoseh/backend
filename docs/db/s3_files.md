@@ -31,15 +31,18 @@ than marking it UNIQUE.
 
 ## Fields
 
--   `id (integer primary key)`: Internal database identifier
--   `uid (text unique not null)`: Primary stable identifier. The uid prefix is
-    `s3f`: see [uid_prefixes](../uid_prefixes.md).
--   `key (text not null)`: The s3 key the file is stored at.
--   `file_size (integer not null)`: The size of the file in bytes.
--   `content_type (text not null)`: The MIME type of the file, see
-    https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
--   `created_at (timestamp not null)`: The time the file was created in the database;
-    typically this is very close to the time the file finished uploading.
+- `id (integer primary key)`: Internal database identifier
+- `uid (text unique not null)`: Primary stable identifier. The uid prefix is
+  `s3f`: see [uid_prefixes](../uid_prefixes.md).
+- `key (text not null)`: The s3 key the file is stored at.
+- `file_size (integer not null)`: The size of the file in bytes.
+- `content_type (text not null)`: The MIME type of the file, see
+  https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/MIME_types
+  If the file is compressed, the content type should be of the underlying
+  type and an optional `compression` parameter may be included. For example,
+  `text/plain; charset=utf-8; compression=gzip`
+- `created_at (timestamp not null)`: The time the file was created in the database;
+  typically this is very close to the time the file finished uploading.
 
 ## Schema
 

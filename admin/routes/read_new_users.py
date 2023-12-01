@@ -236,6 +236,6 @@ async def get_new_users(itgs: Itgs, unix_date: int) -> Response:
         )
 
     response = await get_new_users_from_source(itgs, unix_date)
-    encoded_response = response.model_dump_json().encode("utf-8")
+    encoded_response = response.__pydantic_serializer__.to_json(response)
     await set_new_users_in_local_cache(itgs, unix_date, encoded_response)
     return Response(content=encoded_response, headers=HEADERS, status_code=200)

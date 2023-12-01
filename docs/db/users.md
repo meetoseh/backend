@@ -15,12 +15,6 @@ authorization header via the sub claim.
   so it's null for apple users unless they specify it
 - `family_name (text null)`: the family name of the user
 - `admin (boolean not null)`: allows access to the admin panel
-- `revenue_cat_id (text unique not null)`: The revenuecat identifier for this user. This
-  should be treated as privileged information only accessible by the user and
-  admins, unlike the sub. Note that the revenue cat id alone is sufficient for anyone
-  to determine the users entitlements and make some modifications, such as uploading
-  a new apple receipt for the account. The uid prefix is `u_rc`, see
-  [uid_prefixes](../uid_prefixes.md).
 - `timezone (text null)`: the users timezone, as an IANA timezone
   (e.g., `America/Los_Angeles`). Changing this value should involve an
   insert into `user_timezone_log`
@@ -36,8 +30,10 @@ CREATE TABLE users(
     given_name TEXT,
     family_name TEXT,
     admin BOOLEAN NOT NULL,
-    revenue_cat_id TEXT UNIQUE NOT NULL,
     timezone TEXT NULL,
     created_at REAL NOT NULL
 );
+
+/* Search via merging account suggestions */
+CREATE INDEX users_trimmed_name_insensitive_idx ON users(TRIM(given_name || ' ' || family_name) COLLATE NOCASE) WHERE given_name IS NOT NULL AND family_name IS NOT NULL;
 ```

@@ -68,6 +68,15 @@ async def dev_login(args: DevLoginRequest):
     elif args.sub.startswith("dupl_"):
         given_name = "Duplicate"
         email = "duplicate@oseh.com"
+    elif args.sub.startswith("dupl2_"):
+        given_name = "Duplicate"
+        after_under = args.sub[len("dupl2_") :]
+        next_under = after_under.find("_")
+        if next_under > 0:
+            family_name = after_under[:next_under]
+        else:
+            family_name = after_under
+        email = f"{family_name}@oseh.com"
     elif args.sub.startswith("unverified_"):
         given_name = "Unverified"
         email_verified = False

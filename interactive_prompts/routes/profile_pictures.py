@@ -300,7 +300,7 @@ async def get_standard_profile_pictures(
             itgs,
             interactive_prompt_uid,
             prompt_time,
-            encoded_pictures=res.model_dump_json().encode("utf-8"),
+            encoded_pictures=res.__pydantic_serializer__.to_json(res),
         )
         return res
 
@@ -375,7 +375,7 @@ async def get_standard_profile_pictures(
     new_data = await get_standard_profile_pictures_from_database(
         itgs, interactive_prompt_uid, prompt_time
     )
-    new_data_encoded = new_data.model_dump_json().encode("utf-8")
+    new_data_encoded = new_data.__pydantic_serializer__.to_json(new_data)
     await set_standard_profile_pictures_to_redis(
         itgs, interactive_prompt_uid, prompt_time, encoded_pictures=new_data_encoded
     )

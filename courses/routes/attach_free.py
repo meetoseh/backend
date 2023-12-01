@@ -13,6 +13,7 @@ from itgs import Itgs
 import time
 import secrets
 import users.lib.entitlements as entitlements
+import users.lib.revenue_cat
 from visitors.lib.get_or_create_visitor import (
     VisitorSource,
     get_or_create_unsanitized_visitor,
@@ -94,13 +95,12 @@ async def attach_free(
 
         user_email = await get_user_current_email(itgs, auth_result, default=None)
 
-        conn = await itgs.conn()
-        cursor = conn.cursor("weak")
-        response = await cursor.execute(
-            "SELECT revenue_cat_id FROM users WHERE sub=?",
-            (auth_result.result.sub,),
+        latest_revenue_cat_id = (
+            await users.lib.revenue_cat.get_or_create_latest_revenue_cat_id(
+                itgs, user_sub=auth_result.result.sub, now=request_at
+            )
         )
-        if not response.results:
+        if latest_revenue_cat_id is None:
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="user_not_found",
@@ -113,8 +113,6 @@ async def attach_free(
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
-
-        revenue_cat_id: str = response.results[0][0]
 
         if args.course_slug not in FREE_COURSE_SLUGS:
             return Response(
@@ -129,6 +127,8 @@ async def attach_free(
                 status_code=404,
             )
 
+        conn = await itgs.conn()
+        cursor = conn.cursor("weak")
         response = await cursor.execute(
             "SELECT revenue_cat_entitlement FROM courses WHERE slug=?",
             (args.course_slug,),
@@ -208,7 +208,7 @@ async def attach_free(
             revenue_cat = await itgs.revenue_cat()
             try:
                 await revenue_cat.grant_promotional_entitlement(
-                    revenue_cat_id=revenue_cat_id,
+                    revenue_cat_id=latest_revenue_cat_id,
                     entitlement_identifier=course_entitlement,
                     duration="lifetime",
                 )

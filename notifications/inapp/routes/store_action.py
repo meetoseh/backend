@@ -20,7 +20,7 @@ class StoreInappNotificationActionRequest(BaseModel):
     )
     action_slug: str = Field(description="The slug of the action that was performed")
     extra: Optional[dict] = Field(
-        description="Any extra data required to describe the action. Must serialize to less than 1024 characters"
+        description="Any extra data required to describe the action. Must serialize to less than 2048 characters"
     )
 
 
@@ -40,7 +40,7 @@ async def store_inapp_notification_action(
     Requires standard authorization for the user associated with the session.
     """
     serd_extra = json.dumps(args.extra) if args.extra is not None else None
-    if serd_extra is not None and len(serd_extra) > 1023:
+    if serd_extra is not None and len(serd_extra) > 2047:
         await handle_contextless_error(
             extra_info="Silently ignoring in-app notification action with extra data that is too long"
         )

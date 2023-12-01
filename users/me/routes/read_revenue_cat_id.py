@@ -1,9 +1,11 @@
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal, Optional, Union
+from typing import Literal, Optional
 from auth import auth_any
 from itgs import Itgs
+import users.lib.revenue_cat
 
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 
@@ -56,41 +58,24 @@ async def read_revenue_cat_id(authorization: Optional[str] = Header(None)):
     entitlements, even if some functionality is still not possible (i.e.,
     starting new subscriptions)
 
+    A user MAY have multiple revenue cat ids associated with their account. This
+    typically happens when the account was merged with another account. In this
+    case, this endpoint returns only the most recently created revenue cat id,
+    which may be missing entitlements. For this reason, the client should not
+    rely on the revenue cat id for determining entitlements.
+
     This requires standard authentication.
     """
+    request_at = time.time()
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
         if auth_result.result is None:
             return auth_result.error_response
 
-        resp_or_rc_id = await get_revenue_cat_id(itgs, auth_result.result.sub)
-        if not isinstance(resp_or_rc_id, str):
-            return resp_or_rc_id
-
-        revenue_cat_id: str = resp_or_rc_id
-        return Response(
-            content=ReadRevenueCatIdResponse(
-                revenue_cat_id=revenue_cat_id
-            ).model_dump_json(),
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Cache-Control": "no-store",
-                "Pragma": "no-cache",
-                "Expires": "0",
-            },
-            status_code=200,
+        rc_id = await users.lib.revenue_cat.get_or_create_latest_revenue_cat_id(
+            itgs, user_sub=auth_result.result.sub, now=request_at
         )
-
-
-async def get_revenue_cat_id(itgs: Itgs, user_sub: str) -> Union[str, Response]:
-    conn = await itgs.conn()
-    cursor = conn.cursor("none")
-
-    response = await cursor.execute(QUERY, (user_sub,))
-    if not response.results:
-        cursor = conn.cursor("strong")
-        response = await cursor.execute(QUERY, (user_sub,))
-        if not response.results:
+        if rc_id is None:
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="not_found",
@@ -103,7 +88,13 @@ async def get_revenue_cat_id(itgs: Itgs, user_sub: str) -> Union[str, Response]:
                 status_code=503,
             )
 
-    return response.results[0][0]
-
-
-QUERY = "SELECT revenue_cat_id FROM users WHERE sub = ?"
+        return Response(
+            content=ReadRevenueCatIdResponse(revenue_cat_id=rc_id).model_dump_json(),
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "no-store",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+            status_code=200,
+        )

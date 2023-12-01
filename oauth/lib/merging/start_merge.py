@@ -445,6 +445,7 @@ class _MoveUserIdentitiesReasonContext(TypedDict):
     rows: int
     merging: List[_MovedUserIdentity]
 
+
 class _MoveUserIdentitiesReason(TypedDict):
     context: _MoveUserIdentitiesReasonContext
 
@@ -616,6 +617,7 @@ async def get_merge_result(
             email=opt["email"],
         )
         for opt in current_user_identities or []
+        if opt.get("email") is not None
     ]
     still_existing_merging_login_options = [
         LoginOption(
@@ -623,6 +625,7 @@ async def get_merge_result(
             email=opt["email"],
         )
         for opt in merging_user_identities or []
+        if opt.get("email") is not None
     ]
     moved_options: Set[Tuple[MergeProvider, str]] = (
         set(

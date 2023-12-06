@@ -2511,6 +2511,7 @@ async def _move_user_profile_pictures(
                 "SET latest = 0 "
                 "WHERE"
                 " EXISTS (SELECT 1 FROM merging_user WHERE merging_user.id = user_profile_pictures.user_id)"
+                " AND latest"
                 " AND NOT EXISTS ("
                 "  SELECT 1 FROM merge_account_log"
                 "  WHERE"

@@ -303,8 +303,8 @@ async def create_confirm_query(
         await ctx.log.write(
             b"- confirm -\n"
             b"affected: True\n"
-            b"interpretation: we were able to decide if we should proceed with the merge;"
-            b"we would have to check the step_result to determine if the merge"
+            b"interpretation: we were able to decide if we should proceed with the merge; "
+            b"we would have to check the step_result to determine if the merge\n"
         )
 
     return [

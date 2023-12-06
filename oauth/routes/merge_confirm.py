@@ -1,3 +1,4 @@
+import socket
 from typing import Annotated, Literal, Optional
 from fastapi import APIRouter, Header, Response
 from pydantic import BaseModel, Field, StringConstraints
@@ -154,7 +155,7 @@ async def merge_confirm(
             slack = await itgs.slack()
             result_str = "success" if result else "failure"
             await slack.send_oseh_bot_message(
-                f"Original user `{std_auth_result.result.sub}` just performed "
+                f"`{socket.gethostname()}` Original user `{std_auth_result.result.sub}` just performed "
                 f"the confirm account merge step to merge in the identity via provider "
                 f"{confirm_merge_auth_result.result.provider} and sub "
                 f"`{confirm_merge_auth_result.result.provider_sub}`."

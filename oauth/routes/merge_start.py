@@ -1,9 +1,10 @@
+import socket
 from typing import Annotated, Optional
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
 from auth import auth_id
 from error_middleware import handle_error
-from models import STANDARD_ERRORS_BY_CODE
+from models import STANDARD_ERRORS_BY_CODE, AUTHORIZATION_UNKNOWN_TOKEN
 from oauth.lib.merging.start_merge import OauthMergeResult, attempt_start_merge
 import oauth.lib.merging.start_merge_auth as start_merge_auth
 from itgs import Itgs
@@ -46,6 +47,12 @@ async def merge_start(
         if start_merge_auth_result.result is None:
             return start_merge_auth_result.error_response
 
+        if (
+            start_merge_auth_result.result.original_user_sub
+            != std_auth_result.result.sub
+        ):
+            return AUTHORIZATION_UNKNOWN_TOKEN
+
         result = await attempt_start_merge(
             itgs,
             original_user=std_auth_result.result,
@@ -55,7 +62,7 @@ async def merge_start(
         try:
             slack = await itgs.slack()
             await slack.send_oseh_bot_message(
-                f"Original user `{std_auth_result.result.sub}` just performed "
+                f"`{socket.gethostname()}` Original user `{std_auth_result.result.sub}` just performed "
                 f"the first account merge step to merge in the identity via provider "
                 f"{start_merge_auth_result.result.provider} and sub "
                 f"`{start_merge_auth_result.result.provider_sub}`."

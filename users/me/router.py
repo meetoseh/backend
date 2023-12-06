@@ -9,6 +9,7 @@ import users.me.routes.read_daily_reminder_settings
 import users.me.routes.read_daily_reminders
 import users.me.routes.read_entitlements
 import users.me.routes.read_history
+import users.me.routes.read_identities
 import users.me.routes.read_merge_account_suggestions
 import users.me.routes.read_revenue_cat_id
 import users.me.routes.read_streak
@@ -41,6 +42,7 @@ router.include_router(
 )
 router.include_router(users.me.routes.read_entitlements.router)
 router.include_router(users.me.routes.read_history.router)
+router.include_router(users.me.routes.read_identities.router)
 router.include_router(users.me.routes.read_merge_account_suggestions.router)
 router.include_router(users.me.routes.read_revenue_cat_id.router)
 router.include_router(users.me.routes.read_streak.router)

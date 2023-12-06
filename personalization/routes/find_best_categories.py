@@ -8,7 +8,7 @@ from personalization.lib.s01_find_combinations import get_instructor_category_an
 from personalization.lib.s02_lowest_view_count import map_to_lowest_view_counts
 from personalization.lib.s03a_find_feedback import find_feedback
 from personalization.lib.s03b_feedback_score import map_to_feedback_score
-from personalization.lib.s04a_times_seen_today import map_to_times_seen_today
+from personalization.lib.s04a_times_seen_recently import map_to_times_seen_recently
 from personalization.lib.s04b_adjust_scores import map_to_adjusted_scores
 from personalization.lib.s05_compare_combinations import (
     ComparableInstructorCategory,
@@ -76,7 +76,9 @@ async def find_best_categories(
             )
         )
         times_seen_today_promise = asyncio.create_task(
-            map_to_times_seen_today(itgs, combinations=combinations, user_sub=user_sub)
+            map_to_times_seen_recently(
+                itgs, instructors=combinations, user_sub=user_sub
+            )
         )
 
         feedback = await find_feedback(itgs, user_sub=user_sub)
@@ -85,7 +87,7 @@ async def find_best_categories(
         )
         times_seen_today = await times_seen_today_promise
         adjusted_scores = await map_to_adjusted_scores(
-            itgs, unadjusted=feedback_score, times_seen_today=times_seen_today
+            itgs, unadjusted=feedback_score, times_seen_recently=times_seen_today
         )
         view_counts = await view_counts_promise
 

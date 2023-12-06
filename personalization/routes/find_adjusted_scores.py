@@ -7,7 +7,7 @@ from personalization.routes.find_combinations import Instructor, Category
 from personalization.lib.s01_find_combinations import get_instructor_category_and_biases
 from personalization.lib.s03a_find_feedback import find_feedback
 from personalization.lib.s03b_feedback_score import map_to_feedback_score
-from personalization.lib.s04a_times_seen_today import map_to_times_seen_today
+from personalization.lib.s04a_times_seen_recently import map_to_times_seen_recently
 from personalization.lib.s04b_adjust_scores import map_to_adjusted_scores
 from auth import auth_admin
 from itgs import Itgs
@@ -20,7 +20,9 @@ router = APIRouter()
 class FindAdjustedScoresItem(BaseModel):
     instructor: Instructor = Field(description="The instructor")
     category: Category = Field(description="The category")
-    times_seen_today: int = Field(description="The number of times seen today")
+    times_seen_recently: int = Field(
+        description="The number of times the instructor has been seen recently"
+    )
     score: float = Field(description="The adjusted score")
 
 
@@ -58,11 +60,11 @@ async def find_adjusted_scores(
         )
 
         started_at = time.perf_counter()
-        times_seen_today = await map_to_times_seen_today(
-            itgs, user_sub=user_sub, combinations=combinations
+        times_seen_recently = await map_to_times_seen_recently(
+            itgs, user_sub=user_sub, instructors=combinations
         )
         adjusted_scores = await map_to_adjusted_scores(
-            itgs, unadjusted=feedback_scores, times_seen_today=times_seen_today
+            itgs, unadjusted=feedback_scores, times_seen_recently=times_seen_recently
         )
         computation_time = time.perf_counter() - started_at
 
@@ -80,11 +82,11 @@ async def find_adjusted_scores(
                             internal_name=combination.category_internal_name,
                             bias=combination.category_bias,
                         ),
-                        times_seen_today=times_seen,
+                        times_seen_recently=times_seen,
                         score=adjusted_score.score,
                     )
                     for combination, times_seen, adjusted_score in zip(
-                        combinations, times_seen_today, adjusted_scores
+                        combinations, times_seen_recently, adjusted_scores
                     )
                 ],
                 computation_time=computation_time,

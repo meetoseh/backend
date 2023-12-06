@@ -32,7 +32,7 @@ from personalization.routes.find_adjusted_scores import (
     FindAdjustedScoresItem,
     FindAdjustedScoresResponse,
 )
-from personalization.lib.s04a_times_seen_today import map_to_times_seen_today
+from personalization.lib.s04a_times_seen_recently import map_to_times_seen_recently
 from personalization.lib.s04b_adjust_scores import map_to_adjusted_scores
 from personalization.routes.find_best_categories import (
     FindBestCategoriesResponseItem,
@@ -211,11 +211,11 @@ async def analyze_personalization(
         )
 
         adjusted_scores_started_at = time.perf_counter()
-        times_seen_today = await map_to_times_seen_today(
-            itgs, user_sub=user_sub, combinations=combinations
+        times_seen_recently = await map_to_times_seen_recently(
+            itgs, user_sub=user_sub, instructors=combinations
         )
         adjusted_scores = await map_to_adjusted_scores(
-            itgs, unadjusted=feedback_scores, times_seen_today=times_seen_today
+            itgs, unadjusted=feedback_scores, times_seen_recently=times_seen_recently
         )
         adjusted_scores_finished_at = time.perf_counter()
         adjusted_score_response = FindAdjustedScoresResponse(
@@ -231,11 +231,11 @@ async def analyze_personalization(
                         internal_name=combination.category_internal_name,
                         bias=combination.category_bias,
                     ),
-                    times_seen_today=times_seen,
+                    times_seen_recently=times_seen,
                     score=adjusted_score.score,
                 )
                 for combination, times_seen, adjusted_score in zip(
-                    combinations, times_seen_today, adjusted_scores
+                    combinations, times_seen_recently, adjusted_scores
                 )
             ],
             computation_time=adjusted_scores_finished_at - adjusted_scores_started_at,

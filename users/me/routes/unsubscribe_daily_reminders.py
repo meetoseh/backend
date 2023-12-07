@@ -86,7 +86,7 @@ async def unsubscribe_daily_reminders(
                                 'time_range', CASE 
                                     WHEN user_daily_reminder_settings.time_range IS NULL THEN NULL
                                     ELSE json(user_daily_reminder_settings.time_range)
-                                END,
+                                END
                             )
                         ),
                         ?

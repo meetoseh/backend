@@ -6,7 +6,7 @@ from fastapi.datastructures import Headers
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional, Annotated, cast as typing_cast
-from error_middleware import handle_warning
+from error_middleware import handle_error, handle_warning
 from itgs import Itgs
 from lib.shared.clean_for_slack import clean_for_slack
 from models import StandardErrorResponse
@@ -197,12 +197,15 @@ async def login(
             )
             verified_str = "verified" if email_verified_at is not None else "unverified"
 
-            await maybe_update_key_derivation_method(
-                itgs,
-                uid=uid,
-                current_key_derivation_method=key_derivation_method,
-                raw_password=args.password,
-            )
+            try:
+                await maybe_update_key_derivation_method(
+                    itgs,
+                    uid=uid,
+                    current_key_derivation_method=key_derivation_method,
+                    raw_password=args.password,
+                )
+            except Exception as e:
+                await handle_error(e, extra_info=f"for user identity `{uid}`")
 
             async with auth_stats(itgs) as stats:
                 stats.incr_login_attempted(unix_date=login_unix_date)
@@ -335,7 +338,7 @@ async def maybe_update_key_derivation_method(
         salt=new_key_derivation_method.salt_bytes,
         iterations=new_key_derivation_method.iterations,
     )
-    new_derived_password_b64 = base64.b64encode(new_derived_password)
+    new_derived_password_b64 = base64.b64encode(new_derived_password).decode("utf-8")
     conn = await itgs.conn()
     cursor = conn.cursor()
     await cursor.execute(

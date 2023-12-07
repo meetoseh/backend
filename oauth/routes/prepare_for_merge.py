@@ -38,6 +38,7 @@ class OauthPrepareForMergeRequest(BaseModel):
             "- ROOT_FRONTEND_URL (typically https://oseh.io)\n"
             "- oseh://login_callback\n\n"
         ),
+        alias="redirectUrl",  # 1.1.4 of the app accidentally used this name
     )
 
 

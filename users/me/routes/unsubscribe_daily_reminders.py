@@ -77,7 +77,7 @@ async def unsubscribe_daily_reminders(
                         users.id,
                         user_daily_reminders.channel,
                         0,
-                        COALESCE(user_daily_reminder_settings.time_range, ?)
+                        COALESCE(user_daily_reminder_settings.time_range, ?),
                         json_insert(
                             ?,
                             '$.old',

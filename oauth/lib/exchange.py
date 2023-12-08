@@ -910,7 +910,7 @@ def _update_email(
                 " users.sub = ?"
                 " AND NOT EXISTS ("
                 "  SELECT 1 FROM user_email_addresses AS uea"
-                "  WHERE uea.user_id = users.id AND uea.email = ?"
+                "  WHERE uea.user_id = users.id AND uea.email = ? COLLATE NOCASE"
                 " )"
             ),
             qargs=[
@@ -1079,11 +1079,16 @@ def _update_email(
                         "   AND udr.channel = 'email'"
                         " )"
                         " AND (settings.day_of_week_mask IS NULL OR settings.day_of_week_mask <> 0)"
+                        " AND NOT EXISTS ("
+                        "  SELECT 1 FROM suppressed_emails"
+                        "  WHERE suppressed_emails.email_address = ? COLLATE NOCASE"
+                        " )"
                     ),
                     qargs=[
                         daily_reminders_uid,
                         now,
                         user.user_sub,
+                        interpreted_claims.email,
                     ],
                     response_handler=partial(handler, "add_reminders"),
                 ),

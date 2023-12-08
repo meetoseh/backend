@@ -30,6 +30,7 @@ from lib.daily_reminders.registration_stats import (
 )
 from lib.redis_stats_preparer import RedisStatsPreparer
 from lib.shared.clean_for_slack import clean_for_slack
+from lib.shared.describe_user import enqueue_send_described_user_slack_message
 from oauth.models.oauth_state import OauthState
 from oauth.settings import ProviderSettings
 from redis.asyncio import Redis
@@ -583,6 +584,12 @@ async def initialize_user_from_info(
             now=time.time(),
         )
         if user is not None:
+            await enqueue_send_described_user_slack_message(
+                itgs,
+                message=f'{{name}} just signed up with {provider}!',
+                sub=user.user_sub,
+                channel='oseh_bot'
+            )
             return user
         await asyncio.sleep(0.1 + 0.1 * random.random())
 

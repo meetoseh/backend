@@ -109,5 +109,11 @@ async def store_inapp_notification_action(
                     f"{__name__}:ignoring",
                     f"Silently ignoring in-app notification action: insert checks failed; {args.inapp_notification_user_uid}, {args.action_slug}, {serd_extra}",
                 )
+        else:
+            jobs = await itgs.jobs()
+            await jobs.enqueue(
+                "runners.slack_notifs.on_inapp_notification_action_taken",
+                user_action_uid=user_action_uid,
+            )
 
         return Response(status_code=204)

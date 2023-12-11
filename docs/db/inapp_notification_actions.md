@@ -14,6 +14,12 @@ have the problem where selecting slugs gets harder over time.
   the inapp notification this action is for
 - `slug (text not null)`: The unique identifier for the action within the
   notification, referenced by the frontend
+- `slack_message (text null)`: If specified, a json object with the following shape:
+  `{"channel": "string", "message": "{name} did X"}`. The channel is one of
+  `"web_error", "ops", "oseh_bot", "oseh_classes"`, and the message may include the
+  string literal `{name}` to be substituted for the users name, wrapped in a link for
+  the body and plain for the preview. This message is sent when storing a user action
+  referencing this notification action.
 - `created_at (real not null)`: When this entry was created in seconds since
   the epoch
 
@@ -25,6 +31,7 @@ CREATE TABLE inapp_notification_actions (
     uid TEXT UNIQUE NOT NULL,
     inapp_notification_id INTEGER NOT NULL REFERENCES inapp_notifications(id) ON DELETE CASCADE,
     slug TEXT NOT NULL,
+    slack_message TEXT NULL,
     created_at REAL NOT NULL
 );
 

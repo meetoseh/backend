@@ -30,6 +30,12 @@ particular inapp notification.
   This is an easy way to support feature announcements.
 - `maximum_repetitions (integer null)`: If specified, users which have seen this
   notification at least this number of times should not be prompted anymore.
+- `slack_message (text null)`: If specified, a json object with the following shape:
+  `{"channel": "string", "message": "{name} did X"}`. The channel is one of
+  `"web_error", "ops", "oseh_bot", "oseh_classes"`, and the message may include the
+  string literal `{name}` to be substituted for the users name, wrapped in a link for
+  the body and plain for the preview. This message is sent when creating a new inapp
+  notification session for this notification.
 - `created_at (real not null)`: When this row was added
 
 ## Active Screens
@@ -240,6 +246,12 @@ particular inapp notification.
   - `goto_review_notifications`: Used to indicate that they clicked the option to
     review notifications
 
+- Request Store Review (`oseh_ian_P1LDF0FIWtqnU4D0FsOZgg`) is performed after
+  the user loves a journey for the second time within 10 journeys on the same
+  native device (without clearing storage by e.g. uninstalling/reinstalling).
+  It uses the native prompt, which does not tell us what action the user took.
+  Has no actions.
+
 ## Schema
 
 ```sql
@@ -252,6 +264,7 @@ CREATE TABLE inapp_notifications (
     minimum_repeat_interval REAL NULL,
     user_max_created_at REAL NULL,
     maximum_repetitions INTEGER NULL,
+    slack_message TEXT NULL,
     created_at REAL NOT NULL
 );
 ```

@@ -1,3 +1,4 @@
+import json
 import secrets
 import time
 from fastapi import APIRouter, Header
@@ -113,7 +114,24 @@ async def start_inapp_notification(
         if response.rows_affected is None or response.rows_affected < 1:
             return ERROR_INAPP_NOTIFICATION_NOT_FOUND
 
-        await redis.set(cache_key, session_uid.encode("utf-8"), ex=60 * 15)
+        async with redis.pipeline(transaction=False) as pipe:
+            await pipe.set(cache_key, session_uid.encode("utf-8"), ex=60 * 15)
+            await pipe.rpush(
+                b"jobs:hot",  # type: ignore
+                json.dumps(
+                    {
+                        "name": "runners.slack_notifs.on_inapp_notification_session_started",
+                        "kwargs": {
+                            "inapp_notification_uid": args.inapp_notification_uid,
+                            "user_sub": auth_result.result.sub,
+                            "session_uid": session_uid,
+                        },
+                        "queued_at": time.time(),
+                    }
+                ).encode("utf-8"),
+            )
+            await pipe.execute()
+
         return Response(
             content=StartInappNotificationResponse(
                 inapp_notification_user_uid=session_uid

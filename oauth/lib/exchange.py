@@ -583,7 +583,7 @@ async def initialize_user_from_info(
             example_claims=example_claims,
             now=time.time(),
         )
-        if user is not None:
+        if user is not None and os.environ['ENVIRONMENT'] != 'dev':
             await enqueue_send_described_user_slack_message(
                 itgs,
                 message=f'{{name}} just signed up with {provider}!',

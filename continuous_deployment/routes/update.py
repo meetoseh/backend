@@ -16,7 +16,12 @@ router = APIRouter()
 
 class UpdateArgs(BaseModel):
     repo: Literal[
-        "backend", "websocket", "frontend-web", "jobs", "email-templates"
+        "backend",
+        "websocket",
+        "frontend-web",
+        "jobs",
+        "email-templates",
+        "frontend-ssr-web",
     ] = Field(
         description="the repository identifier that was updated",
     )
@@ -28,6 +33,7 @@ EXPECTED_NUM_SUBSCRIBERS = {
     "frontend-web": 2,
     "jobs": 4,
     "email-templates": 2,
+    "frontend-ssr-web": 2,
 }
 
 

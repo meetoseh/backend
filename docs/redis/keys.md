@@ -132,10 +132,10 @@ the keys that we use in redis
   The value is generated just before the instance shuts down and stored via the diskcache
   key `updater-lock-key`
 
-- `builds:frontend-web:hash` goes to the string representing the git commit sha
-  of the current frontend-web build in s3. Frontend-web instances atomically
-  swap this to the current sha when opening, triggering a build if this causes
-  a change.
+- `builds:{repo}:hash` goes to the string representing the git commit sha
+  of the current frontend-web/frontend-ssr-web build in s3. Frontend-web and
+  frontend-web-ssr instances atomically swap this to the current sha when
+  opening, triggering a build if this causes a change.
 
 - `oauth:states:{state}`: goes to a string representing a json object if we have
   recently generated a state for oauth with the associated secret. See
@@ -2683,15 +2683,15 @@ These are regular keys used by the personalization module
 
 - `updates:{repo}`: used to indicate that the main branch of the given repository was updated
 
-- `updates:frontend-web:build_ready`: the frontend-web repository goes through a separate build
-  server to handle the much larger RAM requirements of building a create-react-app project
+- `updates:{repo}:build_ready`: the frontend-web/frontend-ssr-web repositories goes through a separate build
+  server to handle the much larger RAM requirements of building webpack projects
   compared to actually serving requests. Hence `update:frontend-web` spins up a server to build
   the project which then publishes to this key when the build is ready. The frontend-web instance
   which launched the build server then terminates the instance and publishes to
   `updates:frontend-web:do_update`
 
-- `updates:frontend-web:do_update` see `updates:frontend-web:build_ready`; triggers actually
-  downloading the frontend-web build artifact and updating instances.
+- `updates:{repo}:do_update` see `updates:{repo}:build_ready`; triggers actually
+  downloading the build artifact and updating instances.
 
 - `ps:interactive_prompts:{uid}:events`: used to indicate that a new interactive prompt event was
   created for the interactive prompt with the given uid. The body of the message should

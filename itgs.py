@@ -168,7 +168,6 @@ class Itgs:
         async with self._lock:
             if self._redis_main is not None:
                 return self._redis_main
-
             redis_ips = os.environ["REDIS_IPS"].split(",")
             if not redis_ips:
                 raise ValueError(
@@ -177,8 +176,12 @@ class Itgs:
 
             async def cleanup(me: "Itgs") -> None:
                 if me._redis_main is not None:
-                    await me._redis_main.close()
+                    await me._redis_main.aclose()
                     me._redis_main = None
+
+                if me._sentinel is not None:
+                    for sentinel in me._sentinel.sentinels:
+                        await sentinel.aclose()
 
                 me._sentinel = None
 

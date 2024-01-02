@@ -182,8 +182,7 @@ class Itgs:
                 if me._sentinel is not None:
                     for sentinel in me._sentinel.sentinels:
                         await sentinel.aclose()
-
-                me._sentinel = None
+                    me._sentinel = None
 
             self._closures.append(cleanup)
             self._sentinel = redis.asyncio.Sentinel(

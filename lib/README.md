@@ -1,2 +1,2 @@
-this folder is only used if we're directly copying files managed by another
-repo, e.g., lib/touch/links.py is canonically from the jobs repo
+this folder is only used if we intend to share the file across multiple
+repos, e.g., lib/touch/links.py is canonically from the jobs repo

@@ -10,6 +10,7 @@ from content_files.models import ContentFileRef
 import content_files.auth
 from instructors.routes.read import Instructor
 from itgs import Itgs
+from journeys.lib.slugs import assign_slug_from_title
 from journeys.subcategories.routes.read import JourneySubcategory
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from interactive_prompts.models.prompt import Prompt
@@ -435,7 +436,8 @@ async def create_journey(
                 },
                 status_code=503,
             )
-
+        
+        await assign_slug_from_title(itgs, journey_uid=uid, title=args.title)
         await journeys.lib.stats.on_journey_created(itgs, created_at=now)
         jobs = await itgs.jobs()
         await jobs.enqueue("runners.refresh_journey_emotions", journey_uid=uid)

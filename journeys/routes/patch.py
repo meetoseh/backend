@@ -18,6 +18,7 @@ from interactive_prompts.models.prompt import (
     parse_prompt_from_json,
 )
 from journeys.lib.read_one_external import evict_external_journey
+from journeys.lib.slugs import assign_slug_from_title
 from journeys.routes.create import Prompt, CreateJourneyResponse
 from journeys.subcategories.routes.read import JourneySubcategory
 from interactive_prompts.lib.read_one_external import evict_interactive_prompt
@@ -641,6 +642,9 @@ async def patch_journey(
                     },
                     status_code=503,
                 )
+
+            if args.title is not None:
+                await assign_slug_from_title(itgs, uid, args.title)
 
         # the following all races
         if (

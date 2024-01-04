@@ -45,7 +45,7 @@ CREATE TABLE image_file_exports (
     bottom_cut_px INTEGER NOT NULL,
     format TEXT NOT NULL,
     quality_settings TEXT NOT NULL,
-    thumbhash TEXT NULL,
+    thumbhash TEXT NOT NULL,
     created_at REAL NOT NULL
 );
 

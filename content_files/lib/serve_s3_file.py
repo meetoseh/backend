@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Dict, Generator, Optional, Union, Protocol, cast as typing_cast
+from typing import Dict, Generator, List, Optional, Union, Protocol, cast as typing_cast
 from itgs import Itgs
 from fastapi.responses import Response, StreamingResponse
 from temp_files import temp_file
@@ -63,7 +63,50 @@ class ServableS3File:
     """The time, in seconds, to cache the file locally"""
 
 
-async def serve_s3_file(itgs: Itgs, file: ServableS3File) -> Response:
+@dataclass
+class HTTPRange:
+    start: int
+    end: int
+
+
+def parse_range(range: Optional[str]) -> List[HTTPRange]:
+    if range is None:
+        return []
+
+    if "=" not in range:
+        return []
+
+    range_type, range_value = range.split("=", 1)
+    if range_type.strip() != "bytes":
+        return []
+
+    range_requests = range_value.split(",", 10)
+    if len(range_requests) >= 10:
+        return []
+
+    ranges = []
+    for range_request in range_requests:
+        if "-" not in range_request:
+            return []
+
+        start, end = range_request.split("-", 1)
+        try:
+            start = int(start)
+            end = int(end)
+        except ValueError:
+            return []
+
+        if start > end:
+            return []
+
+        ranges.append(HTTPRange(start, end))
+
+    return ranges
+
+
+async def serve_s3_file(
+    itgs: Itgs, file: ServableS3File, range: Optional[str] = None
+) -> Response:
     """Serves the s3 file with the given properties from the nearest cache,
     or downloads it from s3 and caches it locally if it's not in the cache.
 
@@ -78,7 +121,7 @@ async def serve_s3_file(itgs: Itgs, file: ServableS3File) -> Response:
         Response: Either the file fully-loaded in memory or a streaming response,
             as appropriate based on the file size and instance properties.
     """
-    resp = await serve_s3_file_from_cache(itgs, file)
+    resp = await serve_s3_file_from_cache(itgs, file, range=range)
     if resp is not None:
         return resp
 
@@ -91,7 +134,7 @@ async def serve_s3_file(itgs: Itgs, file: ServableS3File) -> Response:
         DOWNLOAD_LOCKS[file.uid] = asyncio.Lock()
 
     async with DOWNLOAD_LOCKS[file.uid]:
-        resp = await serve_s3_file_from_cache(itgs, file)
+        resp = await serve_s3_file_from_cache(itgs, file, range=range)
         if resp is not None:
             return resp
 
@@ -111,21 +154,23 @@ async def serve_s3_file(itgs: Itgs, file: ServableS3File) -> Response:
                     expire=file.cache_time,
                 )
 
-    resp = await serve_s3_file_from_cache(itgs, file)
+    resp = await serve_s3_file_from_cache(itgs, file, range=range)
     assert resp is not None, "just set the file in the cache, so it should be there now"
     return resp
 
 
 async def serve_s3_file_from_cache(
-    itgs: Itgs, file: ServableS3File
+    itgs: Itgs, file: ServableS3File, *, range: Optional[str] = None
 ) -> Optional[Response]:
     """If the given s3 file is already cached, serves it from the cache, otherwise
     returns None.
     """
+    ranges = parse_range(range)
+
     local_cache = await itgs.local_cache()
     cached_data = typing_cast(
         Optional[Union[io.BytesIO, bytes]],
-        local_cache.get(f"s3_files:{file.uid}".encode("utf-8"), read=True),
+        local_cache.get(f"s3_files:{file.uid}".encode("utf-8"), read=not ranges),
     )
     if cached_data is None:
         return None
@@ -133,8 +178,43 @@ async def serve_s3_file_from_cache(
     headers = {
         "Content-Type": file.content_type,
         "Content-Length": str(file.file_size),
+        "Accept-Ranges": "bytes",
     }
+
     if isinstance(cached_data, (bytes, bytearray, memoryview)):
-        return Response(content=cached_data, headers=headers)
+        if not ranges:
+            return Response(content=cached_data, headers=headers)
+
+        if len(ranges) == 1:
+            headers[
+                "Content-Range"
+            ] = f"bytes {ranges[0].start}-{ranges[0].end}/{file.file_size}"
+            return Response(
+                content=cached_data[ranges[0].start : ranges[0].end + 1],
+                headers=headers,
+                status_code=206,
+            )
+
+        headers["Content-Type"] = "multipart/byteranges; boundary=3d6b6a416f9b5"
+        return StreamingResponse(
+            content=read_ranges(file, cached_data, ranges),
+            headers=headers,
+            status_code=206,
+        )
 
     return StreamingResponse(content=read_in_parts(cached_data), headers=headers)
+
+
+def read_ranges(
+    file: ServableS3File, data: bytes, ranges: List[HTTPRange]
+) -> Generator[bytes, None, None]:
+    """Reads the given data in the given ranges"""
+    for range in ranges:
+        yield b"--3d6b6a416f9b5\n"
+        yield f"Content-Type: {file.content_type}\n".encode("utf-8")
+        yield f"Content-Range: bytes {range.start}-{range.end}/{file.file_size}\n\n".encode(
+            "utf-8"
+        )
+        yield data[range.start : range.end + 1]
+        yield b"\n"
+    yield b"--3d6b6a416f9b5--\n"

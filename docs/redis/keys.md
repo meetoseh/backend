@@ -311,6 +311,11 @@ the keys that we use in redis
   found. Always set to expire 15m from when it was last checked (if `0` or a json
   object) or 10s after starting fetching (if fetching)
 
+- `transcripts:{uid}` goes to the json encoding of a `Transcript` from
+  `transcripts/routes/show.py`, set to expire 15m after it was last used.
+  see also: diskcache key with the same name for the local cache, and
+  `ps:transcripts` which is used to actively fill out instance caches
+
 ### Push Namespace
 
 - `push:send_job:lock` is a basic redis lock key used to ensure only one send job is
@@ -2891,3 +2896,10 @@ These are regular keys used by the personalization module
   `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
   `length_bytes` of data to write to the corresponding local cache key. All
   numbers are big-endian encoded.
+
+- `ps:transcripts` is used to optimistically send journey `Transcript`s (from
+  transcripts/routes/show.py) to fill instance caches. messages are formatted as
+  (uint32, blob, uint64, blob) where the first int is for the length of the
+  first blob, which is the `Transcript` uid, and the second int is the length
+  of the next blob, which is the actual json-encoded `Transcript` to write to the
+  cache. any data after that blob MUST be ignored

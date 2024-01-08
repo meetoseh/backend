@@ -366,6 +366,10 @@ the keys we store locally on backend instances via diskcache
   string containing the serialized contact method stats for the given date range
   (incl -> excl) see also: [contact_method_stats](../../admin/routes/contact_method_stats.py)
 
+- `transcripts:{uid}` goes to a (uint64, blob) where the uint64 (big-endian) is
+  the length of the blob, and the blob is the jsonified `Transcript` from
+  `transcripts/routes/show.py` for the given uid
+
 ## Personalization
 
 This contains keys for the personalization subspace

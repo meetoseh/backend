@@ -47,6 +47,7 @@ import admin.notifs.routes.read_daily_push_receipts
 import admin.sms.routes.read_daily_sms_sends
 import admin.sms.routes.read_daily_sms_polling
 import admin.sms.routes.read_daily_sms_events
+import transcripts.router
 import asyncio
 from loguru import logger
 from typing import cast as typing_cast
@@ -222,6 +223,9 @@ app.include_router(
 )
 app.include_router(sms.router.router, prefix="/api/1/sms", tags=["sms"])
 app.include_router(emails.router.router, prefix="/api/1/emails", tags=["emails"])
+app.include_router(
+    transcripts.router.router, prefix="/api/1/transcripts", tags=["transcripts"]
+)
 app.include_router(misc.router.router, prefix="/api/1/misc", tags=["misc"])
 app.router.redirect_slashes = False
 

@@ -37,16 +37,22 @@ whenever the code is used
   - `home`: standard user home page
   - `unsubscribe`: the user is prompted with whether or not to unsubscribe from
     all emails (todo: break it down by type of email in extra)
+  - `share_journey`: the user is directed straight to a specific journey
 - `page_extra (text not null)`: goes to a json object which provides additional
-  information about the state to prefill within the page, for example, if we
-  supported deep linking to journeys, this would include the journey uid. For
-  now this is always the literal value `{}`
+  information about the state to prefill within the page. The schema depends on
+  the page identifier:
+  - `home`: always `{}`
+  - `unsubscribe`: always `{}`
+  - `share_journey`: `{"journey_uid": "string"}` contains the uid of the specific
+    journey the user is directed to
 - `preview_identifier (text not null)`: acts an enum for how previews of the link
   should generally look, i.e., the html meta tags like `og:title`.
   See https://ogp.me/. One of:
   - `default`: uses standard meta tags from the homepage
   - `example`: uses custom meta tags to show that we can
   - `unsubscribe`: switches title and description to indicate unsubscribing
+  - `share_journey`: switches title and description to match the journey and the
+    person who shared the class
 - `preview_extra (text not null)`: goes to a json object which provides additional
   information about the preview. the schema depends on the identifier:
   - `default`: always `{}`
@@ -54,6 +60,8 @@ whenever the code is used
   - `unsubscribe`: `{"list": "string"}` is used in the description to indicate which
     email list they are unsubscribing from. should be plural, lowercase (e.g.,
     `"daily reminders"`)
+  - `share_journey`: `{"journey_uid": "string"}` the uid of the journey to use for
+    the title and description
 
 Note: the timestamp is omitted because these are only created in lockstep with
 user touches.

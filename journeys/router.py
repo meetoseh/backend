@@ -9,6 +9,7 @@ import journeys.routes.create
 import journeys.routes.delete
 import journeys.routes.give_feedback
 import journeys.routes.patch
+import journeys.routes.read_canonical_url
 import journeys.routes.read
 import journeys.routes.start_interactive_prompt
 import journeys.routes.undelete
@@ -26,6 +27,7 @@ router.include_router(journeys.public_links.router.router, prefix="/public_links
 router.include_router(journeys.routes.create.router)
 router.include_router(journeys.routes.delete.router)
 router.include_router(journeys.routes.patch.router)
+router.include_router(journeys.routes.read_canonical_url.router)
 router.include_router(journeys.routes.read.router)
 router.include_router(journeys.routes.undelete.router)
 router.include_router(journeys.routes.start_interactive_prompt.router)

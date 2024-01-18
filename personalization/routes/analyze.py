@@ -296,7 +296,7 @@ async def analyze_personalization(
             category_uid=sorted_combinations[0].category_uid,
             instructor_uid=sorted_combinations[0].instructor_uid,
             emotion=emotion,
-            user_sub=auth_result.result.sub,
+            user_sub=user_sub,
             limit=limit,
         )
         best_journeys_finished_at = time.perf_counter()

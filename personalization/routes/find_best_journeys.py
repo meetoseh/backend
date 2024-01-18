@@ -116,7 +116,7 @@ async def find_best_journeys(
             category_uid=best_combination.category_uid,
             instructor_uid=best_combination.instructor_uid,
             emotion=emotion,
-            user_sub=auth_result.result.sub,
+            user_sub=user_sub,
             limit=limit,
         )
         computation_time = time.perf_counter() - started_at

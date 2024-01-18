@@ -126,7 +126,6 @@ async def get_journeys_for_combination(
             FROM journeys, user_journeys, users, instructors, journey_subcategories
             WHERE
                 user_journeys.user_id = users.id
-                AND journeys.journey_id = user_journeys.journey_id
                 AND journeys.instructor_id = instructors.id
                 AND journeys.journey_subcategory_id = journey_subcategories.id
                 AND instructors.uid = ?

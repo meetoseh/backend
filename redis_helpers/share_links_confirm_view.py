@@ -224,7 +224,7 @@ def parse_share_links_confirm_view_result(result: Any) -> ShareLinkConfirmViewRe
     elif result_type == 101:
         assert len(result) == 3, result
         assert isinstance(result[1], bytes), result
-        assert isinstance(result[2], Optional[bytes]), result
+        assert isinstance(result[2], (bytes, type(None))), result
         return ShareLinkConfirmViewSuccessResult(
             success=True,
             details="standard",

@@ -57,6 +57,7 @@ route = read_daily_stats.create_daily_stats_route(
         ),
         simple_fields=[],
         fancy_fields=["subscribed", "unsubscribed"],
+        sparse_fancy_fields=[],
         response_model=DailyReminderRegistrationStats,
         partial_response_model=PartialDailyReminderRegistrationStats,
     )

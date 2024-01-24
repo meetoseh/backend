@@ -78,6 +78,7 @@ route = read_daily_stats.create_daily_stats_route(
         ),
         simple_fields=[],
         fancy_fields=["attempted", "succeeded", "bounced", "complaint"],
+        sparse_fancy_fields=[],
         response_model=EmailEventStats,
         partial_response_model=PartialEmailEventStats,
     )

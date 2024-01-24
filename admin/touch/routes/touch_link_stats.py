@@ -232,6 +232,7 @@ route = read_daily_stats.create_daily_stats_route(
             "abandon_failed",
             "leaked",
         ],
+        sparse_fancy_fields=[],
         response_model=TouchLinkStats,
         partial_response_model=PartialTouchLinkStats,
     )

@@ -44,6 +44,7 @@ route = read_daily_stats.create_daily_stats_route(
         ),
         simple_fields=["stale"],
         fancy_fields=[],
+        sparse_fancy_fields=[],
         response_model=TouchStaleStats,
         partial_response_model=PartialTouchStaleStats,
     )

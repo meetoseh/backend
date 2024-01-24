@@ -1,0 +1,33 @@
+from fastapi import APIRouter
+import admin.journey_share_links.routes.link_stats
+import admin.journey_share_links.routes.read_last_log_job
+import admin.journey_share_links.routes.read_last_raced_confirmations_job
+import admin.journey_share_links.routes.read_last_unconfirmed_view_sweep_job
+import admin.journey_share_links.routes.read_ratelimiting_info
+import admin.journey_share_links.routes.read_top_sharers
+import admin.journey_share_links.routes.read_total_attributable_users
+import admin.journey_share_links.routes.read_total_links_created
+import admin.journey_share_links.routes.read_total_unique_views
+import admin.journey_share_links.routes.read_total_views
+import admin.journey_share_links.routes.read_views_to_log_info
+import admin.journey_share_links.routes.unique_view_stats
+
+router = APIRouter()
+router.include_router(admin.journey_share_links.routes.link_stats.router)
+router.include_router(admin.journey_share_links.routes.read_last_log_job.router)
+router.include_router(
+    admin.journey_share_links.routes.read_last_raced_confirmations_job.router
+)
+router.include_router(
+    admin.journey_share_links.routes.read_last_unconfirmed_view_sweep_job.router
+)
+router.include_router(admin.journey_share_links.routes.read_ratelimiting_info.router)
+router.include_router(admin.journey_share_links.routes.read_top_sharers.router)
+router.include_router(
+    admin.journey_share_links.routes.read_total_attributable_users.router
+)
+router.include_router(admin.journey_share_links.routes.read_total_links_created.router)
+router.include_router(admin.journey_share_links.routes.read_total_unique_views.router)
+router.include_router(admin.journey_share_links.routes.read_total_views.router)
+router.include_router(admin.journey_share_links.routes.read_views_to_log_info.router)
+router.include_router(admin.journey_share_links.routes.unique_view_stats.router)

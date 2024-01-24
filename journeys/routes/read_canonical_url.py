@@ -32,6 +32,7 @@ ERROR_NOT_FOUND_RESPONSE = Response(
 
 @router.get(
     "/canonical_url/{uid}",
+    response_model=ReadCanonicalJourneyUrlResponse,
     responses={
         **STANDARD_ERRORS_BY_CODE,
         "404": {

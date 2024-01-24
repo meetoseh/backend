@@ -1257,6 +1257,194 @@ fraudulent behavior. Fraudulent behavior typically falls into two categories:
   NOTE: This is used for all CRSF tokens, but currently that just consists of
   Sign in with Oseh
 
+### Journey Share Links
+
+Used for facilitating journey share links, which are links generated on request
+to share a specific journey via URL.
+
+- `journey_share_links:views_to_log` goes to a list (inserted on the right, removed
+  from the left) containing uids of journey share link views that should be persisted
+  as soon as possible. Each uid in this list MAY have a corresponding hash available
+  at `journey_share_links:views:{uid}` with a share link uid, and each of those
+  MAY not have a corresponding entry here, as unconfirmed views are not
+  persisted for a few minutes to allow for ratelimiting. Entries in this list but
+  not in the the view pseudoset correspond to duplicates, and they occur when the
+  view was in the unconfirmed set for a long time, causing the unconfirmed views
+  sweep job to push it to this list, and then the item was confirmed. Thus, there
+  is at most one duplicate per view added to this list. Since this is both rare
+  and of limited cost, we don't perform active deduplication (e.g., making this a
+  sorted set instead of a list)
+
+- `journey_share_links:views:{uid}` goes to a hash with the following keys:
+
+  - `uid (string)`: unique identifier for the click
+  - `journey_share_link_code (string)`: the code that was clicked
+  - `journey_share_link_uid (string, null)`: if the code was valid, the uid of the
+    share link the code corresponds to. Null if the code was not valid, and this
+    entry is intended for ratelimiting only
+  - `user_sub (string, null)`: sub of the user who clicked the link, if known
+  - `visitor (string, null)`: visitor who clicked the link, if known
+  - `visitor_was_unique (integer, null)`: `1` to indicate the visitor is set and
+    when we went to increment unique views, the visitor was unique. `0` to indicate
+    the visitor is set and when we went to increment unique views, the visitor was
+    not unique. unset or an empty string to indicate visitor is unset or we have
+    not yet tried to increment unique views or doing so failed unexpectedly; in
+    which case the visitor should be treated as not unique if set
+  - `clicked_at (number)`: when the link was clicked in seconds since the epoch
+  - `confirmed_at (number, null)`: when the link was confirmed (adding the user sub
+    or visitor) in seconds since the epoch
+
+- `journey_share_links:views_log_purgatory`: a set whose entries are uids removed from
+  `journey_share_links:views_to_log` but are still actively being worked on by
+  the share link view persist job. this is a set as we lookup uids into this set
+  when confirming as it's not safe to confirm views that are in this set. In order
+  to facilitate fast confirmations for members that are in this set, confirm views
+  should be written to `journey_share_links:views_to_confirm`
+
+- `journey_share_links:views_to_confirm` goes to a hash where the keys are view uids
+  for which we received confirmation while they were in the views log purgatory and
+  the values are json objects with the following fields:
+
+  - `uid (string)`: unique identifier for the click/view
+  - `user_sub (string, null)`: sub of the user who clicked the link, if known
+  - `visitor (string, null)`: visitor who clicked the link, if known
+  - `visitor_was_unique (boolean, null)`: if the visitor was unique, if known
+  - `confirmed_at (number)`: when the link was confirmed (adding the user sub
+    or visitor) in seconds since the epoch
+
+- `journey_share_links:views_unconfirmed` goes to a sorted set where the keys are uids
+  of journey share links that have not been confirmed by the client yet, and the
+  scores are the clicked at times in seconds since the epoch. Too many unconfirmed
+  views can be a sign of automated share code scanning.
+
+- `journey_share_links:known_bad_code:{code}` goes to a string value `1` when the given
+  code is checked and found to be invalid. When initially set, it is given a 10m
+  expiration. Known bad codes skip all ratelimiting increments, since the point
+  of ratelimiting is primarily intended to hinder scanning the code space, and
+  it's not helpful to recheck the same code for that purpose. More likely there
+  really is a bad link out there if a single invalid code is being hit multiple
+  times, which we don't want to trigger ratelimiting. Note we could skip
+  ratelimiting checks as well on these since it only gets set after we processed
+  the code, but doing so necessarily requires an extra step in the happy path
+
+- `journey_share_links:ratelimiting:{duration}:{at}:{category}` goes to a string key
+  containing a number corresponding to how many category events have been within
+  the duration starting at the given `at`, where the at unit depends on the duration.
+
+  Durations:
+
+  - `1m`: `at` is defined as `int(unix_seconds) // 60`
+  - `10m`: `at` is defined as `int(unix_seconds) // 600`
+
+  Categories:
+
+  - `invalid`: how many distinct (1) codes we checked but were invalid
+  - `invalid_confirmed`: of the invalid checks, how many were confirmed
+  - `invalid_confirmed_with_visitor-{visitor}`: of the invalid confirmed checks, how many
+    included the visitor with the given uid
+  - `invalid_confirmed_with_user`: of the invalid confirmed checks, how many included a user
+  - `invalid_confirmed_with_user-{sub}`: of the invalid confirmed checks, how many included
+    the user with the given sub
+
+  (1): distinct meaning `journey_share_links:known_bad_code:{code}` wasn't set during the check
+
+  Expiration:
+
+  These keys are always set to expire 30 minutes after the end of the bucket, regardless
+  of the duration.
+
+  Ratelimiting steps that can be taken are as follows:
+
+  - Phase 1 (hydration): Prior to receiving authorization, the server can either
+    hydrate the response immediately and ask that the client confirm the view in
+    the background, or it can force the client to confirm the view in order to
+    get the journey information. This step is only distinct when using the web
+    client via the frontend-ssr-web repository
+  - Phase 2 (confirmation): If, during phase 1, the request was hydrated, then the client
+    should confirm the request providing authorization/visitor information in the
+    background once the page is loaded. Confirmation cannot cause ratelimiting, since
+    the client already has the journey.
+  - Phase 3 (api): Otherwise, if phase 1 hydration was not possible or wasn't
+    provided due to ratelimiting, the client can fetch the journey alongside
+    confirming the view, providing authorization/visitor information.
+    Ratelimiting at this point either approves or rejects the request with all
+    available information.
+
+  In order for phase 1 (hydration) to hydrate the content, all of the following must be
+  true:
+
+  - Fewer than 3 invalid requests in the last minute
+  - Fewer than 10 invalid requests in the last 10 minutes
+
+  In order for phase 3 (api request) to provide the content, all of the following must be true:
+
+  - If a visitor is provided,
+    - there must be 3 or fewer invalid requests for that visitor in the last minute
+    - there must be 10 or fewer invalid requests for that visitor in the last 10 minutes
+  - If a user is provided,
+    - there must be 3 or fewer invalid requests for that user in the last minute
+    - there must be 10 or fewer invalid requests for that user in the last 10 minutes
+  - If a user is not provided,
+    - there must be 10 or fewer invalid requests without a user, defined as
+      `invalid - invalid_confirmed_with_user` in the last minute
+    - there must be 50 or fewer invalid requests without a user in the last 10 minutes
+  - There must be 60 or fewer invalid requests in the last minute
+  - There must be 200 or fewer invalid requests in the last 10 minutes
+
+- `journey_share_links:views_log_job:lock` a basic redis lock to prevent multiple journey
+  share link view persist jobs from running at the same time
+
+- `journey_share_links:sweep_unconfirmed_job:lock` a basic redis lock to prevent multiple
+  journey share link view sweep unconfirmed jobs from running at the same time
+
+- `journey_share_links:raced_confirmations_job:lock` a basic redis lock to
+  prevent multiple journey share link raced confirmations sweep jobs from
+  running at the same time
+
+- `journey_share_links:top_sharers:{start_unix_date}:{end_unix_date}`
+  where `start_unix_date` is `None` or the earliest unix date whose views
+  are included, and `end_unix_date` is always the last unix date, exclusive,
+  whose views are included, with both dates delineated in America/Los_Angeles,
+  goes to a gzip-compressed json object containing the following keys:
+
+  - `top_sharers` is a list where each item is a json object describing someone
+    who created share links and how many times those links were viewed, in
+    descending order of total views.
+    - `sub`: the sub of the user
+    - `links_created`: how many links the user created within the interval
+    - `link_views_total`: how many times share links by this user have been viewed,
+      without efforts to remove duplicates. this includes views on links created before the
+      interval
+    - `link_views_unique`: how many times share links by this user have been viewed,
+      with duplicate views from the same visitor on the same day delineated by
+      `America/Los_Angeles` removed. this includes views on links created before the interval
+    - `link_attributable_users`: how many users exist who viewed a link by this sharer
+      prior to signing up, where the view was within the interval
+  - `checked_at` is the time when we checked these values in seconds since the unix epoch
+
+  This is filled as-needed, see also: `ps:journey_share_links:top_sharers` and
+  the diskcache key with the same value. always set to expire 2 hours after it
+  was initialized
+
+- `journey_share_links:visitors:{unix_date}` goes to a set containing the visitor
+  uid of all visitors who have seen any share link on the given date. this is not
+  set to expire; the cardinality of it must be manually rotated to the database table
+  `journey_share_link_unique_view_stats`. When adding to this set succeeds, also mutate
+  `stats:journey_share_links:unique_views:{unix_date}` and related. The earliest key for
+  this is `stats:journey_share_links:unique_views:daily:earliest` as this key is rotated
+  with the `stats:journey_share_links:unique_views:daily:*` keys
+
+- `journey_share_links:total_attributable_users` goes to a string containing a json
+  object. In order to compute the total number of attributable users, we sum over
+  the relevant utms the `holdover_any_click_signups` and `any_click_signups` from
+  `daily_utm_conversion_stats` in the database, then add the values which haven't
+  been rotated yet (and thus are still in redis). For the first part the work would
+  increase over time, but we can reuse the sum over the date ranges we've already
+  computed, which is what this key allows
+  - `end_unix_date_excl (integer)`: this sum includes all rows up to and excluding
+    this unix date
+  - `total (integer)`: the sum up to and excluding this unix date
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -1699,7 +1887,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `attempted`: how many emails we attempted to send
   - `templated`: of those attempted, how many emails we successfully templated
   - `accepted`: of those templated, how many were accepted by amazon ses
@@ -1772,7 +1960,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `attempted`: how many events we attempted to process
   - `succeeded_and_found`: how many were delivery receipts for emails in the receipt
     pending set, an expected case
@@ -1820,7 +2008,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `abandoned`: how many receipts we abandoned, calling their failure callbacks
     and removing them from the pending set, because they've been in the pending
     set too long. this implies we missed a webhook.
@@ -1832,7 +2020,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `attempted`: how many touches we tried to forward to the appropriate subqueue
   - `touch_points`: how many distinct touch points were fetched this run
   - `attempted_sms`: of those attempted, how many were for sms
@@ -1885,7 +2073,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `inserts`: how many rows we tried to insert
   - `updates`: how many rows we tried to update
   - `full_batch_inserts`: how many maximum size batches we formed for inserts
@@ -1906,7 +2094,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `stale`: how many stale entries in `touch:pending` we cleaned up
   - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
 
@@ -1925,7 +2113,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `attempted`: how many entries within the persistable buffered link sorted set
     were removed and atttempted
   - `lost`: of those attempted, how many were not in the buffered link sorted set
@@ -1953,7 +2141,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `leaked`: how many leaked entries were detected within the
     buffered link sorted set, i.e., how many extremely old scores were detected
     within the buffered link sorted set
@@ -2102,7 +2290,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `attempted`: the number of attempts to persist clicks
   - `persisted`: of those attempted, how many led to actually persisting a click
   - `delayed`: of those attempted, how many led to adding the click back to the
@@ -2120,7 +2308,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `start_unix_date`: the unix date that iteration started on
   - `end_unix_date`: the unix date that iteration ended on
   - `unique_timezones`: how many unique timezones we handled across all
@@ -2145,7 +2333,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `attempted`: how many values from the queue were processed
   - `lost`: of those attempted, how many were dropped because they referenced a row
     in user daily reminders which no longer existed
@@ -2573,7 +2761,7 @@ rather than external functionality.
 
   - `started_at`: unix timestamp when the job started
   - `finished_at`: unix timestamp when the job finished
-  - `running_time`: duration in milliseconds of the last (finished) job
+  - `running_time`: duration in seconds of the last (finished) job
   - `attempted`: how many values from the queue were processed
   - `moved`: how many values were moved to the email to send queue
   - `stop_reason`: one of `list_exhausted`, `time_exhausted`, `backpressure`,
@@ -2673,6 +2861,191 @@ rather than external functionality.
         until a better solution is available
 - `stats:contact_methods:daily:earliest` goes to the earliest unix date for
   which there might still be sign in with contact method statistics in redis
+
+- `stats:journey_share_links:log_job` goes to a hash containing information about
+  the most recent journey share link view persist job, where `started_at` is
+  updated independently from the rest, where the keys are:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job finished
+  - `running_time`: duration in seconds of the last (finished) job
+  - `attempted`: how many link views we attempted to persist
+  - `persisted`: how many link views we successfully persisted with all
+    expected auxiliary information
+  - `partially_persisted`: how many link views we persisted, but missing at
+    least one piece of auxilary information (e.g., a visitor uid was provided,
+    but there was no visitor with that uid to link to)
+  - `failed`: how many link views we failed to store because there was no
+    link with the given identifier
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:journey_share_links:sweep_unconfirmed_job` goes to a hash containing information
+  about the most recent journey share link unconfirmed view sweep job, where `started_at`
+  is updated independently from the rest, where the keys are:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job was finished
+  - `running_time`: duration in seconds of the last (finished) job
+  - `found`: how many stale unconfirmed views were found
+  - `removed`: of the views found, how many were for views of an invalid code,
+    and hence we simply removed them from both the view pseudo-set and the
+    unconfirmed views sorted set.
+  - `queued`: of those found, how many were for a valid code and hence we
+    pushed them to the view to log queue
+  - `stop_reason`: one of `backpressure`, `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:journey_share_links:raced_confirmations_job` goes to a hash containing information
+  about the most recent journey share link raced confirmations sweep job, where `started_at`
+  is updated independently from the rest, where the keys are:
+
+  - `started_at`: unix timestamp when the job started
+  - `finished_at`: unix timestamp when the job was finished
+  - `running_time`: duration in seconds of the last (finished) job
+  - `attempted`: how many items from the raced confirmations hash did this attempt
+    to persist
+  - `not_ready`: of those attempted, how many were skipped because they were still in
+    the view to log purgatory or were very recently added to the raced confirmations hash
+  - `persisted`: of those attempted, how many were persisted will all auxilary information
+    (i.e., the user was set if the user was provided and the visitor was set if the visitor
+    was provided)
+  - `partially_persisted`: of those attempted, how many did we set confirmed_at, but either
+    the user sub was provided but not set or the visitor uid was provided but not set
+  - `failed_did_not_exist`: of those attempted, how many did this fail to set the confirmed
+    at because there was no view with the given uid in the database
+  - `failed_already_confirmed`: of those attempted, how many did this fail to set the
+    confirmed at because the view with the given uid was already confirmed. This is not
+    an exceptional case; scan does not guarrantee we don't receive duplicates, and we are
+    mutating the hash while we are scanning through it which increases the odds of duplicates.
+    we handle duplicates by making the operation idempotent, and this is the no-op case
+  - `stop_reason`: one of `list_exhausted`, `time_exhausted`, or `signal`
+
+- `stats:journey_share_links:daily:{unix_date}` goes to a hash containing
+  information about the journey share links and their views on the given
+  date
+
+  - `created`: number of links created
+  - `reused`: when a user requests a share link, if they've created one
+    within the last 15 minutes, we return that one instead. this is how
+    many times we returned a previously created link
+  - `view_hydration_requests`: how many phase 1 (hydration) requests were
+    received
+  - `view_hydrated`: how many phase 1 (hydration) requests were processed
+    and filled with an external journey
+  - `view_hydration_rejected`: how many phase 1 (hydration) requests were
+    not processed, instead requiring the client follow the request in a
+    separate request. this only happens due to ratelimiting
+  - `view_hydration_failed`: how many phase 1 (hydration) requests were
+    processed and had an invalid code
+  - `view_client_confirmation_requests`: how many phase 2 (confirmation)
+    (implying phase 1 (hydration) hydrated the result) requests were received
+  - `view_client_confirmed`: how many phase 2 (confirmation) requests
+    could be processed to set `confirmed_at`
+  - `view_client_confirm_failed`: how many phase 2 (confirmation) requests
+    did not result in any changes to `confirmed_at`
+  - `view_client_follow_requests`: how many phase 3 (api) requests
+    were received
+  - `view_client_followed`: how many phase 3 (api) requests were
+    processed and resulted in a journey being returned
+  - `view_client_follow_failed`: how many phase 3 (api) requests
+    either were not processed due to ratelimiting or were rejected
+
+- `stats:journey_share_links:daily:{unix_date}:extra:{event}` goes to a hash
+  breaking down the event key in the regular daily stats key, where the keys
+  in the hash depend on the event:
+
+  - `created` is broken down by journey category internal name
+  - `reused` is broken down by journey category internal name
+  - `view_hydrated` is broken down by journey category internal name
+  - `view_hydration_failed` is broken down by `{ratelimiting_applies}`
+    where `ratelimiting_applies` is one of `novel_code` or `repeat_code`,
+    where `novel_code` means this incremented the number of invalid codes
+    for ratelimiting and `repeat_code` mean it did not
+  - `view_client_confirmation_requests` is broken down by `{vis}:{user}`
+    where `vis` is one of `vis_avail` or `vis_missing` and user is one
+    of `user_avail` or `user_missing`, eg, `vis_avail:user_missing`. these
+    refer to if reasonable visitor header and valid authorization header
+    were provided, respectively
+  - `view_client_confirmed` is broken down by `{store}[:{details}]` where
+    details depends on store, and store is one of:
+    - `redis`: we were able to confirm the request by queueing the update
+      in the appropriate job. details is one of
+      - `in_purgatory`: we used the raced confirmations hash
+      - `standard`: we mutated the pseudoset directly
+    - `database`: details are omitted, so the breakdown is just `database`
+  - `view_client_confirm_failed` is broken down by:
+    - `redis:{details}`: we were able to fail the request using the redis transaction
+      without contacting the database. details is one of:
+      - `already_confirmed`: `confirmed_at` set in the pseudoset
+      - `in_purgatory_but_invalid`: in to log purgatory, but link uid is not set
+      - `in_purgatory_and_already_confirmed`: in to log purgatory and raced confirmations hash
+    - `database:{details}`: we failed the request when we went to mutate the view in the database
+      - `not_found`: no such view uid in the database
+      - `already_confirmed`: the view was already confirmed in the database
+      - `too_old`: the view was too old to confirm at this point
+  - `view_client_follow_requests` is broken down by `{vis}:{user}`
+    where `vis` is one of `vis_avail` or `vis_missing` and user is one
+    of `user_avail` or `user_missing`, eg, `vis_avail:user_missing`. these
+    refer to if reasonable visitor header and valid authorization header
+    were provided, respectively
+  - `view_client_followed` is broken down by journey category internal name
+  - `view_client_follow_failed` is broken down by one of the following:
+    - `ratelimited:{category}`: we did not process the request due to ratelimiting,
+      and the `category` is one of: `visitor:1m`, `visitor:10m`, `user:1m`, `user:10m`,
+      `no_user:1m`, `no_user:10m`, `global:1m`, `global:10m` referring to which water
+      mark was hit (where multiple, the first from this list is used)
+    - `invalid:{ratelimiting applies}`: we processed the code but it was invalid,
+      where `ratelimiting_applies` is one of `novel_code` or `repeat_code`
+    - `server_error`: we failed to fetch the journey due to some sort of transient issue
+
+- `stats:journey_share_links:daily:earliest` goes to the earliest unix date for
+  which there might still be journey share link statistics in redis
+
+- `stats:journey_share_links:unique_views:daily:{unix_date}` goes to a hash containing
+  information about what code was seen for the unique views on a given unix date. Unlike
+  a typical stats key, we intend to breakdown a single view multiple ways, so these keys
+  are used to distinguish how we are breaking it down rather than themselves being meaningful.
+  In other words, the value for all entries in this hash should (roughly) match
+  the cardinality of the unique visitors set
+
+  - `by_code`: _sparse_ number of unique views for which a code is available (all of them)
+  - `by_journey_subcategory`: number of unique views for which the journey subcategory
+    is available (all of them)
+  - `by_sharer_sub`: _sparse_ number of unique views for which the user who created the journey
+    share link that was viewed is still available, which may not be all of them
+
+- `stats:journey_share_links:unique_views:daily:{unix_date}:extra:{event}` goes to a hash
+  breaking down the event key, where the keys in the breakdown depend on the event:
+
+  - `by_code` is broken down by the code of the journey share link viewed
+  - `by_journey_subcategory` is broken down by the internal name of the
+    subcategory of the journey associated with the share link at time the link
+    was viewed
+  - `by_sharer_sub` is broken down by the sub of the user who created the share
+    link
+
+- `stats:journey_share_links:unique_views:daily:earliest` goes to the earliest unix date for which
+  there may still be unique visitors in redis.`
+
+- `stats:journey_share_links:links:count` goes to a string containing the number
+  of journey share links created in total; used for the admin sharing dashboard.
+  incremented whenever `created` is incremented in
+  `stats:journey_share_links:daily:{unix_date}`
+
+- `stats:journey_share_links:views:count` goes to a string containing the number
+  of journey share link views in total; used for the admin sharing dashboard.
+  incremented whenever `view_hydrated` or `view_client_followed` is incremented
+  in `stats:journey_share_links:daily:{unix_date}`
+
+- `stats:journey_share_links:unique_views:count` goes to a string containing the number
+  of journey share link views in total; used for the admin sharing dashboard.
+  this is incremented conditionally on `view_client_confirmed` and `view_client_followed`
+  in `stats:journey_share_links:daily:{unix_date}`, with deduplication using
+  `journey_share_links:visitors:{unix_date}`
+
+User attribution for journey share links is handled via an implied UTM when viewing a journey
+via a share code. The UTM is:
+`utm_source=oseh_app&utm_medium=referral&utm_campaign=share_link&utm_content={journey_uid}&utm_term={code}`. Thus fetching the count for user attributions is handled via
+`admin/routes/read_utm_conversion_stats.py` and related
 
 ### Personalization subspace
 
@@ -2903,3 +3276,26 @@ These are regular keys used by the personalization module
   first blob, which is the `Transcript` uid, and the second int is the length
   of the next blob, which is the actual json-encoded `Transcript` to write to the
   cache. any data after that blob MUST be ignored
+
+- `ps:stats:journey_share_links:daily` is used to optimistically send
+  compressed journey share link statistics. messages are formatted as
+  (uint32, uint32, uint64, blob) where the ints mean, in order:
+  `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
+  `length_bytes` of data to write to the corresponding local cache key. All
+  numbers are big-endian encoded.
+
+- `ps:journey_share_links:top_sharers` is used to eagerly fill caches for the admin
+  top sharers. messages are formatted as `(uint32, uint32, uint64, blob)` where all numbers
+  are big endian encoded. the first number is the `start_unix_date`, delineated in
+  `America/Los_Angeles`, from which and including that views are counted, or the special
+  value `2^32 - 1` to indicate from the beginning of time. the second is
+  `end_unix_date`, up to and excluding which views were counted. the third is
+  the length of the blob in bytes, followed by the blob to store in
+  `journey_share_links:top_sharers:{start_unix_date}:{end_unix_date}`
+
+- `ps:stats:journey_share_links:unique_views:daily` is used to eagerly send
+  compressed journey share link unique view statistics. messages are formatted as
+  (uint32, uint32, uint64, blob) where the ints mean, in order:
+  `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
+  `length_bytes` of data to write to the corresponding local cache key. All
+  numbers are big-endian encoded.

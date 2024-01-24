@@ -2,6 +2,7 @@ from dataclasses import dataclass
 import datetime
 import gzip
 import json
+import os
 import time
 from typing import (
     Callable,
@@ -19,7 +20,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from auth import auth_admin
 from content_files.lib.serve_s3_file import read_in_parts
-from error_middleware import handle_error
+from error_middleware import handle_error, handle_warning
 
 from itgs import Itgs
 from lib.shared.redis_hash import RedisHash
@@ -140,6 +141,22 @@ class ReadDailyStatsRouteArgs:
     fancy_fields: List[str]
     """The names of the fancy fields, i.e., fields with breakdowns."""
 
+    sparse_fancy_fields: List[str]
+    """A subset of the fancy fields which are sparse, i.e., each key in
+    the breakdown will have mostly 0s. Sparse fancy fields must be typed
+    with Dict[int, int] in replace of List[int] in the breakdown
+    field of the response model.
+    
+    For example, a field which is broken down by user sub will typically
+    be sparse since users come and go, whereas one broken down by yes/no
+    will typically not be sparse since there are only two values, and
+    we're likely to see both on a given day.
+
+    This slows down client-side parsing when incorrect and should generally only
+    be used in extreme cases (e.g., user sub breakdowns) where otherwise we
+    would be deliver 10s or 100s of megabytes of zeros
+    """
+
     response_model: Optional[Type[BaseModel]]
     """The model which can be passed the fields and produces the response
     model for the historical data endpoint. For example,
@@ -151,6 +168,10 @@ class ReadDailyStatsRouteArgs:
         my_fancy_stat: List[int] = Field(description="An example fancy stat")
         my_fancy_stat_breakdown: Dict[str, List[int]] = Field(
             description="My fancy stat broken down by letter, each by day"
+        )
+        my_sparse_fancy_stat: List[int] = Field(description="An example sparse fancy stat")
+        my_sparse_fancy_stat_breakdown: Dict[str, Dict[int, int]] = Field(
+            description="My sparse fancy stat broken down by user sub, each by day"
         )
     ```
 
@@ -169,6 +190,8 @@ class ReadDailyStatsRouteArgs:
         my_basic_stat: int = Field(0)
         my_fancy_stat: int = Field(0)
         my_fancy_stat_breakdown: Dict[str, int] = Field(default_factory=dict)
+        my_sparse_fancy_stat: int = Field(0)
+        my_sparse_fancy_stat_breakdown: Dict[str, int] = Field(default_factory=dict)
     
     class MyPartialResponse(BaseModel):
         today: MyPartialResponseItem = Field()
@@ -183,6 +206,11 @@ class ReadDailyStatsRouteArgs:
     
     The response route should explain in its documentation to defer to the full
     data endpoint for an explanation of the fields.
+    """
+
+    disable_caches: Optional[bool] = False
+    """Debug parameter to always treat the request as a cache miss, even if it's
+    available. Will emit a warning in production
     """
 
 
@@ -284,6 +312,12 @@ def create_daily_stats_route(args: ReadDailyStatsRouteArgs):
     else:
         assert args.compressed_response_local_cache_key is None
 
+    fancy_fields_set = set(args.fancy_fields)
+    for sparse_fancy_field_name in args.sparse_fancy_fields:
+        assert sparse_fancy_field_name in fancy_fields_set, sparse_fancy_field_name
+
+    sparse_fancy_fields_set = set(args.sparse_fancy_fields)
+
     # Other consistency things to try to ensure errors occur at start-up rather
     # than when the route is actually used
     if args.table_name is not None:
@@ -334,25 +368,56 @@ def create_daily_stats_route(args: ReadDailyStatsRouteArgs):
 
             breakdown_name = f"{fancy_field_name}_breakdown"
             assert breakdown_name in remaining_model_fields, breakdown_name
-            # Dict[str, List[int]]
             breakdown_annotation = remaining_model_fields[breakdown_name].annotation
             assert breakdown_annotation is not None, breakdown_name
-            assert (
-                getattr(breakdown_annotation, "__origin__", None) is dict
-            ), breakdown_name
-            breakdown_annotation_args = getattr(breakdown_annotation, "__args__", None)
-            assert isinstance(breakdown_annotation_args, tuple), breakdown_name
-            assert len(breakdown_annotation_args) == 2, breakdown_name
-            assert breakdown_annotation_args[0] is str, breakdown_name
-            assert (
-                getattr(breakdown_annotation_args[1], "__origin__", None) is list
-            ), breakdown_name
-            breakdown_annotation_args_1_args = getattr(
-                breakdown_annotation_args[1], "__args__", None
-            )
-            assert isinstance(breakdown_annotation_args_1_args, tuple), breakdown_name
-            assert len(breakdown_annotation_args_1_args) == 1, breakdown_name
-            assert breakdown_annotation_args_1_args[0] is int, breakdown_name
+            if fancy_field_name not in sparse_fancy_fields_set:
+                # Dict[str, List[int]]
+                assert (
+                    getattr(breakdown_annotation, "__origin__", None) is dict
+                ), breakdown_name
+                breakdown_annotation_args = getattr(
+                    breakdown_annotation, "__args__", None
+                )
+                assert isinstance(breakdown_annotation_args, tuple), breakdown_name
+                assert len(breakdown_annotation_args) == 2, breakdown_name
+                assert breakdown_annotation_args[0] is str, breakdown_name
+                assert (
+                    getattr(breakdown_annotation_args[1], "__origin__", None) is list
+                ), breakdown_name
+                breakdown_annotation_args_1_args = getattr(
+                    breakdown_annotation_args[1], "__args__", None
+                )
+                assert isinstance(
+                    breakdown_annotation_args_1_args, tuple
+                ), breakdown_name
+                assert len(breakdown_annotation_args_1_args) == 1, breakdown_name
+                assert breakdown_annotation_args_1_args[0] is int, breakdown_name
+            else:
+                # Dict[str, Dict[int, int]]
+                assert (
+                    getattr(breakdown_annotation, "__origin__", None) is dict
+                ), breakdown_name
+                breakdown_annotation_args = getattr(
+                    breakdown_annotation, "__args__", None
+                )
+                assert isinstance(breakdown_annotation_args, tuple), breakdown_name
+                assert len(breakdown_annotation_args) == 2, breakdown_name
+                assert (
+                    breakdown_annotation_args[0] is str
+                ), f"{breakdown_name=}, {breakdown_annotation_args=}"
+                assert (
+                    getattr(breakdown_annotation_args[1], "__origin__", None) is dict
+                ), breakdown_name
+                breakdown_annotation_args_1_args = getattr(
+                    breakdown_annotation_args[1], "__args__", None
+                )
+                assert isinstance(
+                    breakdown_annotation_args_1_args, tuple
+                ), breakdown_name
+                assert len(breakdown_annotation_args_1_args) == 2, breakdown_name
+                assert breakdown_annotation_args_1_args[0] is int, breakdown_name
+                assert breakdown_annotation_args_1_args[1] is int, breakdown_name
+
             remaining_model_fields.pop(breakdown_name)
 
         assert not remaining_model_fields, remaining_model_fields
@@ -409,6 +474,23 @@ def _create_historical(
     num_simple_lists = len(args.simple_fields) + len(args.fancy_fields)
     tz = pytz.timezone("America/Los_Angeles")
     num_partial_days = _get_implied_number_of_days_from_partial_response(args)
+    sparse_fancy_fields_set = frozenset(args.sparse_fancy_fields)
+
+    breakdown_index_to_sparse_and_index: List[Tuple[bool, int]] = []
+
+    dense_idx = 0
+    sparse_idx = 0
+    field = None
+    for field in args.fancy_fields:
+        if field in sparse_fancy_fields_set:
+            breakdown_index_to_sparse_and_index.append((True, sparse_idx))
+            sparse_idx += 1
+        else:
+            breakdown_index_to_sparse_and_index.append((False, dense_idx))
+            dense_idx += 1
+    del dense_idx
+    del sparse_idx
+    del field
 
     async def read_from_source(
         itgs: Itgs, *, start_unix_date: int, end_unix_date: int
@@ -428,13 +510,18 @@ def _create_historical(
         labels: List[str] = []
         simple_lists: List[List[int]] = [list() for _ in range(num_simple_lists)]
         breakdown_lists: List[Dict[str, List[int]]] = [
-            dict() for _ in range(len(args.fancy_fields))
+            dict()
+            for _ in range(len(args.fancy_fields) - len(args.sparse_fancy_fields))
+        ]
+        breakdown_sparse_lists: List[Dict[str, Dict[int, int]]] = [
+            dict() for _ in range(len(args.sparse_fancy_fields))
         ]
 
         def push_empty_day(date: int):
             labels.append(unix_dates.unix_date_to_date(date).isoformat())
             for lst in simple_lists:
                 lst.append(0)
+
             for extra in breakdown_lists:
                 for lst in extra.values():
                     lst.append(0)
@@ -457,18 +544,30 @@ def _create_historical(
                 num_simple_lists, num_simple_lists + len(args.fancy_fields)
             ):
                 to_add: Dict[str, int] = json.loads(row[idx + 1])
-                dict_of_lists = breakdown_lists[idx - num_simple_lists]
+                is_sparse, fancy_idx = breakdown_index_to_sparse_and_index[
+                    idx - num_simple_lists
+                ]
 
-                for existing_key, arr in dict_of_lists.items():
-                    if existing_key not in to_add:
-                        arr.append(0)
+                if is_sparse:
+                    dict_of_dicts = breakdown_sparse_lists[fancy_idx]
+                    for key, val in to_add.items():
+                        sparse_arr = dict_of_dicts.get(key)
+                        if sparse_arr is None:
+                            sparse_arr = typing_cast(Dict[int, int], dict())
+                            dict_of_dicts[key] = sparse_arr
+                        sparse_arr[next_unix_date - start_unix_date] = val
+                else:
+                    dict_of_lists = breakdown_lists[fancy_idx]
+                    for existing_key, arr in dict_of_lists.items():
+                        if existing_key not in to_add:
+                            arr.append(0)
 
-                for key, val in to_add.items():
-                    arr = dict_of_lists.get(key)
-                    if arr is None:
-                        arr = [0] * (next_unix_date - start_unix_date)
-                        dict_of_lists[key] = arr
-                    arr.append(val)
+                    for key, val in to_add.items():
+                        arr = dict_of_lists.get(key)
+                        if arr is None:
+                            arr = [0] * (next_unix_date - start_unix_date)
+                            dict_of_lists[key] = arr
+                        arr.append(val)
             next_unix_date += 1
 
         while next_unix_date < end_unix_date:
@@ -481,17 +580,40 @@ def _create_historical(
             response_obj[field] = simple_lists[idx]
         for idx, field in enumerate(args.fancy_fields):
             response_obj[field] = simple_lists[idx + len(args.simple_fields)]
-            response_obj[field + "_breakdown"] = breakdown_lists[idx]
+
+            is_sparse, fancy_idx = breakdown_index_to_sparse_and_index[idx]
+            if is_sparse:
+                response_obj[field + "_breakdown"] = breakdown_sparse_lists[fancy_idx]
+            else:
+                response_obj[field + "_breakdown"] = breakdown_lists[fancy_idx]
 
         return args.response_model.model_validate(response_obj)
 
-    async def read_from_cache(
-        itgs: Itgs, *, start_unix_date: int, end_unix_date: int
-    ) -> Union[bytes, io.BytesIO, None]:
-        assert args.compressed_response_local_cache_key is not None
-        cache = await itgs.local_cache()
-        key = args.compressed_response_local_cache_key(start_unix_date, end_unix_date)
-        return typing_cast(Union[bytes, io.BytesIO, None], cache.get(key, read=True))
+    if not args.disable_caches:
+
+        async def read_from_cache(
+            itgs: Itgs, *, start_unix_date: int, end_unix_date: int
+        ) -> Union[bytes, io.BytesIO, None]:
+            assert args.compressed_response_local_cache_key is not None
+            cache = await itgs.local_cache()
+            key = args.compressed_response_local_cache_key(
+                start_unix_date, end_unix_date
+            )
+            return typing_cast(
+                Union[bytes, io.BytesIO, None], cache.get(key, read=True)
+            )
+
+    else:
+
+        async def read_from_cache(
+            itgs: Itgs, *, start_unix_date: int, end_unix_date: int
+        ) -> Union[bytes, io.BytesIO, None]:
+            if os.environ["ENVIRONMENT"] != "dev":
+                await handle_warning(
+                    f"{__name__}:caches_disabled",
+                    f"Skipping caches for {args.table_name}; in production this is not recommended",
+                )
+            return None
 
     def serialize_and_compress(raw: BaseModel) -> bytes:
         # brotli would probably be better but not built-in
@@ -733,7 +855,9 @@ def _create_partial(
 
             response_content = args.partial_response_model.model_validate(response_obj)
             return Response(
-                content=response_content.model_dump_json(),
+                content=response_content.__pydantic_serializer__.to_json(
+                    response_content
+                ),
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Cache-Control": "no-store",

@@ -97,6 +97,7 @@ route = read_daily_stats.create_daily_stats_route(
         ),
         simple_fields=["email_requested", "email_succeeded", "verify_attempted"],
         fancy_fields=["email_failed", "verify_failed", "verify_succeeded"],
+        sparse_fancy_fields=[],
         response_model=SiwoVerifyEmailStats,
         partial_response_model=PartialSiwoVerifyEmailStats,
     )

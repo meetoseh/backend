@@ -63,6 +63,7 @@ route = read_daily_stats.create_daily_stats_route(
         ),
         simple_fields=["attempted", "succeeded"],
         fancy_fields=["failed"],
+        sparse_fancy_fields=[],
         response_model=SiwoExchangeStats,
         partial_response_model=PartialSiwoExchangeStats,
     )

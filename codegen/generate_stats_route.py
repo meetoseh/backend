@@ -1,7 +1,8 @@
 import argparse
 from dataclasses import dataclass
 import os
-from typing import Dict, List, TextIO, Tuple
+from typing import Dict, List, Set, TextIO, Tuple
+import re
 
 
 @dataclass
@@ -102,9 +103,10 @@ def generate_stats_route(args: GenerateStatsRouteArgs) -> None:
             f"""import asyncio
 from fastapi import APIRouter, Header
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Annotated, Dict, List, Optional
 import admin.lib.read_daily_stats as read_daily_stats
 from models import STANDARD_ERRORS_BY_CODE
+from lifespan import lifespan_handler
 
 
 router = APIRouter()
@@ -130,8 +132,14 @@ class {camel_table_name}(BaseModel):
                 for line in field.docs.splitlines(keepends=True):
                     print(f'        "{escape_pystr(line)}"', file=f)
                 print("    )", file=f)
+
+                breakdown_type_str = (
+                    "Dict[str, List[int]]"
+                    if field.name not in parsed.sparse_fancy_fields
+                    else "Dict[str, Dict[int, int]]"
+                )
                 print(
-                    f"    {field.name}_breakdown: Dict[str, List[int]] = Field(",
+                    f"    {field.name}_breakdown: {breakdown_type_str} = Field(",
                     file=f,
                     end="",
                 )
@@ -155,7 +163,7 @@ class {camel_table_name}(BaseModel):
         print(f"class Partial{camel_table_name}(BaseModel):", file=f)
         for key in ["today", "yesterday", "two_days_ago"][: args.num_partial_days]:
             print(
-                f"    {key}: Partial{camel_table_name}Item = Field(default_factory=Partial{camel_table_name}Item)",
+                f"    {key}: Partial{camel_table_name}Item = Field(default_factory=lambda: Partial{camel_table_name}Item.model_validate({{}}))",
                 file=f,
             )
 
@@ -164,6 +172,9 @@ class {camel_table_name}(BaseModel):
         )
         fancy_fields_list = ",".join(
             f'"{f}"' for f in parsed.fancy_fields if f in parsed.fancy_fields
+        )
+        sparse_fancy_fields_list = ",".join(
+            f'"{f}"' for f in parsed.sparse_fancy_fields
         )
         print(
             f'''
@@ -187,6 +198,9 @@ route = read_daily_stats.create_daily_stats_route(
         fancy_fields=[
             {fancy_fields_list}
         ],
+        sparse_fancy_fields=[
+            {sparse_fancy_fields_list}
+        ],
         response_model={camel_table_name},
         partial_response_model=Partial{camel_table_name},
     )
@@ -198,7 +212,7 @@ route = read_daily_stats.create_daily_stats_route(
     response_model={camel_table_name},
     responses=STANDARD_ERRORS_BY_CODE,
 )
-async def read_{parsed.table_name}(authorization: Optional[str] = Header(None)):
+async def read_{parsed.table_name}(authorization: Annotated[Optional[str], Header()] = None):
     """Reads {spaced_table_name} from the database for the preceeding 90
     days, ending {'yesterday' if args.num_partial_days == 1 else 'before yesterday' if args.num_partial_days == 2 else 'two days before yesterday'}. This endpoint is aggressively
     cached, thus it's not generally necessary for the frontend to reduce
@@ -225,13 +239,10 @@ async def read_partial_{parsed.table_name}(
     return await route.partial_handler(authorization)
 
 
-_background_tasks = []
-
-
-@router.on_event("startup")
-def register_background_tasks():
-    _background_tasks.append(asyncio.create_task(route.background_task()))
-
+@lifespan_handler
+async def register_background_tasks():
+    task = asyncio.create_task(route.background_task())
+    yield
 ''',
             file=f,
         )
@@ -291,6 +302,7 @@ class ParsedDatabaseDocumentationFile:
     table_name: str
     basic_fields: Dict[str, Field]
     fancy_fields: Dict[str, FancyField]
+    sparse_fancy_fields: Set[str]
     fields_order: List[str]
 
 
@@ -301,11 +313,17 @@ def parse_database_documentation_file(
         table_name = read_table_name(f)
         skip_to_fields(f)
         fields = read_fields(f)
-        basic_fields, fancy_fields, fields_order = interpret_fields(args, fields)
+        (
+            basic_fields,
+            fancy_fields,
+            sparse_fancy_fields,
+            fields_order,
+        ) = interpret_fields(args, fields)
     return ParsedDatabaseDocumentationFile(
         table_name=table_name,
         basic_fields=basic_fields,
         fancy_fields=fancy_fields,
+        sparse_fancy_fields=sparse_fancy_fields,
         fields_order=fields_order,
     )
 
@@ -350,7 +368,7 @@ def read_fields(f: TextIO) -> List[Field]:
 
 def interpret_fields(
     args: GenerateStatsRouteArgs, fields: List[Field]
-) -> Tuple[Dict[str, Field], Dict[str, FancyField], List[str]]:
+) -> Tuple[Dict[str, Field], Dict[str, FancyField], Set[str], List[str]]:
     fields = [
         f for f in fields if f.name not in ("id", "retrieved_for", "retrieved_at")
     ]
@@ -359,6 +377,7 @@ def interpret_fields(
     simple_field_names = set(
         f.name for f in fields if not f.name.endswith("_breakdown")
     )
+
     fancy_fields: Dict[str, FancyField] = dict()
     for f in fields:
         if f.name.endswith("_breakdown"):
@@ -370,8 +389,32 @@ def interpret_fields(
                 breakdown_docs="" if args.no_breakdown_docs else f.docs,
             )
 
+    sparse_fancy_fields = set(
+        f.name
+        for f in fancy_fields.values()
+        if (
+            "_sparse_" in f.docs
+            or "_sparse_" in fields_by_name[f"{f.name}_breakdown"].docs
+        )
+    )
+
+    sparse_regex = re.compile(r"_sparse_\s*")
+    for sparse_fancy_field_name in sparse_fancy_fields:
+        f = fancy_fields[sparse_fancy_field_name]
+        f.docs = sparse_regex.sub("", f.docs).rstrip()
+        f.breakdown_docs = sparse_regex.sub("", f.breakdown_docs)
+        if f.breakdown_docs:
+            f.breakdown_docs += "\n\n"
+        f.breakdown_docs += (
+            "This field is provided in a sparse format, i.e., rather than a list\n"
+            "it is presented as a json object where the keys are the stringified\n"
+            "0-based index and the values are the counts. Omitted keys have a\n"
+            'count of 0. Ex: `{"0": 1, "3": 2}` is the same as `[1,0,0,2,0]`\n'
+            "if the length of labels is 5"
+        )
+
     simple_fields = dict((f.name, f) for f in fields if f.name in simple_field_names)
-    return simple_fields, fancy_fields, fields_order
+    return simple_fields, fancy_fields, sparse_fancy_fields, fields_order
 
 
 def escape_pystr(s: str) -> str:

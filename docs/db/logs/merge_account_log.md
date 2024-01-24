@@ -325,6 +325,14 @@ alphabetical order, with logs moved to the bottom:
 40. we do not copy over `user_timezone_log` and we do not update `timezone` on users
 41. `move_merge_account_log`: same strategy as `contact_method_log`
 42. `move_user_touch_debug_log`: standard update
+43. `move_created_at`: we set the `created_at` timestamp of the original user to the
+    earlier of the original users created at and the merging users created at. this may
+    mean that, incidentally, some computed attribution information is excluded.
+    - `context`:
+      - `original_created_at`: the created at of the original user
+      - `merging_created_at`: the created at of the merging user
+      - `assignment_required`: true if `merging_created_at < original_created_at`, false
+        otherwise
 
 ## Schema
 

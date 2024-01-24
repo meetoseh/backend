@@ -1441,7 +1441,7 @@ async def create_transfer_identity_query(
                 b"in which case merging_expected should be False.\n\n"
                 b"This was decided in SQL, so we can't check that result here without "
                 b"querying the log, but thats the same method used for merging_expected "
-                b"so it would be redundant."
+                b"so it would be redundant.\n"
             )
             return
 

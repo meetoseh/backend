@@ -12,6 +12,7 @@ from itgs import Itgs
 from urllib.parse import urlencode
 import os
 import io
+import gzip
 
 
 class PlaylistItemResponse(BaseModel):
@@ -56,6 +57,9 @@ class PlaylistItemResponse(BaseModel):
             "webp, and a webp export is available, it should ignore the jpeg exports."
         ),
         ge=0,
+    )
+    thumbhash: str = Field(
+        description="A thumbhash of the image, base64url encoded. See https://evanw.github.io/thumbhash/"
     )
 
 
@@ -152,7 +156,10 @@ async def get_image_playlist(
         if auth_result.result.image_file_uid != uid:
             return AUTHORIZATION_UNKNOWN_TOKEN
 
-        headers = {"Content-Type": "application/json; charset=utf-8"}
+        headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "Content-Encoding": "gzip",
+        }
         if public:
             new_jwt = await create_jwt(itgs, image_file_uid=uid)
             headers["x-image-file-jwt"] = new_jwt
@@ -171,14 +178,12 @@ async def get_image_playlist(
                         content=result,
                         status_code=200,
                         headers=headers,
-                        media_type="application/json",
                     )
 
                 return StreamingResponse(
                     content=read_in_parts(result),
                     status_code=200,
                     headers=headers,
-                    media_type="application/json",
                 )
 
         conn = await itgs.conn()
@@ -188,7 +193,7 @@ async def get_image_playlist(
             """
             SELECT
                 image_file_exports.uid, image_file_exports.width, image_file_exports.height,
-                image_file_exports.format, s3_files.file_size
+                image_file_exports.format, s3_files.file_size, image_file_exports.thumbhash
             FROM image_file_exports
             JOIN s3_files ON s3_files.id = image_file_exports.s3_file_id
             WHERE
@@ -233,6 +238,7 @@ async def get_image_playlist(
                 width=row[1],
                 height=row[2],
                 size_bytes=row[4],
+                thumbhash=row[5],
             )
 
             if last_fmt is None or cur_list is None:
@@ -249,20 +255,21 @@ async def get_image_playlist(
             items[last_fmt] = cur_list
 
         result = PlaylistResponse(items=items)
+        content_bytes_uncompressed = result.__pydantic_serializer__.to_json(result)
         if presign:
             return Response(
-                content=result.model_dump_json(),
+                content=content_bytes_uncompressed,
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=200,
             )
 
-        content_bytes = bytes(result.model_dump_json(), "utf-8")
+        content_bytes_gzip = gzip.compress(content_bytes_uncompressed, mtime=0)
         local_cache = await itgs.local_cache()
         local_cache.set(
-            f"image_files:playlist:{uid}".encode("utf-8"), content_bytes, expire=60
+            f"image_files:playlist:{uid}".encode("utf-8"), content_bytes_gzip, expire=60
         )
         return Response(
-            content=content_bytes,
+            content=content_bytes_gzip,
             headers=headers,
             status_code=200,
         )

@@ -114,6 +114,7 @@ route = read_daily_stats.create_daily_stats_route(
             "skipped_sending",
             "sent",
         ],
+        sparse_fancy_fields=[],
         response_model=DailyReminderStats,
         partial_response_model=PartialDailyReminderStats,
     )

@@ -370,6 +370,24 @@ the keys we store locally on backend instances via diskcache
   the length of the blob, and the blob is the jsonified `Transcript` from
   `transcripts/routes/show.py` for the given uid
 
+- `journey_share_links:top_sharers:{start_unix_date}:{end_unix_date}` where
+  `start_unix_date` is `None` or the earliest unix date whose views are
+  included, and `end_unix_date` is always the last unix date, exclusive, whose
+  views are included, with both dates delineated in America/Los_Angeles, goes to
+  a gzip-compressed json object matching the format of the value of the redis
+  key with the same format, except prefixed with a uint64 (big-endian encoded)
+  containing the length of the blob, for content-length hinting
+
+- `daily_journey_share_links:{start_unix_date}:{end_unix_date}` goes to a
+  string containing the serialized journey share link stats for the given date range
+  (incl -> excl) see also:
+  [journey_share_link_stats](../../admin/journey_share_links/routes/link_stats.py)
+
+- `daily_journey_share_links:unique_views:{start_unix_date}:{end_unix_date}` goes to
+  a string containing the serialized journey share link unique view stats for the
+  given date range (incl -> excl). see also:
+  [journey_share_link_unique_view_stats](../../admin_journey_Share_links/routes/unique_view_stats.py)
+
 ## Personalization
 
 This contains keys for the personalization subspace

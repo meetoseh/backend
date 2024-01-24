@@ -43,3 +43,4 @@ class OperationOrder(IntEnum):
     move_daily_reminder_settings_log = auto()
     move_merge_account_log = auto()
     move_user_touch_debug_log = auto()
+    move_created_at = auto()

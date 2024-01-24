@@ -196,6 +196,7 @@ route = read_daily_stats.create_daily_stats_route(
             "password_update_failed",
             "password_update_succeeded",
         ],
+        sparse_fancy_fields=[],
         response_model=SiwoAuthorizeStats,
         partial_response_model=PartialSiwoAuthorizeStats,
     )
@@ -232,9 +233,6 @@ async def read_partial_siwo_authorize_stats(
     Requires standard authorization for an admin user.
     """
     return await route.partial_handler(authorization)
-
-
-_background_tasks = []
 
 
 @lifespan_handler

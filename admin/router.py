@@ -15,6 +15,7 @@ import admin.routes.read_utm_conversion_stats
 import admin.notifs.router
 import admin.sms.router
 import admin.email.router
+import admin.journey_share_links.router
 import admin.touch.router
 import admin.daily_reminders.router
 import admin.siwo.router
@@ -38,6 +39,9 @@ router.include_router(admin.routes.read_utm_conversion_stats.router)
 router.include_router(admin.notifs.router.router, prefix="/notifs")
 router.include_router(admin.sms.router.router, prefix="/sms")
 router.include_router(admin.email.router.router, prefix="/email")
+router.include_router(
+    admin.journey_share_links.router.router, prefix="/journey_share_links"
+)
 router.include_router(admin.touch.router.router, prefix="/touch")
 router.include_router(admin.daily_reminders.router.router, prefix="/daily_reminders")
 router.include_router(admin.siwo.router.router, prefix="/siwo")

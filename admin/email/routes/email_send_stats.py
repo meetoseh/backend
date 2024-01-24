@@ -94,6 +94,7 @@ route = read_daily_stats.create_daily_stats_route(
             "abandoned",
         ],
         fancy_fields=["accepted", "failed_permanently", "failed_transiently"],
+        sparse_fancy_fields=[],
         response_model=EmailSendStats,
         partial_response_model=PartialEmailSendStats,
     )

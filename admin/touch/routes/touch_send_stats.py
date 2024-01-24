@@ -74,6 +74,7 @@ route = read_daily_stats.create_daily_stats_route(
             "queued",
         ],
         fancy_fields=["attempted", "reachable", "unreachable"],
+        sparse_fancy_fields=[],
         response_model=TouchSendStats,
         partial_response_model=PartialTouchSendStats,
     )

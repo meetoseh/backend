@@ -8,6 +8,15 @@ VALID_VISITOR_UID = re.compile(r"^oseh_v_[a-zA-Z0-9_-]{5,30}$")
 VisitorSource = Literal["browser", "ios", "android"]
 
 
+def check_visitor_sanity(visitor: Optional[str]) -> Optional[str]:
+    """Checks that the visitor uid is valid, and if it is, returns it. If it
+    isn't, returns None.
+    """
+    if visitor is not None and VALID_VISITOR_UID.match(visitor) is not None:
+        return visitor
+    return None
+
+
 async def get_or_create_unsanitized_visitor(
     itgs: Itgs, *, visitor: Optional[str] = None, source: VisitorSource, seen_at: float
 ) -> str:

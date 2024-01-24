@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import secrets
 import time
+from typing import Optional
 from error_middleware import handle_error
 from file_service import AsyncWritableBytesIO
 from starlette.concurrency import run_in_threadpool
@@ -40,6 +41,7 @@ async def merge_freeform_log(itgs: Itgs, *, operation_uid: str):
     files = await itgs.files()
     s3_uid = f"oseh_s3f_{secrets.token_urlsafe(16)}"
     s3_key = f"s3_files/merging/{operation_uid}-{int(time.time())}.txt.gz"
+    exc_to_raise: Optional[Exception] = None
 
     with temp_file(".txt") as txt_path, temp_file(".gz") as gz_path:
         async with aiofiles.open(txt_path, "wb") as f:
@@ -55,6 +57,7 @@ async def merge_freeform_log(itgs: Itgs, *, operation_uid: str):
                     exc,
                     extra_info=f"while writing merge `{operation_uid=}`; will still try to save to `{s3_key=}`",
                 )
+                exc_to_raise = exc
 
         logger.info(f"Compressing raw merge log at {txt_path} to {gz_path}...")
         await run_in_threadpool(_compress_gz, txt_path, gz_path)
@@ -84,6 +87,9 @@ async def merge_freeform_log(itgs: Itgs, *, operation_uid: str):
                 time.time(),
             ),
         )
+
+    if exc_to_raise is not None:
+        raise exc_to_raise
 
 
 def _compress_gz(txt_path: str, gz_path: str) -> None:

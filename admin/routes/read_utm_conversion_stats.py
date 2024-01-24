@@ -120,7 +120,7 @@ async def get_response_for_date(
 ) -> Response:
     """Determines the response for the given date, fetching it from the nearest
     cache if it's cacheable, filling along the way. This will stream the response
-    if it's appropraite to do so, otherwise it will return a non-streaming response.
+    if it's appropriate to do so, otherwise it will return a non-streaming response.
 
     Args:
         itgs (Itgs): The integrations to (re)use

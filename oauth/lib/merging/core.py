@@ -188,7 +188,9 @@ async def create_merging_queries(
             operation_order=OperationOrder.move_user_journeys,
         ),
         *await _move_user_likes(itgs, ctx),
-        *await _move_user_phone_numbers__disable_without_hint(itgs, ctx),  # MUST be before user daily reminders deleted
+        *await _move_user_phone_numbers__disable_without_hint(
+            itgs, ctx
+        ),  # MUST be before user daily reminders deleted
         *await _move_user_phone_numbers__transfer(itgs, ctx),
         *await _move_user_phone_numbers__verify(itgs, ctx),
         *await _move_user_phone_numbers__disable(itgs, ctx),
@@ -260,6 +262,7 @@ async def create_merging_queries(
             table_name="user_touch_debug_log",
             operation_order=OperationOrder.move_user_touch_debug_log,
         ),
+        *await _create_move_created_at_queries(itgs, ctx),
         *await _delete_merging_user(itgs, ctx),
     ]
 
@@ -2731,6 +2734,171 @@ async def _move_visitor_users(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQuery]
     ]
 
 
+async def _create_move_created_at_queries(
+    itgs: Itgs, octx: _Ctx, /
+) -> Sequence[MergeQuery]:
+    log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
+    await octx.log.write(
+        b"- move_created_at -\n"
+        b"computed:\n"
+        b"  log_uid: " + log_uid.encode("ascii") + b"\n"
+    )
+
+    logged: Optional[bool] = None
+    merging_created_at: Optional[float] = None
+    original_created_at: Optional[float] = None
+    expected_assignment: Optional[bool] = None
+
+    async def handler(step: Literal["log", "assign"], mctx: MergeContext):
+        nonlocal logged, merging_created_at, original_created_at, expected_assignment
+
+        if step == "log":
+            assert logged is None, "handler called twice for log step"
+            assert merging_created_at is None, "merging_created_at set before log step"
+            assert (
+                original_created_at is None
+            ), "original_created_at set before log step"
+            assert (
+                expected_assignment is None
+            ), "expected_assignment set before log step"
+
+            logged = not not mctx.result.rows_affected
+            if not logged and not mctx.merging_expected:
+                return
+
+            assert logged is True, "we always log this step to not lose created_at"
+
+            conn = await itgs.conn()
+            cursor = conn.cursor("weak")
+
+            resp = await _log_and_execute_query(
+                cursor,
+                "SELECT json_extract(reason, '$.context') FROM merge_account_log WHERE uid=?",
+                (log_uid,),
+                mctx.log,
+            )
+            assert resp.results, resp
+            assert len(resp.results) == 1, resp
+            assert len(resp.results[0]) == 1, resp
+            raw_context = resp.results[0][0]
+            parsed_context = json.loads(raw_context)
+            assert isinstance(parsed_context, dict), resp
+            assert "original_created_at" in parsed_context, resp
+            assert "merging_created_at" in parsed_context, resp
+            assert "assignment_required" in parsed_context, resp
+
+            merging_created_at = parsed_context["merging_created_at"]
+            original_created_at = parsed_context["original_created_at"]
+            expected_assignment = parsed_context["assignment_required"]
+
+            assert isinstance(merging_created_at, (int, float)), resp
+            assert isinstance(original_created_at, (int, float)), resp
+            assert isinstance(expected_assignment, bool), resp
+            assert expected_assignment is (
+                merging_created_at < original_created_at
+            ), resp
+
+            await mctx.log.write(
+                b"parsed_context:\n"
+                + json.dumps(parsed_context, indent=2).encode("utf-8")
+                + b"\n"
+            )
+            return
+
+        assert step == "assign", step
+        affected_rows = mctx.result.rows_affected or 0
+
+        assert logged is not None, "assign step handler called before log step"
+        if not logged:
+            assert affected_rows == 0, f"{affected_rows=} != 0"
+            return
+
+        assert (
+            merging_created_at is not None
+        ), "assign step handler expected merging_created_at"
+        assert (
+            original_created_at is not None
+        ), "assign step handler expected original_created_at"
+        assert (
+            expected_assignment is not None
+        ), "assign step handler expected expected_assignment"
+
+        assert affected_rows == int(
+            expected_assignment
+        ), f"{affected_rows=} != {expected_assignment=}"
+        await mctx.log.write(
+            b"affected_rows: "
+            + str(affected_rows).encode("ascii")
+            + b"\n"
+            + b"matches expected assignment\n"
+        )
+
+        conn = await itgs.conn()
+        cursor = conn.cursor("weak")
+        resp = await _log_and_execute_query(
+            cursor,
+            "SELECT created_at FROM users WHERE sub=?",
+            (octx.original_user_sub,),
+            mctx.log,
+        )
+        assert resp.results, resp
+        assert len(resp.results) == 1, resp
+        assert len(resp.results[0]) == 1, resp
+        created_at_after_merge = resp.results[0][0]
+        assert isinstance(created_at_after_merge, (int, float)), resp
+        assert (
+            abs(created_at_after_merge - min(original_created_at, merging_created_at))
+            < 1
+        ), f"{original_created_at=}, {merging_created_at=} but {created_at_after_merge=}"
+        await mctx.log.write(
+            b"confirmed that created_at is now the lesser of the two\n"
+        )
+
+    ctes, ctes_qargs = _merging_user_and_original_user_ctes(
+        octx, merging_user_created_at=True, original_user_created_at=True
+    )
+    return [
+        MergeQuery(
+            query=(
+                f"{ctes} INSERT INTO merge_account_log ("
+                " uid, user_id, operation_uid, operation_order, phase, step, step_result, reason, created_at"
+                ") SELECT"
+                " ?, original_user.id, ?, ?, 'merging', 'move_created_at', 'xfer',"
+                " json_insert("
+                "  '{}'"
+                "  , '$.context.original_created_at', original_user.created_at"
+                "  , '$.context.merging_created_at', merging_user.created_at"
+                "  , '$.context.assignment_required', json(iif(merging_user.created_at < original_user.created_at, 'true', 'false'))"
+                " ), ? "
+                "FROM merging_user, original_user"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+                octx.operation_uid,
+                OperationOrder.move_created_at.value,
+                octx.merge_at,
+            ],
+            handler=partial(handler, "log"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes} UPDATE users SET created_at=merging_user.created_at "
+                "FROM merge_account_log, merging_user, original_user "
+                "WHERE"
+                " merge_account_log.uid = ?"
+                " AND json_extract(merge_account_log.reason, '$.context.assignment_required')"
+                " AND users.id = original_user.id"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+            ],
+            handler=partial(handler, "assign"),
+        ),
+    ]
+
+
 async def _delete_merging_user(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQuery]:
     async def handler(mctx: MergeContext) -> None:
         deleted = not not mctx.result.rows_affected
@@ -2922,23 +3090,37 @@ def _create_standard_update_query(
 
 
 def _merging_user_and_original_user_ctes(
-    octx: _Ctx, /, *, merging_user_sub: bool = False, original_user_sub: bool = False
+    octx: _Ctx,
+    /,
+    *,
+    merging_user_sub: bool = False,
+    original_user_sub: bool = False,
+    merging_user_created_at: bool = False,
+    original_user_created_at: bool = False,
 ) -> Tuple[str, List[Any]]:
     merging_user_columns = "id"
     if merging_user_sub:
         merging_user_columns += ", sub"
+    if merging_user_created_at:
+        merging_user_columns += ", created_at"
 
     merging_user_select = "users.id"
     if merging_user_sub:
         merging_user_select += ", users.sub"
+    if merging_user_created_at:
+        merging_user_select += ", users.created_at"
 
     original_user_columns = "id"
     if original_user_sub:
         original_user_columns += ", sub"
+    if original_user_created_at:
+        original_user_columns += ", created_at"
 
     original_user_select = "users.id"
     if original_user_sub:
         original_user_select += ", users.sub"
+    if original_user_created_at:
+        original_user_select += ", users.created_at"
 
     return (
         f"WITH merging_user({merging_user_columns}) AS ("

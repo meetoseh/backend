@@ -25,7 +25,7 @@ See also: [image_files](image_files.md) for the logical image file.
 - `format (text not null)`: the format of the export, e.g., `png`, `jpeg`, `webp`
 - `quality_settings (text not null)`: the quality settings used for the export, which depends
   on the format, as a json dictionary. The keys must be sorted.
-- `thumbhash (text null)`: the thumbhash of this image export: https://evanw.github.io/thumbhash/ as a base64url encoded series of bytes
+- `thumbhash (text not null)`: the thumbhash of this image export: https://evanw.github.io/thumbhash/ as a base64url encoded series of bytes
 - `created_at (real not null)`: when this record was created in seconds since
   the unix epoch
 

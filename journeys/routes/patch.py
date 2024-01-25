@@ -764,6 +764,8 @@ async def patch_journey(
             await jobs.enqueue("runners.refresh_journey_emotions", journey_uid=uid)
             await jobs.enqueue("runners.process_journey_video_sample", journey_uid=uid)
             await jobs.enqueue("runners.process_journey_video", journey_uid=uid)
+            await jobs.enqueue("runners.process_journey_share_image", journey_uid=uid)
+
         return Response(
             content=PatchJourneyResponse(
                 uid=uid,

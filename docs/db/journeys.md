@@ -28,6 +28,9 @@ videos are 1080x1920 vertical videos optimized for instagram.
 - `darkened_background_image_file_id (integer not null references image_files(id) on delete cascade`:
   the id of the darkened background image file. This is typically the background image darkened
   by 20%
+- `share_image_file_id (integer null references image_files(id) on delete set null)`:
+  the id of the image that is shown as the meta tag image when this journey is linkked to. Accomplished
+  by taking the darkened image and overlaying the name of the class and instructor
 - `instructor_id (integer not null references instructors(id) on delete cascade)`: the id of the
   instructor for this journey
 - `sample_content_file_id (integer null references content_files(id) on delete set null)`: the id of
@@ -77,7 +80,8 @@ CREATE TABLE journeys(
     sample_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL,
     video_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL,
     special_category TEXT NULL,
-    variation_of_journey_id INTEGER NULL REFERENCES journeys(id) ON DELETE SET NULL
+    variation_of_journey_id INTEGER NULL REFERENCES journeys(id) ON DELETE SET NULL,
+    share_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL
 );
 
 /* foreign key */
@@ -109,4 +113,7 @@ CREATE UNIQUE INDEX journeys_interactive_prompt_id_idx ON journeys(interactive_p
 
 /* sort */
 CREATE INDEX journeys_created_at_idx ON journeys(created_at) WHERE deleted_at IS NULL;
+
+/* foreign key */
+CREATE INDEX journeys_share_image_file_id_idx ON journeys(share_image_file_id);
 ```

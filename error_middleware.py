@@ -82,7 +82,7 @@ MAX_WARNINGS_PER_INTERVAL = 5
 
 async def handle_warning(
     identifier: str, text: str, exc: Optional[Exception] = None, is_urgent: bool = False
-) -> None:
+) -> bool:
     """Sends a warning to slack, with basic ratelimiting
 
     Args:
@@ -92,6 +92,9 @@ async def handle_warning(
           the text appropriately
         is_urgent (bool): If true, the message is sent to the #oseh-bot channel instead
           of the #web-errors channel
+
+    Returns:
+        true if the warning was sent, false if it was suppressed
     """
 
     if exc is not None:
@@ -116,7 +119,7 @@ async def handle_warning(
 
     if len(recent_warnings) >= MAX_WARNINGS_PER_INTERVAL:
         logger.debug(f"warning suppressed (ratelimit): {identifier}")
-        return
+        return False
 
     recent_warnings.append(now)
     total_warnings = len(recent_warnings)
@@ -135,5 +138,7 @@ async def handle_warning(
             else:
                 logger.debug("sending warning to #web-errors")
                 await slack.send_web_error_message(message, preview=preview)
+        return True
     except:
         logger.exception("Failed to send slack message for warning")
+        return False

@@ -91,8 +91,12 @@ def parse_range(range: Optional[str]) -> List[HTTPRange]:
 
         start, end = range_request.split("-", 1)
         try:
-            start = int(start)
-            end = int(end) if end != "" else None
+            if start == "" and end != "":
+                start = -int(end)
+                end = None
+            else:
+                start = int(start)
+                end = int(end) if end != "" else None
         except ValueError:
             return []
 
@@ -121,18 +125,31 @@ def clean_ranges_using_content_length(
     """Using the content-length available, determines the real requested ranges,
     removing invalid ones
     """
-    cleaned_ranges = []
-    for range in ranges:
-        if range.end is None:
-            range.end = content_length - 1
-        elif range.end < 0:
-            range.end = max(0, content_length + range.end)
+    cleaned_ranges: List[HTTPCleanedRange] = []
+    for item in ranges:
+        if item.start < 0:
+            item.start = max(0, content_length + item.start)
+        if item.end is None:
+            item.end = content_length - 1
+        elif item.end < 0:
+            item.end = max(0, content_length + item.end)
 
-        range.end = min(range.end, content_length - 1)
-        if range.end > range.start:
-            cleaned_ranges.append(HTTPCleanedRange(range.start, range.end))
+        item.start = min(item.start, content_length - 1)
+        item.end = min(item.end, content_length - 1)
+        if item.end > item.start:
+            cleaned_ranges.append(HTTPCleanedRange(item.start, item.end))
 
-    return cleaned_ranges
+    cleaned_ranges.sort(key=lambda r: r.start)
+
+    new_ranges: List[HTTPCleanedRange] = []
+
+    for rng in cleaned_ranges:
+        if not new_ranges or rng.start > new_ranges[0].end:
+            new_ranges.append(rng)
+        else:
+            new_ranges[-1].end = max(new_ranges[-1].end, rng.end)
+
+    return new_ranges
 
 
 async def serve_s3_file(

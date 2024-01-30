@@ -84,7 +84,7 @@ def parse_range(range: Optional[str]) -> List[HTTPRange]:
     if len(range_requests) >= 10:
         return []
 
-    ranges = []
+    ranges: List[HTTPRange] = []
     for range_request in range_requests:
         if "-" not in range_request:
             return []
@@ -100,6 +100,11 @@ def parse_range(range: Optional[str]) -> List[HTTPRange]:
             return []
 
         ranges.append(HTTPRange(start, end))
+
+    if len(ranges) == 1 and ranges[0].start == 0 and ranges[1].end is None:
+        # This is a request for the entire file; don't bother with ranges.
+        # Chrome likes to do this
+        return []
 
     return ranges
 
@@ -209,7 +214,11 @@ async def serve_s3_file_from_cache(
         real_length = len(cached_data)
         cleaned_ranges = clean_ranges_using_content_length(ranges, real_length)
 
-        if not cleaned_ranges:
+        if not cleaned_ranges or (
+            len(cleaned_ranges) == 1
+            and cleaned_ranges[0].start == 0
+            and cleaned_ranges[0].end == real_length - 1
+        ):
             return Response(content=cached_data, headers=headers)
 
         if len(cleaned_ranges) == 1:

@@ -1,6 +1,7 @@
 """This module allows for easily accessing common integrations -
 the integration is only loaded upon request.
 """
+import json
 from typing import Callable, Coroutine, List, Optional
 import rqdb
 import rqdb.async_connection
@@ -8,6 +9,7 @@ import rqdb.logging
 import redis.asyncio
 import diskcache
 import os
+from error_middleware import handle_warning
 import slack
 import jobs
 import file_service
@@ -100,6 +102,27 @@ class Itgs:
 
             self._closures.append(cleanup)
 
+            bknd_tasks = set()
+
+            def on_slow_query(
+                info: rqdb.logging.QueryInfo,
+                /,
+                *,
+                duration_seconds: float,
+                host: str,
+                response_size_bytes: int,
+                started_at: float,
+                ended_at: float,
+            ):
+                task = asyncio.create_task(
+                    handle_warning(
+                        "backend:slow_query",
+                        f"query to {host} took {duration_seconds:.3f}s to return {response_size_bytes} bytes:\n\n```\n{json.dumps(info.operations, indent=1)}",
+                    )
+                )
+                bknd_tasks.add(task)
+                task.add_done_callback(lambda _: bknd_tasks.remove(task))
+
             def _err_log(msg: str):
                 loguru.logger.exception(msg)
 
@@ -151,6 +174,11 @@ class Itgs:
                     connect_timeout=lvl_warning(),
                     hosts_exhausted=lvl_critical(),
                     non_ok_response=lvl_warning(),
+                    slow_query={
+                        "enabled": True,
+                        "threshold_seconds": 1,
+                        "method": on_slow_query,
+                    },
                     backup_start=lvl_info(),
                     backup_end=lvl_info(),
                 ),

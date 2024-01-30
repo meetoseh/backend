@@ -117,7 +117,7 @@ class Itgs:
                 task = asyncio.create_task(
                     handle_warning(
                         "backend:slow_query",
-                        f"query to {host} took {duration_seconds:.3f}s to return {response_size_bytes} bytes:\n\n```\n{json.dumps(info.operations, indent=1)}",
+                        f"query to {host} took {duration_seconds:.3f}s to return {response_size_bytes} bytes:\n\n```\n{json.dumps(info.operations, indent=1)}\n```",
                     )
                 )
                 bknd_tasks.add(task)

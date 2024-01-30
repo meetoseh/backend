@@ -66,7 +66,7 @@ class ServableS3File:
 @dataclass
 class HTTPRange:
     start: int
-    end: int
+    end: Optional[int]
 
 
 def parse_range(range: Optional[str]) -> List[HTTPRange]:
@@ -92,16 +92,42 @@ def parse_range(range: Optional[str]) -> List[HTTPRange]:
         start, end = range_request.split("-", 1)
         try:
             start = int(start)
-            end = int(end)
+            end = int(end) if end != "" else None
         except ValueError:
             return []
 
-        if start > end:
+        if end is not None and end >= 0 and start > end:
             return []
 
         ranges.append(HTTPRange(start, end))
 
     return ranges
+
+
+@dataclass
+class HTTPCleanedRange:
+    start: int
+    end: int
+
+
+def clean_ranges_using_content_length(
+    ranges: List[HTTPRange], content_length: int
+) -> List[HTTPCleanedRange]:
+    """Using the content-length available, determines the real requested ranges,
+    removing invalid ones
+    """
+    cleaned_ranges = []
+    for range in ranges:
+        if range.end is None:
+            range.end = content_length - 1
+        elif range.end < 0:
+            range.end = max(0, content_length + range.end)
+
+        range.end = min(range.end, content_length - 1)
+        if range.end > range.start:
+            cleaned_ranges.append(HTTPCleanedRange(range.start, range.end))
+
+    return cleaned_ranges
 
 
 async def serve_s3_file(
@@ -112,10 +138,8 @@ async def serve_s3_file(
 
     Args:
         itgs (Itgs): The integrations to (re)use
-        uid (str): The uid of the file
-        key (str): The key of the file in s3
-        content_type (str): The content type of the file
-        file_size (int): The size of the file in bytes
+        file (ServableS3File): The file to serve
+        range (str, None): the range header, if any
 
     Returns:
         Response: Either the file fully-loaded in memory or a streaming response,
@@ -182,22 +206,27 @@ async def serve_s3_file_from_cache(
     }
 
     if isinstance(cached_data, (bytes, bytearray, memoryview)):
-        if not ranges:
+        real_length = len(cached_data)
+        cleaned_ranges = clean_ranges_using_content_length(ranges, real_length)
+
+        if not cleaned_ranges:
             return Response(content=cached_data, headers=headers)
 
-        if len(ranges) == 1:
+        if len(cleaned_ranges) == 1:
             headers[
                 "Content-Range"
-            ] = f"bytes {ranges[0].start}-{ranges[0].end}/{file.file_size}"
+            ] = f"bytes {cleaned_ranges[0].start}-{cleaned_ranges[0].end}/{file.file_size}"
             return Response(
-                content=cached_data[ranges[0].start : ranges[0].end + 1],
+                content=cached_data[
+                    cleaned_ranges[0].start : cleaned_ranges[0].end + 1
+                ],
                 headers=headers,
                 status_code=206,
             )
 
         headers["Content-Type"] = "multipart/byteranges; boundary=3d6b6a416f9b5"
         return StreamingResponse(
-            content=read_ranges(file, cached_data, ranges),
+            content=read_ranges(file, cached_data, cleaned_ranges),
             headers=headers,
             status_code=206,
         )
@@ -206,7 +235,7 @@ async def serve_s3_file_from_cache(
 
 
 def read_ranges(
-    file: ServableS3File, data: bytes, ranges: List[HTTPRange]
+    file: ServableS3File, data: bytes, ranges: List[HTTPCleanedRange]
 ) -> Generator[bytes, None, None]:
     """Reads the given data in the given ranges"""
     for range in ranges:

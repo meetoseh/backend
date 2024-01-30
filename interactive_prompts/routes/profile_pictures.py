@@ -28,9 +28,6 @@ from models import (
     AUTHORIZATION_UNKNOWN_TOKEN,
 )
 import perpetual_pub_sub as pps
-from pypika import Query, Table, Parameter, Order
-from pypika.queries import QueryBuilder
-from pypika.terms import ExistsCriterion
 from itgs import Itgs
 import time
 import io

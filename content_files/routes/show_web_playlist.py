@@ -27,9 +27,7 @@ class ShowWebPlaylistResponseItem(BaseModel):
         description="The actual average bandwidth required to stream the file. Clients should use this to determine which file to download",
         ge=1,
     )
-    codecs: List[Literal["aac"]] = Field(
-        description="The codecs used within the container."
-    )
+    codecs: List[str] = Field(description="The codecs used within the container.")
     file_size: int = Field(
         description="The size of the file in bytes",
         ge=1,
@@ -249,7 +247,7 @@ async def get_raw_web_playlist_from_db(
         format = typing_cast(Literal["mp4"], row[1])
         bandwidth = typing_cast(int, row[2])
         codecs_raw = typing_cast(str, row[3])
-        codecs = typing_cast(List[Literal["aac"]], codecs_raw.split(","))
+        codecs = typing_cast(List[str], codecs_raw.split(","))
         file_size = typing_cast(int, row[4])
         quality_parameters_raw = typing_cast(str, row[5])
         quality_parameters = typing_cast(

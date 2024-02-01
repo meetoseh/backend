@@ -81,22 +81,11 @@ class InstructorFilter(BaseModel):
         ),
     )
 
-    def __init__(
-        self,
-        *,
-        name: Optional[FilterTextItemModel] = None,
-        bias: Optional[FilterItemModel[float]] = None,
-        created_at: Optional[FilterItemModel[float]] = None,
-        deleted_at: Optional[FilterItemModel[float]] = None,
-    ):
-        super().__init__(
-            name=name, bias=bias, created_at=created_at, deleted_at=deleted_at
-        )
-
 
 class ReadInstructorRequest(BaseModel):
     filters: InstructorFilter = Field(
-        default_factory=InstructorFilter, description="the filters to apply"
+        default_factory=lambda: InstructorFilter.model_validate({}),
+        description="the filters to apply",
     )
     sort: Optional[List[InstructorSortOption]] = Field(
         None, description="the order to sort by"

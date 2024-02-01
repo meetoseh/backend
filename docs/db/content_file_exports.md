@@ -31,26 +31,38 @@ See the example section at the bottom for what m3u8 files look like.
 
 ## Fields
 
--   `id (integer primary key)`: the internal identifier for the row
--   `uid (text unique not null)`: the primary external identifier for the row. The
-    uid prefix is `afe`: see [uid_prefixes](../uid_prefixes.md).
--   `content_file_id (integer not null references content_files(id) on delete cascade)`:
-    the id of the [content_files](content_files.md)
-    row that this export is for
--   `format (text not null)`: the format of the export. Examples: `m4a`, `mp3`, `ogg`
--   `bandwidth (integer not null)`: the maximum bitrate of the export in bits per second.
-    Required for client-side adaptive bitrate selection.
--   `codecs (text not null)`: the codecs used in the export, comma separated, for
-    example: `avc1.640020,mp4a.40.2`. Alphabetically sorted. Required for ios.
--   `target_duration (integer not null)`: the target duration of each part in seconds.
-    No part can have a duration larger than this, after flooring. Required for client-side
-    preloading.
--   `quality_parameters (text not null)`: a json dictionary describing the quality
-    parameters used to generate the export. The keys and values are specific to the
-    format. This SHOULD NOT be used for behavior, as it is primarily intended for
-    debugging or for one-off scripts (e.g., redoing all exports of a given format/bandwidth
-    if we later change the quality parameters).
--   `created_at (real not null)`: when this record was created in seconds since the unix epoch
+- `id (integer primary key)`: the internal identifier for the row
+- `uid (text unique not null)`: the primary external identifier for the row. The
+  uid prefix is `afe`: see [uid_prefixes](../uid_prefixes.md).
+- `content_file_id (integer not null references content_files(id) on delete cascade)`:
+  the id of the [content_files](content_files.md)
+  row that this export is for
+- `format (text not null)`: the format of the export. Examples: `m4a`, `mp3`, `ogg`, `m3u8`
+- `format_parameters (text not null)`: A json object with additional parameters required to
+  describe the format of this export, especially for videos. Unlike `quality_parameters`, these
+  may influence behavior. For videos, this json object includes the following information:
+  - `average_bandwidth (int, optional)`: the average bitrate of the export in bits per second.
+    For m3u8 video files this is preferred over the maximum bitrate in some cases
+  - `width (int)`: the width of the video in pixels
+  - `height (int)`: the height of the video in pixels
+- `bandwidth (integer not null)`: the maximum bitrate of the export in bits per second.
+  Required for client-side adaptive bitrate selection.
+- `codecs (text not null)`: the codecs used in the export, comma separated, for
+  example: `avc1.640020,mp4a.40.2`. Alphabetically sorted. Required for ios hls. Generally,
+  when scanning for videos, it's sufficient to check `codecs LIKE "%avc1%"`, though a
+  valid reference to a content file will always distinguish what it contains (e.g.,
+  `sample_content_file_id` on `journeys` is always a video) Note that mp4 files
+  are usually stored without detailed codec information, so may instead just be
+  `aac,avc1`
+- `target_duration (integer not null)`: the target duration of each part in seconds.
+  No part can have a duration larger than this, after flooring. Required for client-side
+  preloading.
+- `quality_parameters (text not null)`: a json dictionary describing the quality
+  parameters used to generate the export. The keys and values are specific to the
+  format. This SHOULD NOT be used for behavior, as it is primarily intended for
+  debugging or for one-off scripts (e.g., redoing all exports of a given format/bandwidth
+  if we later change the quality parameters).
+- `created_at (real not null)`: when this record was created in seconds since the unix epoch
 
 ## Schema
 
@@ -60,14 +72,13 @@ CREATE TABLE content_file_exports(
     uid TEXT UNIQUE NOT NULL,
     content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE,
     format TEXT NOT NULL,
+    format_parameters TEXT NOT NULL,
     bandwidth INTEGER NOT NULL,
     codecs TEXT NOT NULL,
     target_duration INTEGER NOT NULL,
     quality_parameters TEXT NOT NULL,
     created_at REAL NOT NULL
 );
-
-CREATE INDEX content_file_exports_uid_idx ON content_file_exports(uid);
 ```
 
 ## Example m3u8 files

@@ -1,5 +1,6 @@
+import json
 import tempfile
-from typing import Literal, Optional, Set, Union
+from typing import List, Literal, Optional, Set, Tuple, Union, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response, StreamingResponse
 from itgs import Itgs
@@ -13,7 +14,6 @@ from urllib.parse import urlencode
 import content_files.auth
 import content_files.helper
 from content_files.lib.serve_s3_file import read_in_parts
-import rqdb.result
 import io
 import os
 
@@ -255,7 +255,8 @@ async def get_raw_mobile_playlist_from_db(
         SELECT
             content_file_exports.uid,
             content_file_exports.bandwidth,
-            content_file_exports.codecs
+            content_file_exports.codecs,
+            content_file_exports.format_parameters
         FROM content_file_exports
         WHERE
             EXISTS (
@@ -265,6 +266,7 @@ async def get_raw_mobile_playlist_from_db(
             )
             AND content_file_exports.format = ?
             AND content_file_exports.bandwidth > 90000
+        ORDER BY content_file_exports.bandwidth DESC, content_file_exports.uid ASC
         """,
         (
             uid,
@@ -275,34 +277,57 @@ async def get_raw_mobile_playlist_from_db(
     if not response.results:
         return None
 
-    return await run_in_threadpool(_encode_db_response, uid, duration, response)
+    return await run_in_threadpool(
+        _encode_db_response,
+        uid,
+        duration,
+        cast(List[Tuple[str, int, str, str]], response.results),
+    )
 
 
 def _encode_db_response(
-    uid: str, duration: float, response: rqdb.result.ResultItem
+    uid: str, duration: float, results: List[Tuple[str, int, str, str]]
 ) -> tempfile.SpooledTemporaryFile[bytes]:
     """Implementation detail of get_raw_mobile_playlist_from_db, created so it
     can be targeted for run_in_threadpool
     """
-    assert response.results
+    assert results
     result = tempfile.SpooledTemporaryFile(max_size=1024 * 512, mode="w+b")
     result.write(b"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-INDEPENDENT-SEGMENTS\n")
 
     base_url: bytes = bytes(f"{root_backend_url}/api/1/content_files/exports/", "utf-8")
 
     seen_bandwidths: Set[int] = set()
-    for row in response.results:
-        row_uid: str = row[0]
-        row_bandwidth: int = row[1]
-        row_codecs: str = row[2]
-
+    for row_uid, row_bandwidth, row_codecs, row_format_parameters_raw in results:
         if row_bandwidth in seen_bandwidths:
             continue
+
+        row_format_parameters = json.loads(row_format_parameters_raw)
 
         seen_bandwidths.add(row_bandwidth)
 
         result.write(b"#EXT-X-STREAM-INF:BANDWIDTH=")
         result.write(str(row_bandwidth).encode("ascii"))
+
+        if "average_bandwidth" in row_format_parameters and isinstance(
+            row_format_parameters["average_bandwidth"], int
+        ):
+            result.write(b",AVERAGE-BANDWIDTH=")
+            result.write(
+                str(row_format_parameters["average_bandwidth"]).encode("ascii")
+            )
+
+        if (
+            "width" in row_format_parameters
+            and "height" in row_format_parameters
+            and isinstance(row_format_parameters["width"], int)
+            and isinstance(row_format_parameters["height"], int)
+        ):
+            result.write(b",RESOLUTION=")
+            result.write(str(row_format_parameters["width"]).encode("ascii"))
+            result.write(b"x")
+            result.write(str(row_format_parameters["height"]).encode("ascii"))
+
         result.write(b',CODECS="')
         result.write(row_codecs.encode("ascii"))
         result.write(b'"\n')

@@ -1,6 +1,7 @@
 """This module assists other modules which want to provide the user a way to
 upload a file.
 """
+import io
 import json
 import time
 from pydantic import BaseModel, Field
@@ -8,7 +9,6 @@ from typing import List, Union
 from file_uploads.auth import create_jwt
 from itgs import Itgs
 from functools import lru_cache
-import itertools
 import secrets
 
 
@@ -153,25 +153,28 @@ async def start_upload(
         ),
     )
 
-    response = await cursor.execute(
-        "SELECT id FROM s3_file_uploads WHERE uid=?",
-        (s3_file_upload_uid,),
-    )
-    assert response.results
-    s3_file_upload_id: int = response.results[0][0]
-
-    qmarks_1 = "(?,?,?,?,?)"
-
-    def get_qmarks(num_inserts: int) -> str:
-        return ",".join([qmarks_1] * num_inserts)
-
     @lru_cache(maxsize=None)
     def get_query(num_inserts: int) -> str:
-        return (
+        res = io.StringIO()
+        res.write(
+            "WITH batch(uid, part_number, start_byte, end_byte) AS (VALUES (?,?,?,?)"
+        )
+        for _ in range(num_inserts - 1):
+            res.write(",(?,?,?,?)")
+        res.write(
+            ") "
             "INSERT INTO s3_file_upload_parts "
             "(s3_file_upload_id, uid, part_number, start_byte, end_byte) "
-            f"VALUES {get_qmarks(num_inserts)}"
+            "SELECT"
+            " s3_file_uploads.id,"
+            " batch.uid,"
+            " batch.part_number,"
+            " batch.start_byte,"
+            " batch.end_byte "
+            "FROM batch, s3_file_uploads "
+            "WHERE s3_file_uploads.uid = ?"
         )
+        return res.getvalue()
 
     num_per_insert = 100
     for full_part_num_start in range(1, num_full_parts + 1, num_per_insert):
@@ -180,18 +183,19 @@ async def start_upload(
         )
         response = await cursor.execute(
             get_query(full_part_num_end - full_part_num_start),
-            tuple(
-                itertools.chain.from_iterable(
-                    (
-                        s3_file_upload_id,
+            [
+                *tuple(
+                    c
+                    for i in range(full_part_num_start, full_part_num_end)
+                    for c in (
                         f"oseh_s3fup_{secrets.token_urlsafe(16)}",
                         i,
                         i * part_size,
                         (i + 1) * part_size,
                     )
-                    for i in range(full_part_num_start, full_part_num_end)
-                )
-            ),
+                ),
+                s3_file_upload_uid,
+            ],
         )
         assert response.rows_affected == full_part_num_end - full_part_num_start
 
@@ -199,11 +203,11 @@ async def start_upload(
         response = await cursor.execute(
             get_query(1),
             (
-                s3_file_upload_id,
                 f"oseh_s3fup_{secrets.token_urlsafe(16)}",
                 num_full_parts + 1,
                 num_full_parts * part_size,
                 file_size,
+                s3_file_upload_uid,
             ),
         )
         assert response.rows_affected == 1

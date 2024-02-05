@@ -1,6 +1,7 @@
 """This module assists other modules which want to provide the user a way to
 upload a file.
 """
+
 import io
 import json
 import time
@@ -190,8 +191,8 @@ async def start_upload(
                     for c in (
                         f"oseh_s3fup_{secrets.token_urlsafe(16)}",
                         i,
+                        (i - 1) * part_size,
                         i * part_size,
-                        (i + 1) * part_size,
                     )
                 ),
                 s3_file_upload_uid,

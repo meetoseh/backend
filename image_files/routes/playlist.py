@@ -15,6 +15,9 @@ import io
 import gzip
 
 
+ImageFileFormat = Literal["jpeg", "png", "webp", "svg"]
+
+
 class PlaylistItemResponse(BaseModel):
     url: str = Field(
         description=(
@@ -31,7 +34,7 @@ class PlaylistItemResponse(BaseModel):
         )
     )
 
-    format: Literal["jpeg", "png", "webp"] = Field(
+    format: ImageFileFormat = Field(
         description=(
             "The format of the image. The client SHOULD prefer the content-type from "
             "url for processing the image if it differs from this value, however, it "
@@ -69,7 +72,7 @@ class PlaylistResponse(BaseModel):
     for images: the collection of individual files that the client can choose from.
     """
 
-    items: Dict[Literal["jpeg", "png", "webp"], List[PlaylistItemResponse]] = Field(
+    items: Dict[ImageFileFormat, List[PlaylistItemResponse]] = Field(
         description=(
             "The items in the playlist, broken down by format. The client MAY "
             "assume that the items are ordered by size in ascending order."
@@ -131,7 +134,7 @@ async def get_image_playlist(
     be presigned by including the provided jwt in the `jwt` query parameter -
     i.e., if this is set to true, all of the urls that are returned could be
     opened in a browser with no special effort and the image file would be
-    visible. On the other hand, if the requests are presigned, the client must
+    visible. On the other hand, if the requests aren't presigned, the client must
     ensure either it adds the `jwt` on its side, or it passes the
     `authorization` header when downloading the image. If presign is not set,
     it's set to true if the `jwt` was used to authorize this request, and false
@@ -221,7 +224,7 @@ async def get_image_playlist(
                 status_code=404,
             )
 
-        items: Dict[Literal["jpeg", "png", "webp"], List[PlaylistItemResponse]] = dict()
+        items: Dict[ImageFileFormat, List[PlaylistItemResponse]] = dict()
         last_fmt: Optional[str] = None
         cur_list: Optional[List[PlaylistItemResponse]] = None
 

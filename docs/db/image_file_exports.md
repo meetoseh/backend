@@ -1,7 +1,9 @@
 # image_file_exports
 
-Describes a single export of an image file, for example, png at a 640x640 resolution via
-a center cover crop at maximum quality.
+Describes a single export of an image file, for example, png at a 640x640
+resolution via a center cover crop at maximum quality. This is primarily
+designed around raster images, but vector-formats (SVG) may be included
+with the width/height set to the natural size of the format.
 
 See also: [image_files](image_files.md) for the logical image file.
 
@@ -22,10 +24,13 @@ See also: [image_files](image_files.md) for the logical image file.
   original image before applying the object-fit cover crop to get this image
 - `bottom_cut_px (integer not null)`: the number of pixels to cut from the bottom of the
   original image before applying the object-fit cover crop to get this image
-- `format (text not null)`: the format of the export, e.g., `png`, `jpeg`, `webp`
+- `format (text not null)`: the format of the export, e.g., `png`, `jpeg`, `webp`, `svg`
 - `quality_settings (text not null)`: the quality settings used for the export, which depends
   on the format, as a json dictionary. The keys must be sorted.
-- `thumbhash (text not null)`: the thumbhash of this image export: https://evanw.github.io/thumbhash/ as a base64url encoded series of bytes
+- `thumbhash (text not null)`: the thumbhash of this image export:
+  https://evanw.github.io/thumbhash/ as a base64url encoded series of bytes.
+  For vector-format files this the thumbhash of the rasterized version at the
+  specified width and height.
 - `created_at (real not null)`: when this record was created in seconds since
   the unix epoch
 

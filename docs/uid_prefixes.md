@@ -128,3 +128,4 @@ something (in this case, identify a row)
 - `sme` - [sitemap_entries](db/sitemap_entries.md)
 - `jsl` - [journey_share_links](db/journey_share_links.md)
 - `jslv` - [journey_share_link_views](db/journey_share_link_views.md)
+- `jp` - job progress, used for the `jobs:progress:events:{uid}` uid

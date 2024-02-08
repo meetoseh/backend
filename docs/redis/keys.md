@@ -4,18 +4,56 @@ the keys that we use in redis
 
 ## standard keys
 
-### miscellaneous
+### Jobs Core
 
-- `jobs:hot` used for the hot queue for jobs in jobs.py
+- `jobs:hot` used for the hot queue for jobs in jobs.py. entries are json
+  objects with keys
+  - `name`: the name of the runner to execute, e.g., `runners.example`
+  - `kwargs`: keyword arguments to forward to the execute function
+  - `queued_at`: when the job was queued in seconds since the epoch
 - `jobs:hot:{category}` used for job retrieval exclusively by the `jobs` repository.
   Job categorization is done by the job runners, not other packages, to avoid
-  having it specified in multiple places.
-- `apple:jwks` used for caching apples keys in the [apple callback](../../oauth/routes/apple_callback.py)
-- `rjobs:hash` is a hash of all the recurring jobs in `jobs`
+  having it specified in multiple places. Items are in the same format as `jobs:hot`
+- `rjobs:hash` is a hash of all the recurring jobs in `rjobs`
 - `rjobs` is a sset where the scores are the unix time the job should be run next,
   and the values are the hashes of the jobs. see the jobs repo for more details
 - `rjobs:purgatory` a set of job hashes that were removed from `rjobs` and are temporarily being
   processed. this should remain near empty
+- `jobs:progress:events:{uid}` where `uid` uses the [uid prefix](../uid_prefixes.md) `jp`, goes
+  to a list (pushed to the right, removed from the left) where the entries are json objects
+  with keys
+
+  - `type (string enum)`: basic enum for the category of event
+    - `queued`: typically the first event pushed, usually at the same time or just prior to
+      queueing the job in `jobs:hot`
+    - `started`: pushed when the jobs runner picks up the job
+    - `bounce`: pushed when the jobs runner is going to bounce the job back to the queue,
+      usually due to receiving a term signal
+    - `progress`: most common event; used to update the message/indicator because we made progress
+    - `failed`: terminal event, indicates the job failed
+    - `succeeded`: terminal event, indicates the job succeeded
+  - `message (string)`: freeform text, usually less than 255 characters, meant to be shown
+    to the user
+  - `indicator (object, null)`: hint for how this step can be visually communicated. `null`
+    means no indicator, just the message. Each form the object can take has a
+    distinct `type (string, enum)`:
+    - `bar`: indicates a progress bar would be appropriate
+      - `at (number)`: how many steps are finished
+      - `of (number)`: total number of steps
+    - `spinner`: indicates a spinner would be appropriate
+    - `final`: indicates that the user shouldn't expect more messages
+
+  Always has a 30m expiration since the last message was pushed. Maximum 50
+  entries; older entries are removed to make space during appends. Appending
+  entries should always also correspond to publishing to
+  `ps:jobs:progress:{uid}` and incrementing `jobs:progress:count:{uid}`
+
+- `jobs:progress:count:{uid}` the total number of entries pushed to the corresponding
+  `jobs:progress:events:{uid}`; used as a debugging tool for excessively talkative jobs
+
+### miscellaneous
+
+- `apple:jwks` used for caching apples keys in the [apple callback](../../oauth/routes/apple_callback.py)
 - `files:purgatory` a sorted set where the scores are the unix time the s3 file should be purged,
   and the values are a json object in the following shape:
 
@@ -3058,6 +3096,9 @@ These are regular keys used by the personalization module
 ## pubsub keys
 
 - `ps:job:{job_uid}`: used, if supported, when a job is able to report when it's completed
+
+- `ps:jobs:progress:{uid}`: pushed a json list of appended entries to the corresponding
+  `jobs:progress:events:{uid}` key
 
 - `updates:{repo}`: used to indicate that the main branch of the given repository was updated
 

@@ -18,7 +18,6 @@ from visitors.lib.get_or_create_visitor import (
 )
 import os
 import stripe
-import stripe.error
 import pytz
 from contextlib import asynccontextmanager
 import socket
@@ -161,7 +160,7 @@ async def activate_course(
             checkout_session = stripe.checkout.Session.retrieve(
                 args.checkout_session_id, api_key=stripe_sk
             )
-        except stripe.error.InvalidRequestError as e:
+        except stripe.InvalidRequestError as e:
             await handle_error(
                 exc=e,
                 extra_info=f"while activating {args.checkout_session_id=} for {sanitized_visitor=}, {auth_result.result=}",
@@ -255,9 +254,11 @@ async def activate_course(
                         "guestInfo": json.dumps(
                             {
                                 "visitor": sanitized_visitor,
-                                "user_sub": None
-                                if auth_result.result is None
-                                else auth_result.result.sub,
+                                "user_sub": (
+                                    None
+                                    if auth_result.result is None
+                                    else auth_result.result.sub
+                                ),
                             }
                         ),
                         "client": args.source,
@@ -351,12 +352,16 @@ async def activate_course(
                             args.checkout_session_id,
                             email,
                             request_at,
-                            auth_result.result.sub
-                            if auth_result.result is not None
-                            else None,
-                            auth_result.result.sub
-                            if auth_result.result is not None
-                            else None,
+                            (
+                                auth_result.result.sub
+                                if auth_result.result is not None
+                                else None
+                            ),
+                            (
+                                auth_result.result.sub
+                                if auth_result.result is not None
+                                else None
+                            ),
                             sanitized_visitor,
                             row[0],
                         ),

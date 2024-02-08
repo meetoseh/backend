@@ -1,10 +1,19 @@
 """Utils for generating parameterized queries which are slightly complicated
 but not enough to warrant pypika.
 """
+
 from dataclasses import dataclass
-from pypika.terms import Criterion, Term, ComplexCriterion, ValueWrapper
+from pypika.terms import (
+    Criterion,
+    Term,
+    ComplexCriterion,
+    ValueWrapper,
+    Node,
+)
+from pypika.queries import Table
+from pypika.utils import builder, format_alias_sql
 from pypika.enums import Comparator
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union
 
 
 def question_mark_list(num: int) -> str:
@@ -237,3 +246,75 @@ class ShieldFields(Criterion):
 
     def _fields(self):
         return []
+
+
+# For some reason, pypika exports BitwiseAndCriterion but not BitwiseOrCriterion
+# or BitwiseNotCriterion, so we have to define them ourselves.
+class BitwiseOrCriterion(Criterion):
+    def __init__(self, term: Term, value: Term, alias: Optional[str] = None) -> None:
+        super().__init__(alias)
+        self.term = term
+        self.value = value
+
+    def nodes_(self) -> Iterator[Node]:
+        yield self
+        yield from self.term.nodes_()
+        yield from self.value.nodes_()
+
+    @builder
+    def replace_table(
+        self, current_table: Optional["Table"], new_table: Optional["Table"]
+    ) -> "BitwiseOrCriterion":
+        """
+        Replaces all occurrences of the specified table with the new table. Useful when reusing fields across queries.
+
+        :param current_table:
+            The table to be replaced.
+        :param new_table:
+            The table to replace with.
+        :return:
+            A copy of the criterion with the tables replaced.
+        """
+        self.term = self.term.replace_table(current_table, new_table)
+        self.value = self.value.replace_table(current_table, new_table)
+        return self
+
+    def get_sql(self, **kwargs: Any) -> str:
+        sql = "({term} & {value})".format(
+            term=self.term.get_sql(**kwargs),
+            value=self.value,
+        )
+        return format_alias_sql(sql, self.alias, **kwargs)
+
+
+class BitwiseNotCriterion(Criterion):
+    def __init__(self, term: Term, alias: Optional[str] = None) -> None:
+        super().__init__(alias)
+        self.term = term
+
+    def nodes_(self) -> Iterator[Node]:
+        yield self
+        yield from self.term.nodes_()
+
+    @builder
+    def replace_table(
+        self, current_table: Optional["Table"], new_table: Optional["Table"]
+    ) -> "BitwiseNotCriterion":
+        """
+        Replaces all occurrences of the specified table with the new table. Useful when reusing fields across queries.
+
+        :param current_table:
+            The table to be replaced.
+        :param new_table:
+            The table to replace with.
+        :return:
+            A copy of the criterion with the tables replaced.
+        """
+        self.term = self.term.replace_table(current_table, new_table)
+        return self
+
+    def get_sql(self, **kwargs: Any) -> str:
+        sql = "(~{term})".format(
+            term=self.term.get_sql(**kwargs),
+        )
+        return format_alias_sql(sql, self.alias, **kwargs)

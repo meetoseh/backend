@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import flattened_filters, sort_criterion
-from resources.filter_item import FilterItem
-from resources.filter_text_item import FilterTextItem, FilterTextItemModel
+from resources.filter_item_like import FilterItemLike
+from resources.filter_text_item import FilterTextItemModel
 from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from itgs import Itgs
@@ -94,7 +94,7 @@ async def read_identities(
             return auth_result.error_response
         filters_to_apply = flattened_filters(
             dict(
-                (k, v.to_result())
+                (k, cast(FilterItemLike, v.to_result()))
                 for k, v in args.filters.__dict__.items()
                 if v is not None
             )
@@ -122,9 +122,11 @@ async def read_identities(
         return Response(
             content=ReadIdentitiesResponse(
                 items=items,
-                next_page_sort=[s.to_model() for s in next_page_sort]
-                if next_page_sort is not None
-                else None,
+                next_page_sort=(
+                    [s.to_model() for s in next_page_sort]
+                    if next_page_sort is not None
+                    else None
+                ),
             ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
@@ -132,7 +134,7 @@ async def read_identities(
 
 async def raw_read_identities(
     itgs: Itgs,
-    filters_to_apply: List[Tuple[str, Union[FilterItem, FilterTextItem]]],
+    filters_to_apply: List[Tuple[str, FilterItemLike]],
     user_sub: str,
     sort: List[SortItem],
     limit: int,

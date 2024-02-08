@@ -12,6 +12,7 @@ from db.utils import CaseInsensitiveCriterion, sqlite_string_concat
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItem, FilterItemModel
+from resources.filter_item_like import FilterItemLike
 from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItem, FilterTextItemModel
@@ -128,7 +129,7 @@ async def read_users(
             return auth_result.error_response
         filters_to_apply = flattened_filters(
             dict(
-                (k, v.to_result())
+                (k, typing_cast(FilterItemLike, v.to_result()))
                 for k, v in args.filters.__dict__.items()
                 if v is not None
             )
@@ -152,9 +153,11 @@ async def read_users(
         return Response(
             content=ReadUserResponse(
                 items=items,
-                next_page_sort=[s.to_model() for s in next_page_sort]
-                if next_page_sort is not None
-                else None,
+                next_page_sort=(
+                    [s.to_model() for s in next_page_sort]
+                    if next_page_sort is not None
+                    else None
+                ),
             ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
@@ -173,7 +176,7 @@ base_keys = frozenset(
 
 async def raw_read_users(
     itgs: Itgs,
-    filters_to_apply: List[Tuple[str, Union[FilterItem, FilterTextItem]]],
+    filters_to_apply: List[Tuple[str, FilterItemLike]],
     sort: List[SortItem],
     limit: int,
 ):

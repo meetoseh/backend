@@ -1,15 +1,16 @@
 """Convenience module for implementing filters"""
-from typing import Callable, Dict, List, Any, Optional, Tuple, Union
-from resources.filter_item import FilterItem
-from resources.filter_text_item import FilterTextItem
+
+from typing import Callable, Dict, List, Any, Optional, Tuple, TypeVar
+from resources.filter_item_like import FilterItemLike
 from resources.sort_dir import SortDir
 from resources.sort_item import SortItem
 from pypika.terms import Term, ValueWrapper, ComplexCriterion, Boolean
 
 
-def flattened_filters(
-    filters: Dict[str, Optional[Union[FilterItem, FilterTextItem]]]
-) -> List[Tuple[str, Union[FilterItem, FilterTextItem]]]:
+ItemT = TypeVar("ItemT", bound=FilterItemLike)
+
+
+def flattened_filters(filters: Dict[str, Optional[ItemT]]) -> List[Tuple[str, ItemT]]:
     """Determines the filters to apply to the given query as a list.
     The filters usually comes from __dict__'ing a dataclass, though it does not
     have to.

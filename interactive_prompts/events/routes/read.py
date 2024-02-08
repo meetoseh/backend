@@ -13,9 +13,10 @@ from image_files.auth import create_jwt as create_image_files_jwt
 from models import AUTHORIZATION_UNKNOWN_TOKEN, STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItem, FilterItemModel
+from resources.filter_item_like import FilterItemLike
 from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
-from resources.filter_text_item import FilterTextItem, FilterTextItemModel
+from resources.filter_text_item import FilterTextItemModel
 from itgs import Itgs
 from resources.standard_operator import StandardOperator
 from resources.standard_text_operator import StandardTextOperator
@@ -40,20 +41,17 @@ class LeaveEventData(BaseModel):
     name: str = Field(description="the name of the user who left")
 
 
-class LikeEventData(BaseModel):
-    ...
+class LikeEventData(BaseModel): ...
 
 
 class NumericPromptResponseEventData(BaseModel):
     rating: int = Field(description="the rating the user gave")
 
 
-class PressPromptStartResponseEventData(BaseModel):
-    ...
+class PressPromptStartResponseEventData(BaseModel): ...
 
 
-class PressPromptEndResponseEventData(BaseModel):
-    ...
+class PressPromptEndResponseEventData(BaseModel): ...
 
 
 class ColorPromptResponseEventData(BaseModel):
@@ -388,7 +386,7 @@ async def read_interactive_prompt_events(
         )
         filters_to_apply = flattened_filters(
             dict(
-                (k, v.to_result())
+                (k, typing_cast(FilterItemLike, v.to_result()))
                 for k, v in args.filters.__dict__.items()
                 if v is not None
             )
@@ -419,9 +417,11 @@ async def read_interactive_prompt_events(
         return Response(
             content=ReadInteractivePromptEventResponse(
                 items=items,
-                next_page_sort=[s.to_model() for s in next_page_sort]
-                if next_page_sort is not None
-                else None,
+                next_page_sort=(
+                    [s.to_model() for s in next_page_sort]
+                    if next_page_sort is not None
+                    else None
+                ),
             ).model_dump_json(),
             headers={
                 "Content-Type": "application/json; charset=utf-8",
@@ -431,7 +431,7 @@ async def read_interactive_prompt_events(
 
 async def raw_read_interactive_prompt_events(
     itgs: Itgs,
-    filters_to_apply: List[Tuple[str, Union[FilterItem, FilterTextItem]]],
+    filters_to_apply: List[Tuple[str, FilterItemLike]],
     sort: List[SortItem],
     limit: int,
 ):

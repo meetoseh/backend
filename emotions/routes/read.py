@@ -1,17 +1,17 @@
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term, ExistsCriterion
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
-from resources.filter_item import FilterItem
+from resources.filter_item_like import FilterItemLike
 from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
-from resources.filter_text_item import FilterTextItem, FilterTextItemModel
+from resources.filter_text_item import FilterTextItemModel
 from itgs import Itgs
 
 
@@ -95,7 +95,7 @@ async def read_emotions(
             return auth_result.error_response
         filters_to_apply = flattened_filters(
             dict(
-                (k, v.to_result())
+                (k, cast(FilterItemLike, v.to_result()))
                 for k, v in args.filters.__dict__.items()
                 if v is not None
             )
@@ -119,9 +119,11 @@ async def read_emotions(
         return Response(
             content=ReadEmotionResponse(
                 items=items,
-                next_page_sort=[s.to_model() for s in next_page_sort]
-                if next_page_sort is not None
-                else None,
+                next_page_sort=(
+                    [s.to_model() for s in next_page_sort]
+                    if next_page_sort is not None
+                    else None
+                ),
             ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )
@@ -129,7 +131,7 @@ async def read_emotions(
 
 async def raw_read_emotions(
     itgs: Itgs,
-    filters_to_apply: List[Tuple[str, Union[FilterItem, FilterTextItem]]],
+    filters_to_apply: List[Tuple[str, FilterItemLike]],
     sort: List[SortItem],
     limit: int,
 ):

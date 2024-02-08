@@ -1,6 +1,6 @@
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
-from pypika.terms import Term
+from pypika.terms import Term, ExistsCriterion, Not
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -15,12 +15,17 @@ from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItemModel
 from itgs import Itgs
 import content_files.auth as content_files_auth
+import transcripts.auth as transcripts_auth
 from content_files.models import ContentFileRef
+from transcripts.models.transcript_ref import TranscriptRef
 
 
 class JourneyAudioContent(BaseModel):
     uid: str = Field(description="The primary stable external identifier for this row")
     content_file: ContentFileRef = Field(description="The underlying audio file")
+    transcript: Optional[TranscriptRef] = Field(
+        description="The latest transcript for the audio file, if available"
+    )
     content_file_created_at: float = Field(
         description=(
             "When the content file was originally uploaded, in seconds since the unix epoch"
@@ -183,12 +188,16 @@ async def raw_read_journey_audio_content(
     journey_audio_contents = Table("journey_audio_contents")
     content_files = Table("content_files")
     users = Table("users")
+    content_file_transcripts = Table("content_file_transcripts")
+    content_file_transcripts_inner = content_file_transcripts.as_("cft")
+    transcripts = Table("transcripts")
 
     query: QueryBuilder = (
         Query.from_(journey_audio_contents)
         .select(
             journey_audio_contents.uid,
             content_files.uid,
+            transcripts.uid,
             content_files.created_at,
             users.sub,
             journey_audio_contents.last_uploaded_at,
@@ -197,6 +206,43 @@ async def raw_read_journey_audio_content(
         .on(content_files.id == journey_audio_contents.content_file_id)
         .left_outer_join(users)
         .on(users.id == journey_audio_contents.uploaded_by_user_id)
+        .left_outer_join(transcripts)
+        .on(
+            ExistsCriterion(
+                Query.from_(content_file_transcripts)
+                .select(1)
+                .where(content_file_transcripts.content_file_id == content_files.id)
+                .where(content_file_transcripts.transcript_id == transcripts.id)
+                .where(
+                    Not(
+                        ExistsCriterion(
+                            Query.from_(content_file_transcripts_inner)
+                            .select(1)
+                            .where(
+                                content_file_transcripts_inner.content_file_id
+                                == content_files.id
+                            )
+                            .where(
+                                (
+                                    content_file_transcripts_inner.created_at
+                                    > content_file_transcripts.created_at
+                                )
+                                | (
+                                    (
+                                        content_file_transcripts_inner.created_at
+                                        == content_file_transcripts.created_at
+                                    )
+                                    & (
+                                        content_file_transcripts_inner.uid
+                                        < content_file_transcripts.uid
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
     )
     qargs = []
 
@@ -235,9 +281,16 @@ async def raw_read_journey_audio_content(
                 content_file=ContentFileRef(
                     uid=row[1], jwt=await content_files_auth.create_jwt(itgs, row[1])
                 ),
-                content_file_created_at=row[2],
-                uploaded_by_user_sub=row[3],
-                last_uploaded_at=row[4],
+                transcript=(
+                    None
+                    if row[2] is None
+                    else TranscriptRef(
+                        uid=row[2], jwt=await transcripts_auth.create_jwt(itgs, row[2])
+                    )
+                ),
+                content_file_created_at=row[3],
+                uploaded_by_user_sub=row[4],
+                last_uploaded_at=row[5],
             )
         )
     return items

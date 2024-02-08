@@ -42,6 +42,7 @@ the keys that we use in redis
       - `of (number)`: total number of steps
     - `spinner`: indicates a spinner would be appropriate
     - `final`: indicates that the user shouldn't expect more messages
+  - `occurred_at (float)`: when this event occurred in seconds since the epoch
 
   Always has a 30m expiration since the last message was pushed. Maximum 50
   entries; older entries are removed to make space during appends. Appending

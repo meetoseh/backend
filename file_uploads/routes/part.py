@@ -277,12 +277,20 @@ async def upload_part(
             )
 
         response = await cursor.execute(
-            "SELECT success_job_name, success_job_kwargs FROM s3_file_uploads WHERE uid=?",
+            """
+            SELECT 
+                job_progress_uid, 
+                success_job_name, 
+                success_job_kwargs 
+            FROM s3_file_uploads 
+            WHERE uid=?
+            """,
             (uid,),
         )
         assert response.results, f"{response=}, {uid=} should have been found"
-        success_job_name: str = response.results[0][0]
-        success_job_kwargs_str: str = response.results[0][1]
+        job_progress_uid = typing_cast(Optional[str], response.results[0][0])
+        success_job_name = typing_cast(str, response.results[0][1])
+        success_job_kwargs_str = typing_cast(str, response.results[0][2])
 
         success_job_kwargs = json.loads(success_job_kwargs_str)
         assert isinstance(
@@ -290,7 +298,14 @@ async def upload_part(
         ), f"{success_job_name=}, {success_job_kwargs_str=}"
 
         jobs = await itgs.jobs()
-        await jobs.enqueue(success_job_name, **success_job_kwargs)
+
+        if job_progress_uid is not None:
+            await jobs.enqueue_with_progress(
+                success_job_name, job_progress_uid, **success_job_kwargs
+            )
+        else:
+            await jobs.enqueue(success_job_name, **success_job_kwargs)
+
         return Response(
             content=FileUploadPartResponse(done=True).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},

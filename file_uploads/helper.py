@@ -6,11 +6,14 @@ import io
 import json
 import time
 from pydantic import BaseModel, Field
-from typing import List, Union
+from typing import List, Optional, Union
 from file_uploads.auth import create_jwt
+from jobs_progress.auth import create_jwt as create_progress_jwt
 from itgs import Itgs
 from functools import lru_cache
 import secrets
+
+from jobs_progress.models.job_ref import JobRef
 
 
 class FileUploadPartResponse(BaseModel):
@@ -60,6 +63,27 @@ class FileUploadResponse(BaseModel):
     )
 
 
+class FileUploadWithProgressResponse(BaseModel):
+    """Allows the user to upload a file to the server via the upload part
+    endpoint, and also provides progress information once the upload is
+    finished
+    """
+
+    uid: str = Field(description="The UID of the file upload")
+    jwt: str = Field(
+        description="The JWT the client should use to authorize the upload"
+    )
+    parts: List[Union[FileUploadPartResponse, FileUploadPartRangeResponse]] = Field(
+        description="The way the client is expected to split up the file for upload."
+    )
+    progress: JobRef = Field(
+        description=(
+            "The job reference for the job which will track processing progress once "
+            "the file is uploaded"
+        )
+    )
+
+
 async def start_upload(
     itgs: Itgs,
     *,
@@ -70,7 +94,8 @@ async def start_upload(
     failure_job_kwargs: dict,
     s3_file_upload_uid_key_in_kwargs: str = "file_upload_uid",
     expires_in: int = 3600,
-) -> FileUploadResponse:
+    job_progress_uid: Optional[str] = None,
+) -> Union[FileUploadResponse, FileUploadWithProgressResponse]:
     """Prepares the server to receive a file of the given size, in bytes,
     and returns the required information for the client to upload the file.
 
@@ -88,9 +113,13 @@ async def start_upload(
             which should be set to the uid of the s3_file_upload which succeeded/failed.
         expires_in (int): How long, in seconds, the file upload should be valid for. If the upload
             does not complete within this time, the failure job will be run.
+        job_progress_uid (str, None): The UID of the job progress to use to report progress.
+            will be seeded with an initial "uploading" event (type "queued") if provided
 
     Returns:
-        FileUploadResponse: The response to send to the client.
+        FileUploadResponse: The response to send to the client. If `job_progress_uid` is not None,
+            the response will be a `FileUploadWithProgressResponse` instead.
+
     """
     assert file_size > 0, f"{file_size=} must be positive"
 
@@ -129,6 +158,19 @@ async def start_upload(
         )
 
     now = time.time()
+
+    if job_progress_uid is not None:
+        jobs = await itgs.jobs()
+        await jobs.push_progress(
+            job_progress_uid,
+            {
+                "type": "queued",
+                "message": "waiting for the file to be uploaded",
+                "indicator": {"type": "spinner"},
+                "occurred_at": now,
+            },
+        )
+
     await cursor.execute(
         """
         INSERT INTO s3_file_uploads (
@@ -137,10 +179,11 @@ async def start_upload(
             success_job_kwargs,
             failure_job_name,
             failure_job_kwargs,
+            job_progress_uid,
             created_at,
             completed_at,
             expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             s3_file_upload_uid,
@@ -148,6 +191,7 @@ async def start_upload(
             json.dumps(full_success_kwargs, sort_keys=True),
             failure_job_name,
             json.dumps(full_failure_kwargs, sort_keys=True),
+            job_progress_uid,
             now,
             None,
             now + expires_in,
@@ -214,8 +258,17 @@ async def start_upload(
         assert response.rows_affected == 1
 
     jwt = await create_jwt(itgs, s3_file_upload_uid, expires_in)
-    return FileUploadResponse(
+    if job_progress_uid is None:
+        return FileUploadResponse(
+            uid=s3_file_upload_uid,
+            jwt=jwt,
+            parts=parts,
+        )
+
+    progress_jwt = await create_progress_jwt(itgs, job_progress_uid, expires_in + 1800)
+    return FileUploadWithProgressResponse(
         uid=s3_file_upload_uid,
         jwt=jwt,
         parts=parts,
+        progress=JobRef(uid=job_progress_uid, jwt=progress_jwt),
     )

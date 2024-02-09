@@ -12,24 +12,28 @@ considered failed either when explicitly aborted, or when it expires.
 
 ## Fields
 
--   `id (integer primary key)`: Primary database identifier
--   `uid (text unique not null)`: Primary external identifier. The uid prefix is
-    `s3fu`: see [uid_prefixes](../uid_prefixes.md).
--   `success_job_name (text not null)`: The name of the job to run when the upload is
-    complete. This is a job name, not a job id. The job name is a dot separated
-    path to the job function. For example, `runners.example`
--   `success_job_kwargs (text not null)`: The keyword arguments, as json, to pass to
-    the success job.
--   `failure_job_name (text not null)`: The name of the job to run when the upload fails.
-    This is a job name, not a job id. The job name is a dot separated path to the
-    job function. For example, `runners.example`
--   `failure_job_kwargs (text not null)`: The keyword arguments, as json, to pass to
-    the failure job.
--   `created_at (real not null)`: When this record was created in seconds since the unix epoch
--   `completed_at (real null)`: If the success or failure job as already been enqueued for this
-    upload, this is when it was enqueued. Otherwise, null.
--   `expires_at (real not null)`: When this record expires in seconds since the unix epoch;
-    after this time, the record (and any uploaded parts) can be deleted
+- `id (integer primary key)`: Primary database identifier
+- `uid (text unique not null)`: Primary external identifier. The uid prefix is
+  `s3fu`: see [uid_prefixes](../uid_prefixes.md).
+- `success_job_name (text not null)`: The name of the job to run when the upload is
+  complete. This is a job name, not a job id. The job name is a dot separated
+  path to the job function. For example, `runners.example`
+- `success_job_kwargs (text not null)`: The keyword arguments, as json, to pass to
+  the success job.
+- `failure_job_name (text not null)`: The name of the job to run when the upload fails.
+  This is a job name, not a job id. The job name is a dot separated path to the
+  job function. For example, `runners.example`
+- `failure_job_kwargs (text not null)`: The keyword arguments, as json, to pass to
+  the failure job.
+- `job_progress_uid (text null)`: if the success job supports progress information, then
+  the uid assigned to track the job progress (see redis `jobs:progress:events:{uid}`). Used
+  for sending an updated queued event when the success job is queued or a failed
+  event when the failure job is queued.
+- `created_at (real not null)`: When this record was created in seconds since the unix epoch
+- `completed_at (real null)`: If the success or failure job as already been enqueued for this
+  upload, this is when it was enqueued. Otherwise, null.
+- `expires_at (real not null)`: When this record expires in seconds since the unix epoch;
+  after this time, the record (and any uploaded parts) can be deleted
 
 ## Schema
 
@@ -43,7 +47,8 @@ CREATE TABLE s3_file_uploads (
     failure_job_kwargs TEXT NOT NULL,
     created_at REAL NOT NULL,
     completed_at REAL NULL,
-    expires_at REAL NOT NULL
+    expires_at REAL NOT NULL,
+    job_progress_uid TEXT NULL
 );
 
 /* sort */

@@ -5,7 +5,7 @@ import time
 from fastapi import APIRouter, UploadFile, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal, Optional, cast as typing_cast
+from typing import BinaryIO, Literal, Optional, cast as typing_cast
 from file_uploads.auth import auth_any
 from itgs import Itgs
 from models import (
@@ -29,6 +29,16 @@ ERROR_404_TYPE = Literal["upload_aborted_or_completed", "part_does_not_exist"]
 
 ERROR_409_TYPE = Literal["part_already_uploaded", "part_does_not_match"]
 """The error codes for the 409 response"""
+
+
+class BinaryIOAdapter:
+    """Adapts BinaryIO to SyncReadableFile"""
+
+    def __init__(self, file: BinaryIO) -> None:
+        self.file = file
+
+    def read(self, n: int) -> bytes:
+        return self.file.read(n)
 
 
 @router.post(
@@ -170,7 +180,9 @@ async def upload_part(
         )
 
         await redis.zadd("files:purgatory", {purgatory_key: now + 600})
-        await files.upload(file.file, bucket=files.default_bucket, key=key, sync=True)
+        await files.upload(
+            BinaryIOAdapter(file.file), bucket=files.default_bucket, key=key, sync=True
+        )
         s3_file_uid = f"oseh_s3f_{secrets.token_urlsafe(16)}"
         response = await cursor.executemany3(
             (

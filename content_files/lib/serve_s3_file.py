@@ -15,12 +15,19 @@ from concurrently filling the local cache (which is a waste of time and resource
 """
 
 
-class SyncReadable(Protocol):
-    def read(self, n: int) -> bytes:
-        ...
+class SyncReadableA(Protocol):
+    def read(self, n: int) -> bytes: ...
 
-    def close(self) -> None:
-        ...
+    def close(self) -> None: ...
+
+
+class SyncReadableB(Protocol):
+    def read(self, n: int, /) -> bytes: ...
+
+    def close(self) -> None: ...
+
+
+SyncReadable = Union[SyncReadableA, SyncReadableB]
 
 
 def read_in_parts(f: SyncReadable) -> Generator[bytes, None, None]:
@@ -239,9 +246,9 @@ async def serve_s3_file_from_cache(
             return Response(content=cached_data, headers=headers)
 
         if len(cleaned_ranges) == 1:
-            headers[
-                "Content-Range"
-            ] = f"bytes {cleaned_ranges[0].start}-{cleaned_ranges[0].end}/{file.file_size}"
+            headers["Content-Range"] = (
+                f"bytes {cleaned_ranges[0].start}-{cleaned_ranges[0].end}/{file.file_size}"
+            )
             return Response(
                 content=cached_data[
                     cleaned_ranges[0].start : cleaned_ranges[0].end + 1

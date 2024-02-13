@@ -622,12 +622,14 @@ def _make_query(
     query = io.StringIO()
     qargs = []
 
-    # --SEARCH interactive_prompts USING COVERING INDEX sqlite_autoindex_interactive_prompts_1 (uid=?)
-    # --SEARCH interactive_prompt_sessions USING COVERING INDEX interactive_prompt_sessions_ip_id_user_id_idx (interactive_prompt_id=?)
-    # --CORRELATED SCALAR SUBQUERY 2
-    #   |--SEARCH interactive_prompt_events USING INDEX interactive_prompt_events_ips_id_prompt_time_idx (interactive_prompt_session_id=? AND prompt_time<?)
-    # --CORRELATED SCALAR SUBQUERY 3
-    #   |--SEARCH interactive_prompt_events USING INDEX interactive_prompt_events_ips_id_prompt_time_idx (interactive_prompt_session_id=? AND prompt_time<?)
+    # --CO-ROUTINE prompt_users
+    #   |--SEARCH interactive_prompts USING COVERING INDEX sqlite_autoindex_interactive_prompts_1 (uid=?)
+    #   |--SEARCH interactive_prompt_sessions USING COVERING INDEX interactive_prompt_sessions_ip_id_user_id_idx (interactive_prompt_id=?)
+    #   |--CORRELATED SCALAR SUBQUERY 2
+    #      |--SEARCH interactive_prompt_events USING INDEX interactive_prompt_events_ips_id_prompt_time_idx (interactive_prompt_session_id=? AND prompt_time<?)
+    #   |--CORRELATED SCALAR SUBQUERY 3
+    #      |--SEARCH interactive_prompt_events USING INDEX interactive_prompt_events_ips_id_prompt_time_idx (interactive_prompt_session_id=? AND prompt_time<?)
+    # --SCAN prompt_users
     # --SEARCH user_profile_pictures USING INDEX user_profile_pictures_user_id_latest_idx (user_id=? AND latest=?)
     # --SEARCH users USING INTEGER PRIMARY KEY (rowid=?)
     # --SEARCH image_files USING INTEGER PRIMARY KEY (rowid=?)

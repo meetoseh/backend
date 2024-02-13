@@ -216,6 +216,7 @@ async def raw_read_introductory_journeys(
             variation_journeys.uid,
             introductory_journey_users.sub,
             introductory_journeys.created_at,
+            content_files.duration,
         )
         .join(journeys)
         .on(journeys.id == introductory_journeys.journey_id)
@@ -370,6 +371,7 @@ async def raw_read_introductory_journeys(
                     introductory_journey_uid=row[22],
                     special_category=row[23],
                     variation_of_journey_uid=row[24],
+                    duration_seconds=row[27],
                 ),
                 uid=row[22],
                 user_sub=row[25],

@@ -14,6 +14,11 @@ from dataclasses import dataclass
 import secrets
 import time
 
+from redis_helpers.hincrby_if_exists import ensure_hincrby_if_exists_script_exists, hincrby_if_exists
+from redis_helpers.run_with_prep import run_with_prep
+
+
+RatingType = Literal["loved", "liked", "disliked", "hated"]
 
 @dataclass
 class FeedbackVersion:
@@ -32,9 +37,9 @@ class FeedbackVersion:
     allows_freeform: bool
     """Whether or not the user is allowed to provide freeform feedback"""
 
-    slack_messages: List[Optional[str]]
-    """The slack message to post for each response, or None to not post a message for
-    that response.
+    rating_types: List[RatingType]
+    """The type of rating that each response corresponds to, for both slack
+    and updating the journeys overall/unique ratings for the admin area
     """
 
 
@@ -44,21 +49,21 @@ FEEDBACKS_BY_VERSION = {
         version_number=1,
         num_responses=2,
         allows_freeform=False,
-        slack_messages=["liked", "disliked"],
+        rating_types=["liked", "disliked"],
     ),
     "oseh_jf-otp_gwJjdMC4820": FeedbackVersion(
         version="oseh_jf-otp_gwJjdMC4820",
         version_number=2,
         num_responses=2,
         allows_freeform=False,
-        slack_messages=["liked", "disliked"],
+        rating_types=["liked", "disliked"],
     ),
     "oseh_jf-otp_sKjKVHs8wbI": FeedbackVersion(
         version="oseh_jf-otp_sKjKVHs8wbI",
         version_number=3,
         num_responses=4,
         allows_freeform=False,
-        slack_messages=["loved", "liked", "disliked", "hated"],
+        rating_types=["loved", "liked", "disliked", "hated"],
     ),
 }
 
@@ -162,32 +167,52 @@ async def give_feedback(
             )
 
         conn = await itgs.conn()
-        cursor = conn.cursor("weak")
+        cursor = conn.cursor("strong")
 
         feedback_uid = f"oseh_jf_{secrets.token_urlsafe(16)}"
         now = time.time()
-        response = await cursor.execute(
-            """
-            INSERT INTO journey_feedback (
-                uid, user_id, journey_id, version, response, freeform, created_at
-            )
-            SELECT
-                ?, users.id, journeys.id, ?, ?, ?, ?
-            FROM users, journeys
-            WHERE
-                users.sub = ? AND journeys.uid = ?
-            """,
+        response = await cursor.executeunified3(
             (
-                feedback_uid,
-                feedback_version.version_number,
-                args.response,
-                args.feedback,
-                now,
-                std_auth_result.result.sub,
-                journey_auth_result.result.journey_uid,
-            ),
+                (
+                    """
+                    SELECT
+                        EXISTS (
+                            SELECT 1 FROM journey_feedback, users, journeys
+                            WHERE
+                                journey_feedback.user_id = users.id
+                                AND journey_feedback.journey_id = journeys.id
+                                AND users.sub = ?
+                                AND journeys.uid = ?
+                        ) AS b1
+                    """,
+                    (std_auth_result.result.sub, journey_auth_result.result.journey_uid)
+                ),
+                (
+                    """
+                    INSERT INTO journey_feedback (
+                        uid, user_id, journey_id, version, response, freeform, created_at
+                    )
+                    SELECT
+                        ?, users.id, journeys.id, ?, ?, ?, ?
+                    FROM users, journeys
+                    WHERE
+                        users.sub = ? AND journeys.uid = ?
+                    """,
+                    (
+                        feedback_uid,
+                        feedback_version.version_number,
+                        args.response,
+                        args.feedback,
+                        now,
+                        std_auth_result.result.sub,
+                        journey_auth_result.result.journey_uid,
+                    ),
+                )
+            )
         )
-        if response.rows_affected is None or response.rows_affected < 1:
+        assert response[0].results, response
+
+        if response[1].rows_affected is None or response[1].rows_affected < 1:
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="integrity_error", message="The feedback could not be saved"
@@ -199,13 +224,43 @@ async def give_feedback(
                 },
             )
 
-        if feedback_version.slack_messages[args.response - 1] is not None:
-            jobs = await itgs.jobs()
-            await jobs.enqueue(
-                "runners.notify_on_entering_lobby",
-                user_sub=std_auth_result.result.sub,
-                journey_uid=journey_auth_result.result.journey_uid,
-                action=f"providing feedback: {feedback_version.slack_messages[args.response - 1]}",
-            )
+
+        rating_is_unique = not bool(response[0].results[0])
+        rating_type = feedback_version.rating_types[args.response - 1]
+        await _update_cached_ratings(itgs, journey_auth_result.result.journey_uid, rating_type, rating_is_unique)
+
+        jobs = await itgs.jobs()
+        await jobs.enqueue(
+            "runners.notify_on_entering_lobby",
+            user_sub=std_auth_result.result.sub,
+            journey_uid=journey_auth_result.result.journey_uid,
+            action=f"providing feedback: {feedback_version.rating_types[args.response - 1]}",
+        )
 
         return Response(status_code=201)
+
+
+async def _update_cached_ratings(
+    itgs: Itgs,
+    journey_uid: str,
+    rating_type: RatingType,
+    rating_is_unique: bool
+) -> None:
+    keys: List[bytes] = [f"journeys:feedback:total:{journey_uid}".encode("utf-8")]
+    if rating_is_unique:
+        keys.append(f"journeys:feedback:unique:{journey_uid}".encode("utf-8"))
+
+    redis = await itgs.redis()
+    
+    async def _prepare(force: bool):
+        await ensure_hincrby_if_exists_script_exists(redis, force=force)
+    
+    async def _execute():
+        async with redis.pipeline() as pipe:
+            pipe.multi()
+            for key in keys:
+                await hincrby_if_exists(pipe, key, rating_type.encode('utf-8'), 1)
+                await pipe.expire(key, 600, gt=True)
+            await pipe.execute()
+    
+    await run_with_prep(_prepare, _execute)

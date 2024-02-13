@@ -7,6 +7,7 @@ import admin.routes.read_journey_views
 import admin.routes.read_monthly_active_users
 import admin.routes.read_new_users
 import admin.routes.read_retention_stats
+import admin.routes.read_single_journey_feedback
 import admin.routes.read_total_instructors
 import admin.routes.read_total_interactive_prompt_sessions
 import admin.routes.read_total_journeys
@@ -30,6 +31,7 @@ router.include_router(admin.routes.read_journey_views.router)
 router.include_router(admin.routes.read_monthly_active_users.router)
 router.include_router(admin.routes.read_new_users.router)
 router.include_router(admin.routes.read_retention_stats.router)
+router.include_router(admin.routes.read_single_journey_feedback.router)
 router.include_router(admin.routes.read_total_instructors.router)
 router.include_router(admin.routes.read_total_interactive_prompt_sessions.router)
 router.include_router(admin.routes.read_total_journeys.router)

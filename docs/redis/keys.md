@@ -128,6 +128,18 @@ the keys that we use in redis
   cause downstream errors that prevent the cache from being filled in, causing
   more errors, etc.
 
+- `journeys:feedback:total:{uid}` goes to a hash where the keys are
+  `loved`/`liked`/`disliked`/`hated` and the values are numbers representing
+  how many people have rated that journey with that value, with no attempts to
+  remove duplicates. Expiration is set to 60m after it was last used or 10m
+  after it was last updated (whichever is greater). If a rating comes in the
+  corresponding redis entry is incremented if it exists, which means this value
+  is accurate up to race conditions. This is primarily intended for the admin
+  area.
+
+- `journeys:feedback:unique:{uid}` goes to a hash just like `journeys:feedback:total:{uid}`
+  except only the first feedback for a given journey by a given user is counted.
+
 - `interactive_prompts:external:cache_lock:{uid}` goes to the string '1' if the
   interactive prompt with the given uid is currently being filled in by one of
   the instances. This is used [here](../../interactive_prompts//lib/read_one_external.py)

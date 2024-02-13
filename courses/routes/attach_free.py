@@ -308,10 +308,8 @@ async def attach_free(
                 courses.uid,
                 courses.slug,
                 courses.title,
-                courses.title_short,
                 courses.description,
-                background_image_files.uid,
-                circle_image_files.uid
+                background_image_files.uid
             FROM courses
             LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
             LEFT OUTER JOIN image_files AS circle_image_files ON circle_image_files.id = courses.circle_image_file_id
@@ -353,10 +351,8 @@ async def attach_free(
                     uid=response.results[0][0],
                     slug=response.results[0][1],
                     title=response.results[0][2],
-                    title_short=response.results[0][3],
-                    description=response.results[0][4],
-                    background_image_uid=response.results[0][5],
-                    circle_image_uid=response.results[0][6],
+                    description=response.results[0][3],
+                    background_image_uid=response.results[0][4],
                 ),
                 visitor_uid=sanitized_visitor,
             ).model_dump_json(),

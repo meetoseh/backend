@@ -57,10 +57,8 @@ async def read_my_courses(
                 courses.uid,
                 courses.slug,
                 courses.title,
-                courses.title_short,
                 courses.description,
                 background_images.uid,
-                circle_images.uid,
                 courses.revenue_cat_entitlement
             FROM courses
             LEFT OUTER JOIN image_files AS background_images ON background_images.id = courses.background_image_file_id
@@ -97,7 +95,7 @@ async def read_my_courses(
 
         courses: List[ExternalCourse] = []
         for row in response.results or []:
-            entitlement_iden: str = row[7]
+            entitlement_iden: str = row[5]
             entitlement = await users.lib.entitlements.get_entitlement(
                 itgs, user_sub=auth_result.result.sub, identifier=entitlement_iden
             )
@@ -109,15 +107,13 @@ async def read_my_courses(
                     uid=row[0],
                     slug=row[1],
                     title=row[2],
-                    title_short=row[3],
-                    description=row[4],
-                    background_image_uid=row[5],
-                    circle_image_uid=row[6],
+                    description=row[3],
+                    background_image_uid=row[4],
                 )
             )
 
         return Response(
-            content=ReadMyCoursesResponse(courses=courses).model_dump_json(),
+            content=ReadMyCoursesResponse.__pydantic_serializer__.to_json(ReadMyCoursesResponse(courses=courses)),
             status_code=200,
             headers={
                 "Content-Type": "application/json; charset=utf-8",

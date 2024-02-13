@@ -191,10 +191,8 @@ async def activate_course(
                         courses.uid,
                         courses.slug,
                         courses.title,
-                        courses.title_short,
                         courses.description,
-                        background_image_files.uid,
-                        circle_image_files.uid
+                        background_image_files.uid
                     FROM courses
                     LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
                     LEFT OUTER JOIN image_files AS circle_image_files ON circle_image_files.id = courses.circle_image_file_id
@@ -218,10 +216,8 @@ async def activate_course(
                         uid=row[0],
                         slug=row[1],
                         title=row[2],
-                        title_short=row[3],
-                        description=row[4],
-                        background_image_uid=row[5],
-                        circle_image_uid=row[6],
+                        description=row[3],
+                        background_image_uid=row[4],
                     )
                     return Response(
                         content=ActivateCourseResponse(
@@ -291,10 +287,8 @@ async def activate_course(
                         courses.uid,
                         courses.slug,
                         courses.title,
-                        courses.title_short,
                         courses.description,
-                        background_image_files.uid,
-                        circle_image_files.uid
+                        background_image_files.uid
                     FROM courses
                     LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
                     LEFT OUTER JOIN image_files AS circle_image_files ON circle_image_files.id = courses.circle_image_file_id
@@ -312,10 +306,8 @@ async def activate_course(
                             uid=row[0],
                             slug=row[1],
                             title=row[2],
-                            title_short=row[3],
-                            description=row[4],
-                            background_image_uid=row[5],
-                            circle_image_uid=row[6],
+                            description=row[3],
+                            background_image_uid=row[4],
                         )
 
                     link_uid = f"oseh_cdl_{secrets.token_urlsafe(16)}"

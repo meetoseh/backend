@@ -638,7 +638,7 @@ def _make_query(
 
     query.write(
         ", prompt_users(id) AS ("
-        "SELECT interactive_prompt_sessions.user_id "
+        "SELECT DISTINCT interactive_prompt_sessions.user_id "
         "FROM"
         " interactive_prompt_sessions,"
         " prompt "

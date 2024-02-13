@@ -6,6 +6,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_any
+from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItemModel
@@ -257,8 +258,11 @@ async def raw_read_user_course_journeys(
         .left_outer_join(user_likes)
         .on((user_likes.user_id == users.id) & (user_likes.journey_id == journeys.id))
         .where(journeys.deleted_at.isnull())
+        .where(
+            (courses.flags & Parameter('?')) != 0
+        )
     )
-    qargs: List[Any] = [user_sub, user_sub]
+    qargs: List[Any] = [user_sub, user_sub, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)]
 
     def pseudocolumn(key: str) -> Term:
         if key == "journey_uid":

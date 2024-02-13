@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import FrozenSet, Literal, Optional
+from typing import Literal, Optional
 from courses.lib.get_external_course_from_row import get_external_course_from_row
 from error_middleware import handle_contextless_error, handle_error
+from journeys.models.series_flags import SeriesFlags
 from lib.contact_methods.user_current_email import get_user_current_email
 from lib.shared.describe_user import enqueue_send_described_user_slack_message
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
@@ -18,16 +19,6 @@ from visitors.lib.get_or_create_visitor import (
     VisitorSource,
     get_or_create_unsanitized_visitor,
 )
-
-
-FREE_COURSE_SLUGS: FrozenSet[str] = frozenset(
-    ("resilient-spirit-07202023", "elevate-within-080882023")
-)
-"""The course slugs which, if a user requests, we will grant them the
-entitlement for and then attach the course. We should probably move this
-to the database once we have an admin section for courses, with a timerange
-for when the course is free.
-"""
 
 
 class AttachFreeCourseRequest(BaseModel):
@@ -113,32 +104,20 @@ async def attach_free(
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
-
-        if args.course_slug not in FREE_COURSE_SLUGS:
-            return Response(
-                content=StandardErrorResponse[ERROR_404_TYPES](
-                    type="course_not_found",
-                    message=(
-                        "The course you are attempting to attach does not appear to be "
-                        "available for free at this time."
-                    ),
-                ).model_dump_json(),
-                headers={"Content-Type": "application/json; charset=utf-8"},
-                status_code=404,
-            )
-
+        
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
         response = await cursor.execute(
-            "SELECT revenue_cat_entitlement FROM courses WHERE slug=?",
-            (args.course_slug,),
+            "SELECT revenue_cat_entitlement FROM courses WHERE slug=? AND (flags & ?) != 0",
+            (args.course_slug, int(SeriesFlags.SERIES_ATTACHABLE_FOR_FREE)),
         )
         if not response.results:
             return Response(
                 content=StandardErrorResponse[ERROR_404_TYPES](
                     type="course_not_found",
                     message=(
-                        "The course you are attempting to attach does not appear to exist."
+                        "The course you are attempting to attach does not appear to exist "
+                        "or cannot be attached for free."
                     ),
                 ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},

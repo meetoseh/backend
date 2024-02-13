@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from error_middleware import handle_contextless_error
 from journeys.lib.notifs import on_entering_lobby
+from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from journeys.models.external_journey import ExternalJourney
 from journeys.lib.read_one_external import read_one_external
@@ -85,9 +86,16 @@ async def start_journey_from_history(
                         AND users.sub = ?
                         AND journeys.uid = ?
                         AND journeys.deleted_at IS NULL
+                        AND NOT EXISTS (
+                            SELECT 1 FROM course_journeys, courses
+                            WHERE
+                                course_journeys.journey_id = journeys.id
+                                AND course_journeys.course_id = courses.id
+                                AND (courses.flags & ?) = 0
+                        )
                 ) AS b1
             """,
-            (auth_result.result.sub, args.journey_uid),
+            (auth_result.result.sub, args.journey_uid, int(SeriesFlags.JOURNEYS_IN_SERIES_IN_HISTORY)),
         )
         assert response.results
         if not response.results[0][0]:

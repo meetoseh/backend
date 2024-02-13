@@ -7,6 +7,7 @@ from journeys.lib.notifs import on_entering_lobby
 from error_middleware import handle_contextless_error
 from journeys.lib.read_one_external import read_one_external
 from journeys.models.external_journey import ExternalJourney
+from journeys.models.series_flags import SeriesFlags
 from models import (
     StandardErrorResponse,
     STANDARD_ERRORS_BY_CODE,
@@ -92,8 +93,17 @@ async def start_journey(
         cursor = conn.cursor("none")
 
         response = await cursor.execute(
-            "SELECT courses.title, courses.slug, courses.revenue_cat_entitlement FROM courses WHERE uid=?",
-            (args.course_uid,),
+            """
+            SELECT 
+                courses.title, 
+                courses.slug, 
+                courses.revenue_cat_entitlement 
+            FROM courses 
+            WHERE 
+                courses.uid = ?
+                AND (courses.flags & ?) != 0
+            """,
+            (args.course_uid, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)),
         )
         if not response.results:
             return JOURNEY_NOT_FOUND_RESPONSE

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from itgs import Itgs
 from auth import auth_any
+from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 import users.lib.entitlements
 
@@ -134,8 +135,9 @@ async def advance_course(
                 AND course_journeys.course_id = courses.id
                 AND course_journeys.journey_id = journeys.id
                 AND journeys.uid = ?
+                AND (courses.flags & ?) != 0
             """,
-            (args.course_uid, auth_result.result.sub, args.journey_uid),
+            (args.course_uid, auth_result.result.sub, args.journey_uid, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)),
         )
         if not response.results:
             return NOT_FOUND_RESPONSE
@@ -188,8 +190,9 @@ async def advance_course(
                             OR cj2.priority > course_users.last_priority
                         )
                 )
+                AND (courses.flags & ?) != 0
             """,
-            (time.time(), args.course_uid, auth_result.result.sub, args.journey_uid),
+            (time.time(), args.course_uid, auth_result.result.sub, args.journey_uid, SeriesFlags.SERIES_VISIBLE_IN_OWNED),
         )
         if response.rows_affected is None or response.rows_affected < 1:
             return JOURNEY_IS_NOT_NEXT_RESPONSE

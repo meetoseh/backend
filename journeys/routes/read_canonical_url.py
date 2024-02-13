@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, cast
+from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 import os
@@ -71,11 +72,14 @@ async def read_journey_canonical_url(uid: str):
                 AND journeys.deleted_at IS NULL
                 AND journeys.special_category IS NULL
                 AND NOT EXISTS (
-                    SELECT 1 FROM course_journeys
-                    WHERE course_journeys.journey_id = journeys.id
+                    SELECT 1 FROM course_journeys, courses
+                    WHERE 
+                        course_journeys.journey_id = journeys.id
+                        AND courses.id = course_journeys.course_id
+                        AND (courses.flags & ?) = 0
                 )
             """,
-            (uid,),
+            (uid, int(SeriesFlags.JOURNEYS_IN_SERIES_PUBLIC_SHAREABLE)),
         )
 
         if not response.results:

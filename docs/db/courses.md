@@ -14,6 +14,28 @@ course videos and a basic index file to play them.
 - `slug (text unique not null)`: Internal programmatic identifier for the course;
   this identifier is reused across environments but should usually be exchanged for
   a uid. This allows the frontend to switch apply custom behavior for different series.
+- `flags (integer not null)`: twos-complement 64bit bit field describing access controls
+  for this course. Bits are specified from least significant to most significant:
+  1. false to prevent the journeys in the series from getting a public share page,
+     i.e., `/shared/{slug}`. true for no effect
+  2. false to prevent the journeys in the series from being shared via share links,
+     true for no effect (`/s/{code}`)
+  3. false to prevent the series itself from getting a public share page, true for
+     no effect (`/shared/series/{slug}`)
+  4. false to prevent the series itself from being shared via share links (`/c/{code}`)
+  5. false to prevent the series from being shown in the Owned tab, true for no effect
+  6. false to prevent the journeys in the series from being shown in the History tab,
+     true for no effect
+  7. false to prevent the series from being shown in the series listing tab, true for
+     no effect
+  8. false to prevent the journeys in the series from being selected as a 1-minute class
+     for an emotion, true for no effect
+  9. false to prevent the journeys in the series from being selected as a premium class
+     for an emotion, true for no effect
+  10. false to prevent the series from being attached without an entitlement (`/attach_free`),
+      true for no effect
+  11. false to prevent the series from being shown by default in admin series listing,
+      true for no effect
 - `revenue_cat_entitlement (text not null)`: The name of the revenue cat entitlement
   that provides access to this course. It's not necessarily true that a user with this
   entitlement wants to go through the course, though if they just bought it usually
@@ -43,6 +65,7 @@ CREATE TABLE courses(
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
     slug TEXT UNIQUE NOT NULL,
+    flags INTEGER NOT NULL,
     revenue_cat_entitlement TEXT NOT NULL,
     title TEXT NOT NULL,
     title_short TEXT NOT NULL,

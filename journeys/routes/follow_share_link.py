@@ -14,6 +14,7 @@ from journeys.lib.link_stats import (
 )
 from journeys.lib.read_one_external import read_one_external
 from journeys.models.external_journey import ExternalJourney
+from journeys.models.series_flags import SeriesFlags
 from models import StandardErrorResponse
 from itgs import Itgs
 import auth
@@ -148,12 +149,15 @@ async def follow_journey_share_link(
                 AND journeys.deleted_at IS NULL
                 AND journeys.special_category IS NULL
                 AND NOT EXISTS (
-                    SELECT 1 FROM course_journeys
-                    WHERE course_journeys.journey_id = journeys.id
+                    SELECT 1 FROM course_journeys, courses
+                    WHERE 
+                        course_journeys.journey_id = journeys.id
+                        AND course_journeys.course_id = courses.id
+                        AND (courses.flags & ?) = 0
                 )
                 AND journey_subcategories.id = journeys.journey_subcategory_id
             """,
-            (args.code,),
+            (args.code, SeriesFlags.JOURNEYS_IN_SERIES_CODE_SHAREABLE),
         )
 
         if not response.results:

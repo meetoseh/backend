@@ -11,6 +11,7 @@ from journeys.lib.notifs import on_entering_lobby
 from error_middleware import handle_contextless_error
 from journeys.lib.read_one_external import read_one_external
 from journeys.models.external_journey import ExternalJourney
+from journeys.models.series_flags import SeriesFlags
 from models import (
     StandardErrorResponse,
     STANDARD_ERRORS_BY_CODE,
@@ -124,10 +125,11 @@ async def start_next_journey_in_course(
                     course_users.last_priority IS NULL
                     OR course_users.last_priority < course_journeys.priority
                 )
+                AND (courses.flags & ?) != 0
             ORDER BY course_journeys.priority ASC
             LIMIT 1
             """,
-            (args.course_uid, auth_result.result.sub),
+            (args.course_uid, auth_result.result.sub, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)),
         )
         if not response.results:
             return NOT_FOUND_RESPONSE

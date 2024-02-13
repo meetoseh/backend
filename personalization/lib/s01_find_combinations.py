@@ -10,6 +10,8 @@ import json
 import socket
 import hashlib
 
+from journeys.models.series_flags import SeriesFlags
+
 
 _hasher = hashlib.new("md5", usedforsecurity=False)
 _hasher.update(socket.gethostname().encode("utf-8"))
@@ -247,8 +249,11 @@ async def get_instructor_category_and_biases_from_db(
                     AND journeys.deleted_at IS NULL
                     AND journeys.special_category IS NULL
                     AND NOT EXISTS (
-                        SELECT 1 FROM course_journeys
-                        WHERE course_journeys.journey_id = journeys.id
+                        SELECT 1 FROM course_journeys, courses
+                        WHERE 
+                            course_journeys.journey_id = journeys.id
+                            AND courses.id = course_journeys.course_id
+                            AND (courses.flags & ?) = 0
                     )
                     AND EXISTS (
                         SELECT 1 FROM journey_emotions, emotions
@@ -259,7 +264,7 @@ async def get_instructor_category_and_biases_from_db(
                     )
             )
         """,
-        (emotion,),
+        (int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE), emotion),
     )
 
     result: List[InstructorCategoryAndBias] = []

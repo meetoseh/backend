@@ -7,6 +7,7 @@ from courses.models.course_ref import CourseRef
 from courses.auth import create_jwt as create_course_jwt
 from auth import auth_any
 from itgs import Itgs
+from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE, AUTHORIZATION_UNKNOWN_TOKEN
 import users.lib.entitlements
 import socket
@@ -47,8 +48,8 @@ async def start_course_download(
         cursor = conn.cursor("none")
 
         response = await cursor.execute(
-            "SELECT title, slug, revenue_cat_entitlement FROM courses WHERE uid = ?",
-            (args.course_uid,),
+            "SELECT title, slug, revenue_cat_entitlement FROM courses WHERE uid = ? AND (flags & ?) != 0",
+            (args.course_uid, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)),
         )
         if not response.results:
             return AUTHORIZATION_UNKNOWN_TOKEN

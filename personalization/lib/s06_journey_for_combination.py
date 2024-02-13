@@ -2,6 +2,8 @@ from itgs import Itgs
 from dataclasses import dataclass
 from typing import Optional, List, Protocol, Sequence, cast as typing_cast
 
+from journeys.models.series_flags import SeriesFlags
+
 
 @dataclass
 class JourneyForCombinationDebugInfo:
@@ -92,8 +94,11 @@ async def get_journeys_for_combination(
                 AND journeys.deleted_at is NULL
                 AND journeys.special_category IS NULL
                 AND NOT EXISTS (
-                    SELECT 1 FROM course_journeys
-                    WHERE course_journeys.journey_id = journeys.id
+                    SELECT 1 FROM course_journeys, courses
+                    WHERE 
+                        course_journeys.journey_id = journeys.id
+                        AND course_journeys.course_id = courses.id
+                        AND (courses.flags & ?) = 0
                 )
                 AND users.sub = ?
                 AND NOT EXISTS (
@@ -157,8 +162,11 @@ async def get_journeys_for_combination(
                     ))
                 )
                 AND NOT EXISTS (
-                    SELECT 1 FROM course_journeys
-                    WHERE course_journeys.journey_id = journeys.id
+                    SELECT 1 FROM course_journeys, courses
+                    WHERE 
+                        course_journeys.journey_id = journeys.id
+                        AND course_journeys.course_id = courses.id
+                        AND (courses.flags & ?) = 0
                 )
             GROUP BY journeys.id
         )
@@ -174,11 +182,13 @@ async def get_journeys_for_combination(
             instructor_uid,
             category_uid,
             emotion,
+            int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE),
             user_sub,
             instructor_uid,
             category_uid,
             user_sub,
             emotion,
+            int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE),
             limit,
         ),
     )

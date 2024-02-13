@@ -1,5 +1,6 @@
 from typing import Sequence, List, Protocol
 from itgs import Itgs
+from journeys.models.series_flags import SeriesFlags
 
 
 class InstructorAndCategory(Protocol):
@@ -61,9 +62,11 @@ async def map_to_lowest_view_counts(
                     journeys.deleted_at IS NULL
                     AND journeys.special_category IS NULL
                     AND NOT EXISTS (
-                        SELECT 1 FROM course_journeys
+                        SELECT 1 FROM course_journeys, courses
                         WHERE
                             course_journeys.journey_id = journeys.id
+                            AND course_journeys.course_id = courses.id
+                            AND (courses.flags & ?) = 0
                     )
                     AND EXISTS (
                         SELECT 1 FROM journey_emotions, emotions
@@ -105,9 +108,11 @@ async def map_to_lowest_view_counts(
                     journeys.deleted_at IS NULL
                     AND journeys.special_category IS NULL
                     AND NOT EXISTS (
-                        SELECT 1 FROM course_journeys
+                        SELECT 1 FROM course_journeys, courses
                         WHERE
                             course_journeys.journey_id = journeys.id
+                            AND course_journeys.course_id = courses.id
+                            AND (courses.flags & ?) = 0
                     )
                     AND EXISTS (
                         SELECT 1 FROM journey_emotions, emotions
@@ -150,8 +155,10 @@ async def map_to_lowest_view_counts(
             """,
             (
                 *batch_values,
+                int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE),
                 emotion,
                 user_sub,
+                int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE),
                 emotion,
                 user_sub,
             ),

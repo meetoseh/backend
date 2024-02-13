@@ -1,11 +1,12 @@
-from pypika import Table, Query, Parameter
+from pypika import Table, Query, Parameter, Not
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, Function
+from pypika.terms import Term, Function, ExistsCriterion
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_any
+from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItemModel
@@ -157,6 +158,8 @@ async def raw_read_user_history(
     instructors = Table("instructors")
     instructor_pictures = image_files.as_("instructor_pictures")
     user_likes = Table("user_likes")
+    courses = Table("courses")
+    course_journeys = Table("course_journeys")
 
     query: QueryBuilder = (
         Query.with_(
@@ -191,8 +194,20 @@ async def raw_read_user_history(
         .left_outer_join(user_likes)
         .on((user_likes.user_id == users.id) & (user_likes.journey_id == journeys.id))
         .where(journeys.deleted_at.isnull())
+        .where(
+            Not(
+                ExistsCriterion(
+                    Query.from_(course_journeys)
+                    .select(1)
+                    .join(courses)
+                    .on(courses.id == course_journeys.course_id)
+                    .where(course_journeys.journey_id == journeys.id)
+                    .where((courses.flags & Parameter("?")) == 0)
+                )
+            )
+        )
     )
-    qargs: list = [user_sub, user_sub]
+    qargs: list = [user_sub, user_sub, int(SeriesFlags.JOURNEYS_IN_SERIES_IN_HISTORY)]
 
     def pseudocolumn(key: str) -> Term:
         if key in ("uid", "title"):

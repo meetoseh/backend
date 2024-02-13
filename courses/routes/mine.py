@@ -6,6 +6,7 @@ from courses.models.external_course import ExternalCourse
 from courses.lib.get_external_course_from_row import get_external_course_from_row
 from itgs import Itgs
 from auth import auth_any
+from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE
 import users.lib.entitlements
 
@@ -89,8 +90,9 @@ async def read_my_courses(
                             OR course_users.last_journey_at < ?
                         )
                 )
+                AND (courses.flags & ?) != 0
             """,
-            (auth_result.result.sub, args.last_taken_at_after),
+            (auth_result.result.sub, args.last_taken_at_after, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)),
         )
 
         courses: List[ExternalCourse] = []

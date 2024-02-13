@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from typing import Annotated, Literal, Optional
 from auth import auth_any
 from itgs import Itgs
+from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 
 
@@ -67,8 +68,11 @@ async def check_if_shareable(
                 (
                     journeys.special_category IS NULL
                     AND NOT EXISTS (
-                        SELECT 1 FROM course_journeys 
-                        WHERE course_journeys.journey_id = journeys.id
+                        SELECT 1 FROM course_journeys, courses
+                        WHERE 
+                            course_journeys.journey_id = journeys.id
+                            AND course_journeys.course_id = courses.id
+                            AND (courses.flags & ?) = 0
                     )
                 ) AS b1
             FROM journeys
@@ -76,7 +80,7 @@ async def check_if_shareable(
                 journeys.uid = ?
                 AND journeys.deleted_at IS NULL
             """,
-            (args.uid,),
+            (int(SeriesFlags.JOURNEYS_IN_SERIES_CODE_SHAREABLE), args.uid,),
         )
 
         if not response.results:

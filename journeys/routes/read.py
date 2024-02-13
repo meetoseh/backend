@@ -51,6 +51,7 @@ class Journey(BaseModel):
     )
     title: str = Field(description="The display title")
     description: str = Field(description="The display description")
+    duration_seconds: float = Field(description="The duration of the journey in seconds")
     prompt: Prompt = Field(
         description="The prompt style, text, and options to display to the user"
     )
@@ -273,6 +274,7 @@ async def raw_read_journeys(
             instructors.bias,
             journeys.title,
             journeys.description,
+            content_files.duration_seconds,
             interactive_prompts.prompt,
             journeys.created_at,
             journeys.deleted_at,
@@ -403,24 +405,17 @@ async def raw_read_journeys(
                 ),
                 title=row[13],
                 description=row[14],
-                prompt=json.loads(row[15]),
-                created_at=row[16],
-                deleted_at=row[17],
+                duration_seconds=row[15],
+                prompt=json.loads(row[16]),
+                created_at=row[17],
+                deleted_at=row[18],
                 blurred_background_image=ImageFileRef(
-                    uid=row[18], jwt=await image_files_auth.create_jwt(itgs, row[18])
-                ),
-                darkened_background_image=ImageFileRef(
                     uid=row[19], jwt=await image_files_auth.create_jwt(itgs, row[19])
                 ),
-                sample=(
-                    ContentFileRef(
-                        uid=row[20],
-                        jwt=await content_files_auth.create_jwt(itgs, row[20]),
-                    )
-                    if row[20] is not None
-                    else None
+                darkened_background_image=ImageFileRef(
+                    uid=row[20], jwt=await image_files_auth.create_jwt(itgs, row[20])
                 ),
-                video=(
+                sample=(
                     ContentFileRef(
                         uid=row[21],
                         jwt=await content_files_auth.create_jwt(itgs, row[21]),
@@ -428,9 +423,17 @@ async def raw_read_journeys(
                     if row[21] is not None
                     else None
                 ),
-                introductory_journey_uid=row[22],
-                special_category=row[23],
-                variation_of_journey_uid=row[24],
+                video=(
+                    ContentFileRef(
+                        uid=row[22],
+                        jwt=await content_files_auth.create_jwt(itgs, row[22]),
+                    )
+                    if row[22] is not None
+                    else None
+                ),
+                introductory_journey_uid=row[23],
+                special_category=row[24],
+                variation_of_journey_uid=row[25],
             )
         )
     return items

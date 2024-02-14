@@ -129,3 +129,8 @@ something (in this case, identify a row)
 - `jsl` - [journey_share_links](db/journey_share_links.md)
 - `jslv` - [journey_share_link_views](db/journey_share_link_views.md)
 - `jp` - job progress, used for the `jobs:progress:events:{uid}` uid
+- `cv` - [course_videos](db/course_videos.md)
+- `cvt` - [course_video_thumbnail_images](db/course_video_thumbnail_images.md)
+- `cbi` - [course_background_images](db/course_background_images.md)
+- `cli` - [course_logo_images](db/course_logo_images.md)
+- `chi` - [course_hero_images](db/course_hero_images.md)

@@ -50,9 +50,31 @@ course videos and a basic index file to play them.
 - `instructor_id (integer not null references instructors(id) on delete restrict)`: The
   instructor who is the face of the course. This is the person who is shown in the
   course listing and on the course page.
-- `background_image_file_id (integer null references image_files(id) on delete set null)`:
-  The full-bleed background image for the course. If null, the frontend falls back to a
-  generic background image.
+- `background_original_image_file_id (integer null references image_files(id) on delete set null)`:
+  The full-bleed background image for the course. Typically this image file will
+  correspond to the `original_image_file_id` on a `course_background_images` row,
+  though this is not required.
+- `background_darkened_image_file_id (integer null references image_files(id) on delete set null)`:
+  The darkened version of the background image for the course. Typically this image
+  file will correspond to the `darkened_image_file_id` on a `course_background_images`
+  row, though this is not required.
+- `video_content_file_id (integer null references content_files(id) on delete set null)`:
+  The introduction video for this course, which explains what its about in around 1 minute.
+  Typically this will correspond to the `content_file_id` on a `course_videos` row,
+  though this is not required.
+- `video_thumbnail_image_file_id (integer null references image_files(id) on delete set null)`:
+  The thumbnail image for the introduction video for this course. Typically this will
+  correspond to the `image_file_id` on a `course_video_thumbnail_images` row, though
+  this is not required.
+- `logo_image_file_id (integer null references image_files(id) on delete set null)`:
+  The logo image which can be overlayed on the darkened background image. Typically
+  this will contain an SVG export, and this will represent the name of the course.
+  This will usually correspond to the `image_file_id` on a `course_logo_images` row,
+  though this is not required.
+- `hero_image_file_id (integer null references image_files(id) on delete set null)`:
+  The hero image for the course. This is the image that is shown on the course
+  share page. Typically this will correspond to the `image_file_id` on a `course_hero_images`
+  row, though this is not required.
 - `created_at (real not null)`: When this course record was first created
 
 ## Schema
@@ -66,8 +88,13 @@ CREATE TABLE courses(
     revenue_cat_entitlement TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT NOT NULL,
-    instructor_id INTEGER NOT NULL REFERENCES instructors(id) ON DELETE RESTRICT,
-    background_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL,
+    instructor_id INTEGER NOT NULL REFERENCES instructors(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
+    background_original_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
+    background_darkened_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
+    video_content_file_id INTEGER NULL REFERENCES content_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
+    video_thumbnail_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
+    logo_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
+    hero_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
     created_at REAL NOT NULL
 );
 
@@ -75,5 +102,23 @@ CREATE TABLE courses(
 CREATE INDEX courses_instructor_id_idx ON courses(instructor_id);
 
 /* Foreign key */
-CREATE INDEX courses_background_image_file_id_idx ON courses(background_image_file_id);
+CREATE INDEX courses_background_original_image_file_id_idx ON courses(background_original_image_file_id);
+
+/* Foreign key */
+CREATE INDEX courses_background_darkened_image_file_id_idx ON courses(background_darkened_image_file_id);
+
+/* Foreign key */
+CREATE INDEX courses_video_content_file_id_idx ON courses(video_content_file_id);
+
+/* Foreign key */
+CREATE INDEX courses_video_thumbnail_image_file_id_idx ON courses(video_thumbnail_image_file_id);
+
+/* Foreign key */
+CREATE INDEX courses_logo_image_file_id_idx ON courses(logo_image_file_id);
+
+/* Foreign key */
+CREATE INDEX courses_hero_image_file_id_idx ON courses(hero_image_file_id);
+
+/* Series listing sort */
+CREATE INDEX courses_created_at_series_listing_idx ON courses(created_at) WHERE (flags & 64) != 0;
 ```

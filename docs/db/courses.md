@@ -47,6 +47,9 @@ course videos and a basic index file to play them.
   Ex: "Mindfulness expert Dylan Werner teaches you how to incorporate meditation
   into your everyday life to improve your health and happiness with his one-minute a day,
   habit building course."
+- `instructor_id (integer not null references instructors(id) on delete restrict)`: The
+  instructor who is the face of the course. This is the person who is shown in the
+  course listing and on the course page.
 - `background_image_file_id (integer null references image_files(id) on delete set null)`:
   The full-bleed background image for the course. If null, the frontend falls back to a
   generic background image.
@@ -63,10 +66,14 @@ CREATE TABLE courses(
     revenue_cat_entitlement TEXT NOT NULL,
     title TEXT NOT NULL,
     description TEXT NOT NULL,
+    instructor_id INTEGER NOT NULL REFERENCES instructors(id) ON DELETE RESTRICT,
     background_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL,
     created_at REAL NOT NULL
 );
 
-/* Foriegn key */
+/* Foreign key */
+CREATE INDEX courses_instructor_id_idx ON courses(instructor_id);
+
+/* Foreign key */
 CREATE INDEX courses_background_image_file_id_idx ON courses(background_image_file_id);
 ```

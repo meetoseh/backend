@@ -195,7 +195,6 @@ async def activate_course(
                         background_image_files.uid
                     FROM courses
                     LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
-                    LEFT OUTER JOIN image_files AS circle_image_files ON circle_image_files.id = courses.circle_image_file_id
                     WHERE
                         EXISTS (
                             SELECT 1 FROM course_download_links
@@ -291,7 +290,6 @@ async def activate_course(
                         background_image_files.uid
                     FROM courses
                     LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
-                    LEFT OUTER JOIN image_files AS circle_image_files ON circle_image_files.id = courses.circle_image_file_id
                     WHERE
                         courses.revenue_cat_entitlement IN ({question_mark_list(len(active_entitlement_idens))})
                     ORDER BY courses.revenue_cat_entitlement ASC

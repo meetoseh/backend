@@ -53,9 +53,6 @@ course videos and a basic index file to play them.
 - `background_image_file_id (integer null references image_files(id) on delete set null)`:
   The full-bleed background image for the course. If null, the frontend falls back to a
   generic background image.
-- `circle_image_file_id (integer null references image_files(id) on delete set null)`: The
-  image file to use cropped to a circle for this course. If null, the frontend omits this
-  image.
 - `created_at (real not null)`: When this course record was first created
 
 ## Schema
@@ -71,13 +68,9 @@ CREATE TABLE courses(
     title_short TEXT NOT NULL,
     description TEXT NOT NULL,
     background_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL,
-    circle_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL,
     created_at REAL NOT NULL
 );
 
 /* Foriegn key */
 CREATE INDEX courses_background_image_file_id_idx ON courses(background_image_file_id);
-
-/* Foreign key */
-CREATE INDEX courses_circle_image_file_id_idx ON courses(circle_image_file_id);
 ```

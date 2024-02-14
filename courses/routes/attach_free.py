@@ -104,7 +104,7 @@ async def attach_free(
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
             )
-        
+
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
         response = await cursor.execute(
@@ -312,7 +312,6 @@ async def attach_free(
                 background_image_files.uid
             FROM courses
             LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
-            LEFT OUTER JOIN image_files AS circle_image_files ON circle_image_files.id = courses.circle_image_file_id
             WHERE courses.slug = ?
             """,
             (args.course_slug,),

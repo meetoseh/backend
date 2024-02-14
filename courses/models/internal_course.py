@@ -19,7 +19,4 @@ class InternalCourse(BaseModel):
     background_image: Optional[ImageFileRef] = Field(
         description="The background image for the course, or None if using the default"
     )
-    circle_image: Optional[ImageFileRef] = Field(
-        description="The square image intended to be cropped to a circle for the course, or None if using the default"
-    )
     created_at: float = Field(description="When the course was created")

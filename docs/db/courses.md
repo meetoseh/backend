@@ -42,9 +42,6 @@ course videos and a basic index file to play them.
   makes sense to subscribe them to the course.
 - `title (text not null)`: The title of the course, typically under 100 characters.
   Ex: "30-day Mindfulness Course with Dylan Werner".
-- `title_short (text not null)`: The shortened title of the course used within sentences,
-  under 100 characters, ex: "mindfulness course with Dylan Werner". Should work when
-  substituted into the sentence "Ready to start your {title_short}?"
 - `description (text not null)`: The description for the course, typically under 250
   characters.
   Ex: "Mindfulness expert Dylan Werner teaches you how to incorporate meditation
@@ -65,7 +62,6 @@ CREATE TABLE courses(
     flags INTEGER NOT NULL,
     revenue_cat_entitlement TEXT NOT NULL,
     title TEXT NOT NULL,
-    title_short TEXT NOT NULL,
     description TEXT NOT NULL,
     background_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL,
     created_at REAL NOT NULL

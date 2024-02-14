@@ -12,9 +12,6 @@ class InternalCourse(BaseModel):
         description="The name of the entitlement on revenuecat required for this course"
     )
     title: str = Field(description="The title of the course, used standalone")
-    title_short: str = Field(
-        description="A short title for the course, used mid-sentence"
-    )
     description: str = Field(description="A 250 character description for the course")
     background_image: Optional[ImageFileRef] = Field(
         description="The background image for the course, or None if using the default"

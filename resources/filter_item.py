@@ -1,6 +1,6 @@
 from typing import Generic, TypeVar, get_args, Union, List
 from .standard_operator import StandardOperator
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, validator
 from pypika import Parameter
 from pypika.terms import Term, ValueWrapper
 from datetime import date
@@ -164,7 +164,65 @@ class FilterItem(Generic[ValueT]):
         return get_args(orig_class)[0]
 
 
-class FilterItemModel(BaseModel, Generic[ValueT]):
+def _create_example_for_type(t: type) -> Union[None, int, float, str, bool, list, dict]:
+    if t == int:
+        return 0
+    if t == float:
+        return 0.0
+    if t == str:
+        return "string"
+    if t == bool:
+        return True
+    if t == list:
+        return []
+    if t == dict:
+        return {}
+    return None
+
+
+class _FilterItemModelMeta(type(BaseModel)):
+    """We use a custom metaclass for FilterItemModel to keep track of the type,
+    since it would otherwise be impossible (afaik) in python 3.9
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._cached_subtypes = dict()
+
+    def __getitem__(self, t: type):
+        res = self._cached_subtypes.get(t)
+        if res is not None:
+            return res
+
+        class _CustomFilterItemModel(FilterItemModel):
+            value: Union[t, List[t], None] = Field(
+                title="Value",
+                description=(
+                    "The value to compare the pseudocolumn to. Must be a list of two items for "
+                    "between-like operators, otherwise must be a single item"
+                ),
+            )
+
+            def __valuet__(self) -> type:
+                return t
+
+            __repr_name__ = lambda *args, **kwargs: f"FilterItemModel[{t.__name__}]"
+
+            model_config = ConfigDict(
+                json_schema_extra={
+                    "example": {
+                        "operator": StandardOperator.EQUAL.value,
+                        "value": _create_example_for_type(t),
+                    }
+                }
+            )
+
+        res = _CustomFilterItemModel
+        self._cached_subtypes[t] = res
+        return res
+
+
+class FilterItemModel(BaseModel, Generic[ValueT], metaclass=_FilterItemModelMeta):
     operator: StandardOperator = Field(
         title="Operator",
         description=(
@@ -180,8 +238,6 @@ class FilterItemModel(BaseModel, Generic[ValueT]):
             "between-like operators, otherwise must be a single item"
         ),
     )
-
-    hidden: ValueT = Field(None, description="Ignore this field", exclude=True)
 
     @validator("value")
     def validate_value(cls, value, values):
@@ -202,12 +258,6 @@ class FilterItemModel(BaseModel, Generic[ValueT]):
                 )
         return value
 
-    @validator("hidden")
-    def validate_hidden(cls, value):
-        if value is not None:
-            raise ValueError("hidden field must be None")
-        return None
-
     def to_result(self) -> FilterItem[ValueT]:
         """Returns the standard internal representation"""
         return FilterItem[self.__valuet__()](
@@ -216,10 +266,4 @@ class FilterItemModel(BaseModel, Generic[ValueT]):
 
     def __valuet__(self) -> type:
         """The value type for this class"""
-        # Note it's not possible to get the generic from our class directly,
-        # or from nested types, but we can get it from the hidden field. Not
-        # reall sure why.
-        hidden_field = self.model_fields["hidden"]
-        hidden_field_annotation = hidden_field.annotation
-        assert hidden_field_annotation is not None
-        return hidden_field_annotation
+        raise NotImplementedError()

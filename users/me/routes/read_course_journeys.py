@@ -5,10 +5,15 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from auth import auth_any
+from auth import auth_admin, auth_any
 from journeys.models.series_flags import SeriesFlags
 from models import STANDARD_ERRORS_BY_CODE
+from resources.bit_field_mutator import BitFieldMutator
 from resources.filter import sort_criterion, flattened_filters
+from resources.filter_bit_field_item import (
+    BitFieldMutationModel,
+    FilterBitFieldItemModel,
+)
 from resources.filter_item import FilterItemModel
 from resources.filter_item_like import FilterItemLike
 from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
@@ -19,6 +24,7 @@ from image_files.models import ImageFileRef
 import image_files.auth as image_files_auth
 from journeys.models.minimal_journey import MinimalJourney, MinimalJourneyInstructor
 from journeys.models.minimal_course_journey import MinimalCourse, MinimalCourseJourney
+from resources.standard_operator import StandardOperator
 
 
 USER_COURSE_JOURNEY_SORT_OPTIONS = [
@@ -55,6 +61,10 @@ class UserCourseJourneyFilter(BaseModel):
     )
     course_uid: Optional[FilterItemModel[str]] = Field(
         None, description="the uid of the course"
+    )
+    course_flags: Optional[FilterBitFieldItemModel] = Field(
+        None,
+        description="the access flags for the course. this filter can only be set by admins",
     )
     association_uid: Optional[FilterItemModel[str]] = Field(
         None,
@@ -114,6 +124,23 @@ async def read_user_course_journeys(
         auth_result = await auth_any(itgs, authorization)
         if auth_result.result is None:
             return auth_result.error_response
+
+        if args.filters.course_flags is not None:
+            auth_admin_result = await auth_admin(itgs, authorization)
+            if auth_admin_result.result is None:
+                return auth_admin_result.error_response
+
+        if args.filters.course_flags is None:
+            args.filters.course_flags = FilterBitFieldItemModel(
+                mutation=BitFieldMutationModel(
+                    operator=BitFieldMutator.AND,
+                    value=SeriesFlags.SERIES_VISIBLE_IN_OWNED,
+                ),
+                comparison=FilterItemModel[int](
+                    operator=StandardOperator.NOT_EQUAL, value=0
+                ),
+            )
+
         filters_to_apply = flattened_filters(
             dict(
                 (k, cast(FilterItemLike, v.to_result()))
@@ -176,8 +203,9 @@ async def raw_read_user_course_journeys(
     users = Table("users")
     journeys = Table("journeys")
     image_files = Table("image_files")
-    instructors = Table("instructors")
-    instructor_pictures = image_files.as_("instructor_pictures")
+    _instructors = Table("instructors")
+    journey_instructors = _instructors.as_("journey_instructors")
+    journey_instructor_pictures = image_files.as_("instructor_pictures")
     user_likes = Table("user_likes")
 
     course_journeys_inner = course_journeys.as_("cji")
@@ -202,16 +230,18 @@ async def raw_read_user_course_journeys(
             courses.title,
             journeys.uid,
             journeys.title,
-            instructors.name,
-            instructor_pictures.uid,
+            journey_instructors.name,
+            journey_instructor_pictures.uid,
             last_taken_at.last_taken_at,
             user_likes.created_at,
             course_journeys.priority,
             course_users.created_at,
             # is_next
             (
+                # they are added to the journey
+                course_users.id.isnotnull()
                 # It's after the course_user's last_priority
-                (
+                & (
                     course_users.last_priority.isnull()
                     | (course_journeys.priority > course_users.last_priority)
                 )
@@ -247,22 +277,19 @@ async def raw_read_user_course_journeys(
         .on(journeys.id == course_journeys.journey_id)
         .join(users)
         .on(users.sub == Parameter("?"))
-        .join(course_users)
+        .join(journey_instructors)
+        .on(journey_instructors.id == journeys.instructor_id)
+        .left_outer_join(course_users)
         .on((course_users.course_id == courses.id) & (course_users.user_id == users.id))
-        .join(instructors)
-        .on(instructors.id == journeys.instructor_id)
         .left_outer_join(last_taken_at)
         .on(last_taken_at.journey_id == journeys.id)
-        .left_outer_join(instructor_pictures)
-        .on(instructor_pictures.id == instructors.picture_image_file_id)
+        .left_outer_join(journey_instructor_pictures)
+        .on(journey_instructor_pictures.id == journey_instructors.picture_image_file_id)
         .left_outer_join(user_likes)
         .on((user_likes.user_id == users.id) & (user_likes.journey_id == journeys.id))
         .where(journeys.deleted_at.isnull())
-        .where(
-            (courses.flags & Parameter('?')) != 0
-        )
     )
-    qargs: List[Any] = [user_sub, user_sub, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)]
+    qargs: List[Any] = [user_sub, user_sub]
 
     def pseudocolumn(key: str) -> Term:
         if key == "journey_uid":
@@ -270,7 +297,7 @@ async def raw_read_user_course_journeys(
         elif key == "journey_title":
             return journeys.title
         elif key == "journey_instructor_name":
-            return instructors.name
+            return journey_instructors.name
         elif key == "journey_last_taken_at":
             return last_taken_at.last_taken_at
         elif key == "journey_liked_at":
@@ -283,6 +310,8 @@ async def raw_read_user_course_journeys(
             return course_users.created_at
         elif key == "priority":
             return course_journeys.priority
+        elif key == "course_flags":
+            return courses.flags
         raise ValueError(f"unknown {key=}")
 
     for key, filter in filters_to_apply:

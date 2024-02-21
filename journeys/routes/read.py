@@ -51,7 +51,9 @@ class Journey(BaseModel):
     )
     title: str = Field(description="The display title")
     description: str = Field(description="The display description")
-    duration_seconds: float = Field(description="The duration of the journey in seconds")
+    duration_seconds: float = Field(
+        description="The duration of the journey in seconds"
+    )
     prompt: Prompt = Field(
         description="The prompt style, text, and options to display to the user"
     )
@@ -240,7 +242,7 @@ async def raw_read_journeys(
     limit: int,
 ):
     """performs exactly the specified sort without pagination logic"""
-    # remember to change introductory_journeys if we change this
+    # remember to change introductory_journeys, course_journeys if we change this
     journeys = Table("journeys")
     content_files = Table("content_files")
     image_files = Table("image_files")

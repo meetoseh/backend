@@ -32,6 +32,9 @@ class ShowWebPlaylistResponseItem(BaseModel):
         description="The size of the file in bytes",
         ge=1,
     )
+    format_parameters: Dict[str, Any] = Field(
+        description="The format parameters describing the file, varies by format."
+    )
     quality_parameters: Dict[str, Any] = Field(
         description="The quality parameters used to generate the file, for debugging purposes"
     )
@@ -218,6 +221,7 @@ async def get_raw_web_playlist_from_db(
             content_file_exports.codecs,
             s3_files.file_size,
             content_file_exports.quality_parameters,
+            content_file_exports.format_parameters,
             content_file_export_parts.duration_seconds
         FROM content_file_exports
         JOIN content_file_export_parts ON (
@@ -241,7 +245,7 @@ async def get_raw_web_playlist_from_db(
 
     root_backend_url = os.environ["ROOT_BACKEND_URL"]
     exports: List[ShowWebPlaylistResponseItem] = []
-    duration_seconds: float = response.results[0][-1]
+    duration_seconds = typing_cast(float, response.results[0][-1])
     for row in response.results:
         cfep_uid = typing_cast(str, row[0])
         format = typing_cast(Literal["mp4"], row[1])
@@ -253,6 +257,10 @@ async def get_raw_web_playlist_from_db(
         quality_parameters = typing_cast(
             Dict[str, Any], json.loads(quality_parameters_raw)
         )
+        format_parameters_raw = typing_cast(str, row[6])
+        format_parameters = typing_cast(
+            Dict[str, Any], json.loads(format_parameters_raw)
+        )
 
         exports.append(
             ShowWebPlaylistResponseItem(
@@ -262,6 +270,7 @@ async def get_raw_web_playlist_from_db(
                 codecs=codecs,
                 file_size=file_size,
                 quality_parameters=quality_parameters,
+                format_parameters=format_parameters,
             )
         )
 

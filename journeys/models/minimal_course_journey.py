@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic import BaseModel, Field
 from journeys.models.minimal_journey import MinimalJourney
 
@@ -18,9 +19,12 @@ class MinimalCourseJourney(BaseModel):
     priority: int = Field(
         description="Journeys with lower priority values are generally taken first"
     )
-    joined_course_at: float = Field(
-        description="When this user was added to this course"
+    joined_course_at: Optional[float] = Field(
+        description="When this user was added to this course, if they were added at all"
     )
     is_next: bool = Field(
-        description="True if this is the next journey to be taken in the course, false otherwise"
+        description=(
+            "True if the user is added to the course and this is the next journey "
+            "to be taken in the course, false otherwise"
+        )
     )

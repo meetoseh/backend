@@ -19,6 +19,13 @@ class MinimalJourney(BaseModel):
 
     uid: str = Field(description="The unique identifier for the journey")
     title: str = Field(description="The title of the of the journey")
+    description: str = Field(description="The description of the journey")
+    darkened_background: ImageFileRef = Field(
+        description="The darkened background image for this journey"
+    )
+    duration_seconds: float = Field(
+        description="The duration of the audio portion of the journey in seconds"
+    )
     instructor: MinimalJourneyInstructor = Field(
         description="The instructor for the journey"
     )

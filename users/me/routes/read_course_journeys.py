@@ -211,7 +211,10 @@ async def raw_read_user_course_journeys(
     _instructors = Table("instructors")
     journey_instructors = _instructors.as_("journey_instructors")
     journey_instructor_pictures = image_files.as_("instructor_pictures")
+    journey_darkened_background_images = image_files.as_('jdbi')
     user_likes = Table("user_likes")
+    content_files = Table("content_files")
+    journey_audio_contents = content_files.as_("journey_audio_contents")
 
     course_journeys_inner = course_journeys.as_("cji")
 
@@ -235,6 +238,9 @@ async def raw_read_user_course_journeys(
             courses.title,
             journeys.uid,
             journeys.title,
+            journeys.description,
+            journey_darkened_background_images.uid,
+            journey_audio_contents.duration_seconds,
             journey_instructors.name,
             journey_instructor_pictures.uid,
             last_taken_at.last_taken_at,
@@ -284,6 +290,10 @@ async def raw_read_user_course_journeys(
         .on(users.sub == Parameter("?"))
         .join(journey_instructors)
         .on(journey_instructors.id == journeys.instructor_id)
+        .join(journey_darkened_background_images)
+        .on(journeys.darkened_background_image_file_id == journey_darkened_background_images.id)
+        .join(journey_audio_contents)
+        .on(journey_audio_contents.id == journeys.audio_content_file_id)
         .left_outer_join(course_users)
         .on((course_users.course_id == courses.id) & (course_users.user_id == users.id))
         .left_outer_join(last_taken_at)
@@ -345,25 +355,31 @@ async def raw_read_user_course_journeys(
                 journey=MinimalJourney(
                     uid=row[3],
                     title=row[4],
+                    description=row[5],
+                    darkened_background=ImageFileRef(
+                        uid=row[6],
+                        jwt=await image_files_auth.create_jwt(itgs, image_file_uid=row[6]),
+                    ),
+                    duration_seconds=row[7],
                     instructor=MinimalJourneyInstructor(
-                        name=row[5],
+                        name=row[8],
                         image=(
                             None
-                            if row[6] is None
+                            if row[9] is None
                             else ImageFileRef(
-                                uid=row[6],
+                                uid=row[9],
                                 jwt=await image_files_auth.create_jwt(
-                                    itgs, image_file_uid=row[6]
+                                    itgs, image_file_uid=row[9]
                                 ),
                             )
                         ),
                     ),
-                    last_taken_at=row[7],
-                    liked_at=row[8],
+                    last_taken_at=row[10],
+                    liked_at=row[11],
                 ),
-                priority=row[9],
-                joined_course_at=row[10],
-                is_next=bool(row[11]),
+                priority=row[12],
+                joined_course_at=row[13],
+                is_next=bool(row[14]),
             )
         )
     return items

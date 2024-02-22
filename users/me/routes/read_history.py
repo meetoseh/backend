@@ -160,6 +160,9 @@ async def raw_read_user_history(
     user_likes = Table("user_likes")
     courses = Table("courses")
     course_journeys = Table("course_journeys")
+    journey_darkened_background_images = image_files.as_("jdbi")
+    content_files = Table("content_files")
+    journey_audio_contents = content_files.as_("journey_audio_contents")
 
     query: QueryBuilder = (
         Query.with_(
@@ -178,11 +181,21 @@ async def raw_read_user_history(
         .select(
             journeys.uid,
             journeys.title,
+            journeys.description,
+            journey_darkened_background_images.uid,
+            journey_audio_contents.duration_seconds,
             instructors.name,
             instructor_pictures.uid,
             last_taken_at.last_taken_at,
             user_likes.created_at,
         )
+        .join(journey_darkened_background_images)
+        .on(
+            journey_darkened_background_images.id
+            == journeys.darkened_background_image_file_id
+        )
+        .join(journey_audio_contents)
+        .on(journey_audio_contents.id == journeys.audio_content_file_id)
         .join(users)
         .on(users.sub == Parameter("?"))
         .join(instructors)
@@ -240,21 +253,27 @@ async def raw_read_user_history(
             MinimalJourney(
                 uid=row[0],
                 title=row[1],
+                description=row[2],
+                darkened_background=ImageFileRef(
+                    uid=row[3],
+                    jwt=await image_files_auth.create_jwt(itgs, image_file_uid=row[3]),
+                ),
+                duration_seconds=row[4],
                 instructor=MinimalJourneyInstructor(
-                    name=row[2],
+                    name=row[5],
                     image=(
                         None
-                        if row[3] is None
+                        if row[6] is None
                         else ImageFileRef(
-                            uid=row[3],
+                            uid=row[6],
                             jwt=await image_files_auth.create_jwt(
-                                itgs, image_file_uid=row[3]
+                                itgs, image_file_uid=row[6]
                             ),
                         )
                     ),
                 ),
-                last_taken_at=row[4],
-                liked_at=row[5],
+                last_taken_at=row[7],
+                liked_at=row[8],
             )
         )
     return items

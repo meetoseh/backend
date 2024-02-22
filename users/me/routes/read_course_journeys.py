@@ -141,6 +141,11 @@ async def read_user_course_journeys(
                 ),
             )
 
+        if args.filters.joined_course_at is None:
+            args.filters.joined_course_at = FilterItemModel[float](
+                operator=StandardOperator.NOT_EQUAL, value=None
+            )
+
         filters_to_apply = flattened_filters(
             dict(
                 (k, cast(FilterItemLike, v.to_result()))

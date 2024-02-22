@@ -211,10 +211,11 @@ async def raw_read_user_course_journeys(
     _instructors = Table("instructors")
     journey_instructors = _instructors.as_("journey_instructors")
     journey_instructor_pictures = image_files.as_("instructor_pictures")
-    journey_darkened_background_images = image_files.as_('jdbi')
+    journey_darkened_background_images = image_files.as_("jdbi")
     user_likes = Table("user_likes")
     content_files = Table("content_files")
     journey_audio_contents = content_files.as_("journey_audio_contents")
+    user_course_likes = Table("user_course_likes")
 
     course_journeys_inner = course_journeys.as_("cji")
 
@@ -236,6 +237,7 @@ async def raw_read_user_course_journeys(
             course_journeys.uid,
             courses.uid,
             courses.title,
+            user_course_likes.created_at,
             journeys.uid,
             journeys.title,
             journeys.description,
@@ -291,7 +293,10 @@ async def raw_read_user_course_journeys(
         .join(journey_instructors)
         .on(journey_instructors.id == journeys.instructor_id)
         .join(journey_darkened_background_images)
-        .on(journeys.darkened_background_image_file_id == journey_darkened_background_images.id)
+        .on(
+            journeys.darkened_background_image_file_id
+            == journey_darkened_background_images.id
+        )
         .join(journey_audio_contents)
         .on(journey_audio_contents.id == journeys.audio_content_file_id)
         .left_outer_join(course_users)
@@ -302,6 +307,11 @@ async def raw_read_user_course_journeys(
         .on(journey_instructor_pictures.id == journey_instructors.picture_image_file_id)
         .left_outer_join(user_likes)
         .on((user_likes.user_id == users.id) & (user_likes.journey_id == journeys.id))
+        .left_outer_join(user_course_likes)
+        .on(
+            (user_course_likes.user_id == users.id)
+            & (user_course_likes.course_id == courses.id)
+        )
         .where(journeys.deleted_at.isnull())
     )
     qargs: List[Any] = [user_sub, user_sub]
@@ -351,35 +361,38 @@ async def raw_read_user_course_journeys(
                 course=MinimalCourse(
                     uid=row[1],
                     title=row[2],
+                    liked_at=row[3],
                 ),
                 journey=MinimalJourney(
-                    uid=row[3],
-                    title=row[4],
-                    description=row[5],
+                    uid=row[4],
+                    title=row[5],
+                    description=row[6],
                     darkened_background=ImageFileRef(
-                        uid=row[6],
-                        jwt=await image_files_auth.create_jwt(itgs, image_file_uid=row[6]),
+                        uid=row[7],
+                        jwt=await image_files_auth.create_jwt(
+                            itgs, image_file_uid=row[7]
+                        ),
                     ),
-                    duration_seconds=row[7],
+                    duration_seconds=row[8],
                     instructor=MinimalJourneyInstructor(
-                        name=row[8],
+                        name=row[9],
                         image=(
                             None
-                            if row[9] is None
+                            if row[10] is None
                             else ImageFileRef(
-                                uid=row[9],
+                                uid=row[10],
                                 jwt=await image_files_auth.create_jwt(
-                                    itgs, image_file_uid=row[9]
+                                    itgs, image_file_uid=row[10]
                                 ),
                             )
                         ),
                     ),
-                    last_taken_at=row[10],
-                    liked_at=row[11],
+                    last_taken_at=row[11],
+                    liked_at=row[12],
                 ),
-                priority=row[12],
-                joined_course_at=row[13],
-                is_next=bool(row[14]),
+                priority=row[13],
+                joined_course_at=row[14],
+                is_next=bool(row[15]),
             )
         )
     return items

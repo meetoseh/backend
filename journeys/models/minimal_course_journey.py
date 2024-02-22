@@ -6,6 +6,9 @@ from journeys.models.minimal_journey import MinimalJourney
 class MinimalCourse(BaseModel):
     uid: str = Field(description="The unique identifier for the course")
     title: str = Field(description="The title of the of the course")
+    liked_at: Optional[float] = Field(
+        description="If the user liked the course, when in seconds since the epoch"
+    )
 
 
 class MinimalCourseJourney(BaseModel):

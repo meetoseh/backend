@@ -14,6 +14,7 @@ import courses.routes.start_journey
 import courses.routes.create
 import courses.routes.patch
 import courses.routes.read
+import courses.routes.read_public
 
 import courses.background_images.router
 import courses.hero_images.router
@@ -37,6 +38,7 @@ router.include_router(courses.routes.start_journey.router)
 router.include_router(courses.routes.create.router)
 router.include_router(courses.routes.patch.router)
 router.include_router(courses.routes.read.router)
+router.include_router(courses.routes.read_public.router)
 
 router.include_router(
     courses.background_images.router.router, prefix="/background_images"

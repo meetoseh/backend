@@ -2,7 +2,11 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
-from courses.lib.get_external_course_from_row import get_external_course_from_row
+from courses.lib.get_external_course_from_row import (
+    ExternalCourseRow,
+    create_standard_external_course_query,
+    get_external_course_from_row,
+)
 from error_middleware import handle_contextless_error, handle_error
 from journeys.models.series_flags import SeriesFlags
 from lib.contact_methods.user_current_email import get_user_current_email
@@ -302,19 +306,16 @@ async def attach_free(
                     status_code=503,
                 )
 
+        query, qargs = create_standard_external_course_query(auth_result.result.sub)
         response = await cursor.execute(
-            """
-            SELECT
-                courses.uid,
-                courses.slug,
-                courses.title,
-                courses.description,
-                background_image_files.uid
-            FROM courses
-            LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
+            f"""
+            {query}
             WHERE courses.slug = ?
             """,
-            (args.course_slug,),
+            (
+                *qargs,
+                args.course_slug,
+            ),
         )
         if not response.results:
             await handle_contextless_error(
@@ -347,11 +348,8 @@ async def attach_free(
             content=AttachFreeCourseResponse(
                 course=await get_external_course_from_row(
                     itgs,
-                    uid=response.results[0][0],
-                    slug=response.results[0][1],
-                    title=response.results[0][2],
-                    description=response.results[0][3],
-                    background_image_uid=response.results[0][4],
+                    user_sub=auth_result.result.sub,
+                    row=ExternalCourseRow(*response.results[0]),
                 ),
                 visitor_uid=sanitized_visitor,
             ).model_dump_json(),

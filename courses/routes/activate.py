@@ -10,7 +10,11 @@ from db.utils import question_mark_list
 from error_middleware import handle_contextless_error, handle_error
 from models import StandardErrorResponse
 from courses.models.external_course import ExternalCourse
-from courses.lib.get_external_course_from_row import get_external_course_from_row
+from courses.lib.get_external_course_from_row import (
+    ExternalCourseRow,
+    create_standard_external_course_query,
+    get_external_course_from_row,
+)
 from itgs import Itgs
 from visitors.lib.get_or_create_visitor import (
     VisitorSource,
@@ -185,16 +189,12 @@ async def activate_course(
                 cursor = conn.cursor("weak")
 
                 # check if we've already activated this checkout session
+                query, qargs = create_standard_external_course_query(
+                    auth_result.result.sub if auth_result.result is not None else None
+                )
                 response = await cursor.execute(
-                    """
-                    SELECT
-                        courses.uid,
-                        courses.slug,
-                        courses.title,
-                        courses.description,
-                        background_image_files.uid
-                    FROM courses
-                    LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
+                    f"""
+                    {query}
                     WHERE
                         EXISTS (
                             SELECT 1 FROM course_download_links
@@ -205,18 +205,19 @@ async def activate_course(
                     ORDER BY courses.revenue_cat_entitlement ASC
                     LIMIT 1
                     """,
-                    (args.checkout_session_id,),
+                    (*qargs, args.checkout_session_id),
                 )
 
                 if response.results:
                     row = response.results[0]
                     course = await get_external_course_from_row(
                         itgs,
-                        uid=row[0],
-                        slug=row[1],
-                        title=row[2],
-                        description=row[3],
-                        background_image_uid=row[4],
+                        user_sub=(
+                            auth_result.result.sub
+                            if auth_result.result is not None
+                            else None
+                        ),
+                        row=ExternalCourseRow(*row),
                     )
                     return Response(
                         content=ActivateCourseResponse(
@@ -280,32 +281,30 @@ async def activate_course(
 
                 course_links: Dict[str, str] = dict()
                 best_course: Optional[ExternalCourse] = None
+
+                query, qargs = create_standard_external_course_query(
+                    auth_result.result.sub if auth_result.result is not None else None
+                )
                 response = await cursor.execute(
                     f"""
-                    SELECT
-                        courses.uid,
-                        courses.slug,
-                        courses.title,
-                        courses.description,
-                        background_image_files.uid
-                    FROM courses
-                    LEFT OUTER JOIN image_files AS background_image_files ON background_image_files.id = courses.background_image_file_id
+                    {query}
                     WHERE
                         courses.revenue_cat_entitlement IN ({question_mark_list(len(active_entitlement_idens))})
                     ORDER BY courses.revenue_cat_entitlement ASC
                     """,
-                    active_entitlement_idens,
+                    [*qargs, *active_entitlement_idens],
                 )
 
                 for row in response.results or []:
                     if best_course is None:
                         best_course = await get_external_course_from_row(
                             itgs,
-                            uid=row[0],
-                            slug=row[1],
-                            title=row[2],
-                            description=row[3],
-                            background_image_uid=row[4],
+                            user_sub=(
+                                auth_result.result.sub
+                                if auth_result.result is not None
+                                else None
+                            ),
+                            row=ExternalCourseRow(*row),
                         )
 
                     link_uid = f"oseh_cdl_{secrets.token_urlsafe(16)}"

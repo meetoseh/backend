@@ -1,7 +1,7 @@
-from pypika import Table, Query, Parameter
+from pypika import Table, Query, Parameter, Not
 from pypika.queries import QueryBuilder
 from pypika.functions import Count, Star, Coalesce
-from pypika.terms import Term
+from pypika.terms import Term, ExistsCriterion
 from typing import (
     Annotated,
     Any,
@@ -214,6 +214,8 @@ async def raw_read_external_courses(
     transcripts = Table("transcripts")
     intro_video_transcripts = transcripts.as_("intro_video_transcripts")
     intro_video_thumbnails = image_files.as_("intro_video_thumbnails")
+    image_file_exports = Table("image_file_exports")
+    intro_video_thumbnail_exports = image_file_exports.as_("ivte")
 
     query: QueryBuilder = (
         Query.with_(
@@ -244,6 +246,7 @@ async def raw_read_external_courses(
             intro_videos.duration_seconds,
             intro_video_transcripts.uid,
             intro_video_thumbnails.uid,
+            intro_video_thumbnail_exports.thumbhash,
         )
         .join(users)
         .on(users.sub == Parameter("?"))
@@ -276,6 +279,24 @@ async def raw_read_external_courses(
         .on(intro_video_transcripts.id == intro_content_file_transcripts.transcript_id)
         .left_outer_join(intro_video_thumbnails)
         .on(intro_video_thumbnails.id == courses.video_thumbnail_image_file_id)
+        .left_outer_join(intro_video_thumbnail_exports)
+        .on(
+            (intro_video_thumbnail_exports.image_file_id == intro_video_thumbnails.id)
+            & (intro_video_thumbnail_exports.width == 180)
+            & (intro_video_thumbnail_exports.height == 368)
+            & Not(
+                ExistsCriterion(
+                    Query.from_(image_file_exports)
+                    .select(1)
+                    .where(
+                        (image_file_exports.image_file_id == intro_video_thumbnails.id)
+                        & (image_file_exports.width == 180)
+                        & (image_file_exports.height == 368)
+                        & (image_file_exports.uid < intro_video_thumbnail_exports.uid)
+                    )
+                )
+            )
+        )
     )
     qargs: List[Any] = [user_sub]
 

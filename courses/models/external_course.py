@@ -56,3 +56,6 @@ class ExternalCourse(BaseModel):
     intro_video_thumbnail: Optional[ImageFileRef] = Field(
         description="The intro video thumbnail/cover for the course, if available"
     )
+    intro_video_thumbhash: Optional[str] = Field(
+        description="The thumbhash of the intro thumbnail at a typical resolution, if available"
+    )

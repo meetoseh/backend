@@ -41,6 +41,7 @@ SELECT
     intro_videos.duration_seconds,
     intro_video_transcripts.uid,
     intro_video_thumbnails.uid,
+    intro_video_thumbnail_exports.thumbhash
 FROM courses
 JOIN instructors ON instructors.id = courses.instructor_id
 LEFT OUTER JOIN users ON users.sub = ?
@@ -58,6 +59,19 @@ LEFT OUTER JOIN transcripts AS intro_video_transcripts ON (
     )
 )
 LEFT OUTER JOIN image_files AS intro_video_thumbnails ON intro_video_thumbnails.id = intro_videos.video_thumbnail_image_file_id
+LEFT OUTER JOIN image_file_exports AS intro_video_thumbnail_exports ON (
+    intro_video_thumbnail_exports.image_file_id = intro_video_thumbnails.id
+    AND intro_video_thumbnail_exports.width = 180
+    AND intro_video_thumbnail_exports.height = 368
+    AND NOT EXISTS (
+        SELECT 1 FROM image_file_exports AS other_exports
+        WHERE
+            other_exports.image_file_id = intro_video_thumbnails.id
+            AND other_exports.width = 180
+            AND other_exports.height = 368
+            AND other_exports.uid < intro_video_thumbnail_exports.uid
+    )
+)
     """,
         [user_sub],
     )
@@ -82,6 +96,7 @@ class ExternalCourseRow:
     intro_video_duration_seconds: Optional[int]
     intro_video_transcript_uid: Optional[str]
     intro_video_thumbnail_uid: Optional[str]
+    intro_video_thumbhash: Optional[str]
 
 
 async def get_external_course_from_row(
@@ -160,4 +175,5 @@ async def get_external_course_from_row(
                 ),
             )
         ),
+        intro_video_thumbhash=row.intro_video_thumbhash,
     )

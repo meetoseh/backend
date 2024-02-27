@@ -1,13 +1,14 @@
+import time
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term, Function, ExistsCriterion, Not
-from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
+from typing import Annotated, Any, Dict, List, Literal, Optional, Tuple, Union, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_admin, auth_any
 from journeys.models.series_flags import SeriesFlags
-from models import STANDARD_ERRORS_BY_CODE
+from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse, ERROR_403_TYPE
 from resources.bit_field_mutator import BitFieldMutator
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_bit_field_item import (
@@ -25,6 +26,8 @@ import image_files.auth as image_files_auth
 from journeys.models.minimal_journey import MinimalJourney, MinimalJourneyInstructor
 from journeys.models.minimal_course_journey import MinimalCourse, MinimalCourseJourney
 from resources.standard_operator import StandardOperator
+import courses.auth as courses_auth
+from resources.standard_text_operator import StandardTextOperator
 
 
 USER_COURSE_JOURNEY_SORT_OPTIONS = [
@@ -110,41 +113,219 @@ router = APIRouter()
     responses=STANDARD_ERRORS_BY_CODE,
 )
 async def read_user_course_journeys(
-    args: ReadUserCourseJourneysRequest, authorization: Optional[str] = Header(None)
+    args: ReadUserCourseJourneysRequest,
+    admin: Optional[str] = None,
+    course_jwt: Optional[str] = None,
+    authorization: Annotated[Optional[str], Header()] = None,
 ):
-    """Lists out journeys within courses that the user has started, regardless of
-    if they've finished them or not. To start one of these journeys, use
-    `start_journey_in_course` (under courses)
+    """Lists out journeys within courses.
 
-    Requires standard authorization.
+    If the `admin` query parameter not set to `1`, the filters must show
+    that the user has access to the corresponding courses, or `course_jwt`
+    can be set to a JWT for a course, and the `course_uid` filter will be
+    overridden to match the course in the JWT.
+
+    The user can either show access via the course flags filter being unset
+    (which will be treated as visible in owned and joined), or by explicitly
+    setting filters to one of the following:
+
+    ### visible in owned and attached
+
+    ```json
+    {
+        "course_flags": {
+            "mutation": {"operator": "and", "value": 16},
+            "comparison": {"operator": "neq", "value": 0}
+        },
+        "joined_course_at": {"operator": "neq", "value": null}
+    }
+    ```
+
+    ### visible in series tab
+
+    ```json
+    {
+        "course_flags": {
+            "mutation": {"operator": "and", "value": 64},
+            "comparison": {"operator": "neq", "value": 0}
+        }
+    }
+    ```
+
+    Requires standard authorization if `admin` is not set to `1` and admin
+    authorization otherwise. If `course_jwt` is set, must be a valid JWT
+    for a course with the VIEW_METADATA flag set.
+
+    To prevent using this to extend the duration of JWTs or expand their scope,
+    if a `course_jwt` is used for authorization, the returned jwts will have the
+    same expiration and flags as the input jwt. Otherwise, they will have around
+    a 30m expiration and the VIEW_METADATA/LIKE flag.
     """
+    using_admin_perms = admin == "1"
+    using_course_jwt = course_jwt is not None
+
     sort = [srt.to_result() for srt in (args.sort or [])]
     sort = cleanup_sort(USER_COURSE_JOURNEY_SORT_OPTIONS, sort, ["association_uid"])
     async with Itgs() as itgs:
-        auth_result = await auth_any(itgs, authorization)
+        auth_result = (
+            await auth_any(itgs, authorization)
+            if not using_admin_perms
+            else await auth_admin(itgs, authorization)
+        )
         if auth_result.result is None:
             return auth_result.error_response
 
-        if args.filters.course_flags is not None:
-            auth_admin_result = await auth_admin(itgs, authorization)
-            if auth_admin_result.result is None:
-                return auth_admin_result.error_response
+        course_auth_result = None
+        jwts_expire_at = int(time.time() + 1800)
+        course_access_flags = (
+            courses_auth.CourseAccessFlags.VIEW_METADATA
+            | courses_auth.CourseAccessFlags.LIKE
+        )
+        if using_course_jwt:
+            course_auth_result = await courses_auth.auth_any(
+                itgs, f"bearer {course_jwt}"
+            )
+            if course_auth_result.result is None:
+                return course_auth_result.error_response
 
-        if args.filters.course_flags is None:
-            args.filters.course_flags = FilterBitFieldItemModel(
-                mutation=BitFieldMutationModel(
-                    operator=BitFieldMutator.AND,
-                    value=SeriesFlags.SERIES_VISIBLE_IN_OWNED,
-                ),
-                comparison=FilterItemModel[int](
-                    operator=StandardOperator.NOT_EQUAL, value=0
-                ),
+            if course_auth_result.result.claims is None:
+                raise ValueError("claims should not be None")
+
+            if (
+                course_auth_result.result.oseh_flags
+                & courses_auth.CourseAccessFlags.VIEW_METADATA
+                == 0
+            ):
+                return Response(
+                    content=StandardErrorResponse[ERROR_403_TYPE](
+                        type="invalid",
+                        message="course jwt does not have view metadata flag",
+                    ).model_dump_json(),
+                    status_code=403,
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                )
+
+            input_expires_at = course_auth_result.result.claims["exp"]
+            if not isinstance(input_expires_at, (int, float)):
+                raise ValueError("exp should be an int or float")
+
+            jwts_expire_at = min(jwts_expire_at, int(input_expires_at))
+            course_access_flags = course_auth_result.result.oseh_flags
+
+            args.filters.course_uid = FilterTextItemModel(
+                operator=StandardTextOperator.EQUAL_CASE_SENSITIVE,
+                value=course_auth_result.result.course_uid,
             )
 
-        if args.filters.joined_course_at is None:
-            args.filters.joined_course_at = FilterItemModel[float](
-                operator=StandardOperator.NOT_EQUAL, value=None
-            )
+        if not using_admin_perms and not using_course_jwt:
+            if (
+                args.filters.course_flags is None
+                and args.filters.joined_course_at is None
+            ):
+                args.filters.course_flags = FilterBitFieldItemModel(
+                    mutation=BitFieldMutationModel(
+                        operator=BitFieldMutator.AND,
+                        value=SeriesFlags.SERIES_VISIBLE_IN_OWNED,
+                    ),
+                    comparison=FilterItemModel[int](
+                        operator=StandardOperator.NOT_EQUAL, value=0
+                    ),
+                )
+                args.filters.joined_course_at = FilterItemModel[float](
+                    operator=StandardOperator.NOT_EQUAL, value=None
+                )
+            elif args.filters.course_flags is None:
+                joined_course_filter = cast(
+                    FilterItemModel[float], args.filters.joined_course_at
+                ).to_result()
+                if (
+                    joined_course_filter.operator != StandardOperator.NOT_EQUAL
+                    or joined_course_filter.value is not None
+                ):
+                    return Response(
+                        content=StandardErrorResponse[ERROR_403_TYPE](
+                            type="invalid",
+                            message=(
+                                "if course_flags filter is unset, joined_course_at must be unset or set to neq null"
+                            ),
+                        ).model_dump_json(),
+                        status_code=403,
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    )
+                args.filters.course_flags = FilterBitFieldItemModel(
+                    mutation=BitFieldMutationModel(
+                        operator=BitFieldMutator.AND,
+                        value=SeriesFlags.SERIES_VISIBLE_IN_OWNED,
+                    ),
+                    comparison=FilterItemModel[int](
+                        operator=StandardOperator.NOT_EQUAL, value=0
+                    ),
+                )
+            else:
+                # course_flags is set, joined_course_at might be set
+                course_flags_filter = args.filters.course_flags.to_result()
+                if (
+                    course_flags_filter.mutation is None
+                    or course_flags_filter.mutation.operator != BitFieldMutator.AND
+                    or course_flags_filter.comparison.operator
+                    != StandardOperator.NOT_EQUAL
+                    or course_flags_filter.comparison.value != 0
+                ):
+                    return Response(
+                        content=StandardErrorResponse[ERROR_403_TYPE](
+                            type="invalid",
+                            message=(
+                                "if course_flags filter is set, it must be set in the form (v AND flags) != 0"
+                            ),
+                        ).model_dump_json(),
+                        status_code=403,
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    )
+
+                if course_flags_filter.mutation.value == int(
+                    SeriesFlags.SERIES_IN_SERIES_TAB
+                ):
+                    # acceptable
+                    ...
+                elif course_flags_filter.mutation.value == int(
+                    SeriesFlags.SERIES_VISIBLE_IN_OWNED
+                ):
+                    # for access, they need to have joined the course
+                    if args.filters.joined_course_at is None:
+                        args.filters.joined_course_at = FilterItemModel[float](
+                            operator=StandardOperator.NOT_EQUAL, value=None
+                        )
+                    else:
+                        joined_course_filter = cast(
+                            FilterItemModel[float], args.filters.joined_course_at
+                        ).to_result()
+                        if (
+                            joined_course_filter.operator != StandardOperator.NOT_EQUAL
+                            or joined_course_filter.value is not None
+                        ):
+                            return Response(
+                                content=StandardErrorResponse[ERROR_403_TYPE](
+                                    type="invalid",
+                                    message=(
+                                        "if course_flags filter is set to visible in owned, joined_course_at must be unset or set to neq null"
+                                    ),
+                                ).model_dump_json(),
+                                status_code=403,
+                                headers={
+                                    "Content-Type": "application/json; charset=utf-8"
+                                },
+                            )
+                else:
+                    return Response(
+                        content=StandardErrorResponse[ERROR_403_TYPE](
+                            type="invalid",
+                            message=(
+                                "course_flags filter is set to an invalid value for non-admin users"
+                            ),
+                        ).model_dump_json(),
+                        status_code=403,
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    )
 
         filters_to_apply = flattened_filters(
             dict(
@@ -159,6 +340,8 @@ async def read_user_course_journeys(
             sort,
             args.limit + 1,
             user_sub=auth_result.result.sub,
+            jwts_expire_at=jwts_expire_at,
+            course_access_flags=course_access_flags,
         )
         next_page_sort: Optional[List[SortItem]] = None
         last_item: Optional[Dict[str, Any]] = None
@@ -169,7 +352,13 @@ async def read_user_course_journeys(
         if items and any(s.after is not None for s in sort):
             rev_sort = reverse_sort(sort, "make_exclusive")
             rev_items = await raw_read_user_course_journeys(
-                itgs, filters_to_apply, rev_sort, 1, user_sub=auth_result.result.sub
+                itgs,
+                filters_to_apply,
+                rev_sort,
+                1,
+                user_sub=auth_result.result.sub,
+                jwts_expire_at=jwts_expire_at,
+                course_access_flags=course_access_flags,
             )
             if rev_items:
                 first_item = item_pseudocolumns(items[0])
@@ -197,6 +386,8 @@ async def raw_read_user_course_journeys(
     limit: int,
     *,
     user_sub: str,
+    jwts_expire_at: int,
+    course_access_flags: courses_auth.CourseAccessFlags,
 ):
     """performs exactly the specified sort without pagination logic"""
     last_taken_at = Table("last_taken_at")
@@ -362,6 +553,12 @@ async def raw_read_user_course_journeys(
                     uid=row[1],
                     title=row[2],
                     liked_at=row[3],
+                    jwt=await courses_auth.create_jwt(
+                        itgs,
+                        row[1],
+                        flags=course_access_flags,
+                        expires_at=jwts_expire_at,
+                    ),
                 ),
                 journey=MinimalJourney(
                     uid=row[4],

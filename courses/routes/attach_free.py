@@ -350,6 +350,7 @@ async def attach_free(
                     itgs,
                     user_sub=auth_result.result.sub,
                     row=ExternalCourseRow(*response.results[0]),
+                    has_entitlement=True,
                 ),
                 visitor_uid=sanitized_visitor,
             ).model_dump_json(),

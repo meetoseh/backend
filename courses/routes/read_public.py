@@ -1,3 +1,5 @@
+import json
+import time
 from pypika import Table, Query, Parameter, Not
 from pypika.queries import QueryBuilder
 from pypika.functions import Count, Star, Coalesce
@@ -24,7 +26,7 @@ from courses.lib.get_external_course_from_row import (
 )
 from courses.models.external_course import ExternalCourse
 from journeys.models.series_flags import SeriesFlags
-from models import STANDARD_ERRORS_BY_CODE
+from models import AUTHORIZATION_UNKNOWN_TOKEN, STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItemModel
 from resources.filter_item_like import FilterItemLike
@@ -32,7 +34,9 @@ from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
 from resources.sort_item import SortItem, SortItemModel
 from resources.filter_text_item import FilterTextItemModel
 from itgs import Itgs
+from resources.standard_text_operator import StandardTextOperator
 import users.lib.entitlements as user_entitlements
+import courses.auth as courses_auth
 
 
 EXTERNAL_COURSE_SORT_OPTIONS = [
@@ -119,21 +123,85 @@ router = APIRouter()
 )
 async def read_external_courses(
     args: ReadExternalCourseRequest,
-    category: Literal["list", "library"],
+    category: Optional[Literal["list", "library"]] = None,
+    course_jwt: Optional[str] = None,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
     """Lists out courses from the authorized users perspective, either
     filtered to those in the public series list (category=list) or those that
     would go in the their "My Library" under the "Series" tab (category=library).
+    If the category is not specified then a course JWT must be specified.
 
-    This requires standard authorization
+    If a course JWT is specified, the category is ignored and the course uid
+    filter is ignored. Instead, a 403 is returned unless the course JWT is valid
+    and has the VIEW_METADATA flag, and the course uid filter is set to the
+    course uid from the JWT. Furthermore, the returned JWTs have the same expiration
+    time and access flags as the input JWT.
+
+    This requires standard authorization.
     """
+    using_course_jwt = course_jwt is not None
+    if not using_course_jwt and category is None:
+        return Response(
+            content=json.dumps(
+                {
+                    "detail": [
+                        {
+                            "loc": ["query", "category"],
+                            "msg": "required if course_jwt is not specified",
+                            "type": "value_error",
+                        }
+                    ]
+                }
+            ),
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            status_code=422,
+        )
+
     sort = [srt.to_result() for srt in (args.sort or [])]
     sort = cleanup_sort(EXTERNAL_COURSE_SORT_OPTIONS, sort, ["uid", "slug"])
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
         if auth_result.result is None:
             return auth_result.error_response
+
+        course_auth_result = None
+        jwt_expires_at = int(time.time() + 1800)
+        jwt_no_entitlement_access_flags = (
+            courses_auth.CourseAccessFlags.VIEW_METADATA
+            | courses_auth.CourseAccessFlags.LIKE
+        )
+        jwt_has_entitlement_access_flags = (
+            jwt_no_entitlement_access_flags
+            | courses_auth.CourseAccessFlags.TAKE_JOURNEYS
+        )
+        if using_course_jwt:
+            course_auth_result = await courses_auth.auth_any(
+                itgs, f"bearer {course_jwt}"
+            )
+            if course_auth_result.result is None:
+                return course_auth_result.error_response
+            if (
+                (
+                    course_auth_result.result.oseh_flags
+                    & courses_auth.CourseAccessFlags.VIEW_METADATA
+                )
+                == 0
+                or course_auth_result.result.claims is None
+                or not isinstance(
+                    course_auth_result.result.claims.get("exp"), (int, float)
+                )
+            ):
+                return AUTHORIZATION_UNKNOWN_TOKEN
+
+            args.filters.uid = FilterTextItemModel(
+                operator=StandardTextOperator.EQUAL_CASE_SENSITIVE,
+                value=course_auth_result.result.course_uid,
+            )
+            jwt_expires_at = int(course_auth_result.result.claims["exp"])
+            jwt_no_entitlement_access_flags = course_auth_result.result.oseh_flags
+            jwt_has_entitlement_access_flags = jwt_no_entitlement_access_flags
+
         filters_to_apply = flattened_filters(
             dict(
                 (k, cast(FilterItemLike, v.to_result()))
@@ -148,6 +216,9 @@ async def read_external_courses(
             args.limit + 1,
             category=category,
             user_sub=auth_result.result.sub,
+            jwt_expires_at=jwt_expires_at,
+            jwt_has_entitlement_access_flags=jwt_has_entitlement_access_flags,
+            jwt_no_entitlement_access_flags=jwt_no_entitlement_access_flags,
         )
         next_page_sort: Optional[List[SortItem]] = None
         last_item: Optional[Dict[str, Any]] = None
@@ -164,6 +235,9 @@ async def read_external_courses(
                 1,
                 category=category,
                 user_sub=auth_result.result.sub,
+                jwt_expires_at=jwt_expires_at,
+                jwt_has_entitlement_access_flags=jwt_has_entitlement_access_flags,
+                jwt_no_entitlement_access_flags=jwt_no_entitlement_access_flags,
             )
             if rev_items:
                 first_item = item_pseudocolumns(items[0])
@@ -193,8 +267,11 @@ async def raw_read_external_courses(
     limit: int,
     /,
     *,
-    category: Literal["list", "library"],
+    category: Optional[Literal["list", "library"]],
     user_sub: str,
+    jwt_expires_at: int,
+    jwt_no_entitlement_access_flags: courses_auth.CourseAccessFlags,
+    jwt_has_entitlement_access_flags: courses_auth.CourseAccessFlags,
 ) -> List[ExternalCourse]:
     """performs exactly the specified sort without pagination logic"""
     users = Table("users")
@@ -310,7 +387,7 @@ async def raw_read_external_courses(
             courses.field("flags").bitwiseand(SeriesFlags.SERIES_IN_SERIES_TAB) != 0
         )
     else:
-        raise ValueError(f"Unknown category {category}")
+        assert category is None, category
 
     def pseudocolumn(key: str) -> Term:
         if key in (
@@ -351,31 +428,42 @@ async def raw_read_external_courses(
         # we don't pass the user_sub to reduce calls to the entitlements service
         items.append(
             await get_external_course_from_row(
-                itgs, row=ExternalCourseRow(*row), user_sub=None
+                itgs, row=ExternalCourseRow(*row), user_sub=None, skip_jwts=True
             )
         )
 
+    if not items:
+        return []
+
     relevant_entitlements = list(set(item.revenue_cat_entitlement for item in items))
-    if relevant_entitlements:
-        # PERF:
-        #   due to how the cache is currently constructed its faster not to gather here;
-        #   we should fix this in the users.lib.entitlements module
-        #
-        #   specifically, if we gather and the cache is empty we will stampede the requests
-        #   instead of automatically delaying until the first result and reusing the result
-        #   for the rest
-        entitlements_result = [
-            await user_entitlements.get_entitlement(
-                itgs, user_sub=user_sub, identifier=ent
-            )
-            for ent in relevant_entitlements
-        ]
-        have_entitlements: Set[str] = set()
-        for ent, result in zip(relevant_entitlements, entitlements_result):
-            if result is not None and result.is_active:
-                have_entitlements.add(ent)
-        for item in items:
-            item.has_entitlement = item.revenue_cat_entitlement in have_entitlements
+    # PERF:
+    #   due to how the cache is currently constructed its faster not to gather here;
+    #   we should fix this in the users.lib.entitlements module
+    #
+    #   specifically, if we gather and the cache is empty we will stampede the requests
+    #   instead of automatically delaying until the first result and reusing the result
+    #   for the rest
+    entitlements_result = [
+        await user_entitlements.get_entitlement(itgs, user_sub=user_sub, identifier=ent)
+        for ent in relevant_entitlements
+    ]
+    have_entitlements: Set[str] = set()
+    for ent, result in zip(relevant_entitlements, entitlements_result):
+        if result is not None and result.is_active:
+            have_entitlements.add(ent)
+
+    for item in items:
+        item.has_entitlement = item.revenue_cat_entitlement in have_entitlements
+        item.jwt = await courses_auth.create_jwt(
+            itgs,
+            item.uid,
+            flags=(
+                jwt_has_entitlement_access_flags
+                if item.has_entitlement
+                else jwt_no_entitlement_access_flags
+            ),
+            expires_at=jwt_expires_at,
+        )
 
     return items
 

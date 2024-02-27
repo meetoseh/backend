@@ -218,6 +218,7 @@ async def activate_course(
                             else None
                         ),
                         row=ExternalCourseRow(*row),
+                        has_entitlement=True,
                     )
                     return Response(
                         content=ActivateCourseResponse(
@@ -305,6 +306,7 @@ async def activate_course(
                                 else None
                             ),
                             row=ExternalCourseRow(*row),
+                            has_entitlement=True,
                         )
 
                     link_uid = f"oseh_cdl_{secrets.token_urlsafe(16)}"

@@ -1,4 +1,5 @@
 from typing import Optional, Tuple
+from courses.auth import CourseAccessFlags, create_jwt as create_course_jwt
 from courses.models.external_course import ExternalCourse, ExternalCourseInstructor
 from image_files.models import ImageFileRef
 import image_files.auth as image_files_auth
@@ -100,28 +101,57 @@ class ExternalCourseRow:
 
 
 async def get_external_course_from_row(
-    itgs: Itgs, *, user_sub: Optional[str], row: ExternalCourseRow
+    itgs: Itgs,
+    *,
+    user_sub: Optional[str],
+    row: ExternalCourseRow,
+    access_flags: Optional[CourseAccessFlags] = None,
+    expires_at: Optional[int] = None,
+    skip_jwts: bool = False,
+    has_entitlement: Optional[bool] = None,
 ) -> ExternalCourse:
     """Gets the internal course using the data returned from the database, filling
     in defaults as necessary.
 
-    The arguments are similar to those of externalcourse, so check there for docs.
+    Args:
+        itgs (Itgs): the integrations to (re)use
+        user_sub (str, None): the sub of the user for determining the access flags
+            and if they have the entitlement, None for no entitlement behavior
+        row (ExternalCourseRow): the row of data from the database
+        access_flags (CourseAccessFlags, None): the access flags to use, None for default
+        expires_at (int, None): the time at which the jwt should expire, None for default
+        skip_jwts (bool): if true, JWTs are set to '' instead of being generated. default
+            false, false for generating JWTs
+        has_entitlement (bool, None): if specified, overrides the entitlement check
     """
     if row.background_image_uid is None:
         # abstract-darkened public image
         row.background_image_uid = "oseh_if_0ykGW_WatP5-mh-0HRsrNw"
 
-    entitlement = (
-        None
-        if user_sub is None
-        else await entitlements_lib.get_entitlement(
-            itgs, user_sub=user_sub, identifier=row.revenue_cat_entitlement
+    if has_entitlement is None:
+        entitlement = (
+            None
+            if user_sub is None
+            else await entitlements_lib.get_entitlement(
+                itgs, user_sub=user_sub, identifier=row.revenue_cat_entitlement
+            )
         )
-    )
-    has_entitlement = entitlement is not None and entitlement.is_active
+        has_entitlement = entitlement is not None and entitlement.is_active
+
+    if access_flags is None:
+        access_flags = CourseAccessFlags.VIEW_METADATA | CourseAccessFlags.LIKE
+        if has_entitlement:
+            access_flags |= CourseAccessFlags.TAKE_JOURNEYS
 
     return ExternalCourse(
         uid=row.uid,
+        jwt=(
+            await create_course_jwt(
+                itgs, row.uid, flags=access_flags, expires_at=expires_at
+            )
+            if not skip_jwts
+            else ""
+        ),
         slug=row.slug,
         title=row.title,
         description=row.description,

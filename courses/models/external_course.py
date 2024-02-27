@@ -14,6 +14,9 @@ class ExternalCourseInstructor(BaseModel):
 
 class ExternalCourse(BaseModel):
     uid: str = Field(description="The primary stable external identifier")
+    jwt: str = Field(
+        description="A JWT for this course with at least the VIEW_METADATA flag"
+    )
     slug: str = Field(
         description="The chosen identifier for this course, for URLs or specific frontend behavior"
     )

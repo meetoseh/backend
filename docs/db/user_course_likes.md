@@ -8,7 +8,7 @@ See also: [user_likes](./user_likes.md) for favorited journeys
 
 - `id (integer primary key)`: Internal row identifier
 - `uid (text unique not null)`: Primary stable external row identifier. Uses the
-  [uid prefix](../uid_prefixes.md) `ul`
+  [uid prefix](../uid_prefixes.md) `ucl`
 - `user_id (integer not null references users(id) on delete cascade)`: The user
   who liked the journey
 - `course_id (integer not null references courses(id) on delete cascade)`: The

@@ -4,7 +4,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Optional
 from courses.models.course_ref import CourseRef
-from courses.auth import create_jwt as create_course_jwt
+from courses.auth import CourseAccessFlags, create_jwt as create_course_jwt
 from auth import auth_any
 from itgs import Itgs
 from journeys.models.series_flags import SeriesFlags
@@ -33,7 +33,7 @@ async def start_course_download(
 ):
     """Returns the necessary information to download the latest course export
     for the course with the given uid, if such a course exists and the user is
-    entitled to it.
+    entitled to it. The returned jwt has just the DOWNLOAD flag set.
 
     To use a code instead to start the download, use start_course_download_with_code
 
@@ -78,7 +78,7 @@ async def start_course_download(
         else:
             await slack.send_oseh_bot_message(msg)
         course_jwt = await create_course_jwt(
-            itgs, course_uid=args.course_uid, duration=60
+            itgs, args.course_uid, flags=CourseAccessFlags.DOWNLOAD, duration=60
         )
         return Response(
             content=CourseRef(uid=args.course_uid, jwt=course_jwt).model_dump_json(),

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Header
 from typing import Optional
 from error_middleware import handle_contextless_error
 from models import STANDARD_ERRORS_BY_CODE, AUTHORIZATION_UNKNOWN_TOKEN
-from courses.auth import auth_any
+from courses.auth import CourseAccessFlags, auth_any
 from itgs import Itgs
 from content_files.lib.serve_s3_file import serve_s3_file, ServableS3File
 
@@ -20,14 +20,18 @@ async def finish_course_download(uid: str, authorization: Optional[str] = Header
     the given uid.
 
     Requires a course JWT for the course with that uid provided via the
-    authorization header, in the standard `bearer {token}` format.
+    authorization header, with the DOWNLOAD flag set, in the standard
+    `bearer {token}` format.
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
         if auth_result.result is None:
             return auth_result.error_response
 
-        if auth_result.result.course_uid != uid:
+        if (
+            auth_result.result.course_uid != uid
+            or (auth_result.result.oseh_flags & CourseAccessFlags.DOWNLOAD) == 0
+        ):
             return AUTHORIZATION_UNKNOWN_TOKEN
 
         conn = await itgs.conn()

@@ -2,6 +2,7 @@ from fastapi import APIRouter
 import users.me.routes.cancel_subscription
 import users.me.routes.delete_account
 import users.me.routes.finish_checkout_stripe
+import users.me.routes.like_course
 import users.me.routes.like_journey
 import users.me.routes.picture
 import users.me.routes.read_course_journeys
@@ -20,6 +21,7 @@ import users.me.routes.start_checkout_stripe
 import users.me.routes.start_introductory_journey
 import users.me.routes.start_journey_from_history
 import users.me.routes.started_ai_journey
+import users.me.routes.unlike_course
 import users.me.routes.unlike_journey
 import users.me.routes.unsubscribe_daily_reminders
 import users.me.routes.update_name
@@ -51,10 +53,12 @@ router.include_router(users.me.routes.set_goal.router)
 router.include_router(users.me.routes.start_ai_journey.router)
 router.include_router(users.me.routes.start_checkout_stripe.router)
 router.include_router(users.me.routes.finish_checkout_stripe.router)
+router.include_router(users.me.routes.like_course.router)
 router.include_router(users.me.routes.like_journey.router)
 router.include_router(users.me.routes.start_introductory_journey.router)
 router.include_router(users.me.routes.start_journey_from_history.router)
 router.include_router(users.me.routes.started_ai_journey.router)
+router.include_router(users.me.routes.unlike_course.router)
 router.include_router(users.me.routes.unlike_journey.router)
 router.include_router(
     users.me.routes.unsubscribe_daily_reminders.router, tags=["notifications"]

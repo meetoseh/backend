@@ -9,6 +9,7 @@ class MinimalCourse(BaseModel):
     liked_at: Optional[float] = Field(
         description="If the user liked the course, when in seconds since the epoch"
     )
+    jwt: str = Field(description="A JWT with at least the VIEW_METADATA flag")
 
 
 class MinimalCourseJourney(BaseModel):

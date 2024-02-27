@@ -6,7 +6,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 from courses.models.course_ref import CourseRef
-from courses.auth import create_jwt as create_course_jwt
+from courses.auth import CourseAccessFlags, create_jwt as create_course_jwt
 from itgs import Itgs
 from lib.shared.clean_for_slack import clean_for_non_code_slack, clean_for_slack
 from lib.shared.describe_user import enqueue_send_described_user_slack_message
@@ -48,7 +48,7 @@ AUTHORIZATION_UNKNOWN_CODE = Response(
 async def start_course_download_with_code(args: StartCourseDownloadWithCodeRequest):
     """Returns the necessary information to download the latest course export
     for the course authorized by the given code, if such a course exists and the
-    code is valid.
+    code is valid. The returned jwt has just the DOWNLOAD flag set.
 
     To use a users entitlement instead to start the download, use start_course_download
     """
@@ -107,9 +107,9 @@ async def start_course_download_with_code(args: StartCourseDownloadWithCodeReque
                 itgs,
                 message=f"{{name}} {msg}",
                 sub=user_sub,
-                channel="oseh_bot"
-                if os.environ["ENVIRONMENT"] != "dev"
-                else "web_error",
+                channel=(
+                    "oseh_bot" if os.environ["ENVIRONMENT"] != "dev" else "web_error"
+                ),
             )
         else:
             slack = await itgs.slack()
@@ -123,7 +123,9 @@ async def start_course_download_with_code(args: StartCourseDownloadWithCodeReque
             else:
                 await slack.send_oseh_bot_message(msg)
 
-        course_jwt = await create_course_jwt(itgs, course_uid=course_uid, duration=60)
+        course_jwt = await create_course_jwt(
+            itgs, course_uid, flags=CourseAccessFlags.DOWNLOAD, duration=60
+        )
         return Response(
             content=CourseRef(uid=course_uid, jwt=course_jwt).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},

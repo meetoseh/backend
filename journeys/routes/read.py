@@ -119,6 +119,9 @@ class JourneyFilter(BaseModel):
     subcategory_external_name: Optional[FilterTextItemModel] = Field(
         None, description="the external name of the subcategory"
     )
+    instructor_name: Optional[FilterTextItemModel] = Field(
+        None, description="the name of the instructor"
+    )
     instructor_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the instructor"
     )
@@ -337,6 +340,8 @@ async def raw_read_journeys(
             return journey_subcategories.external_name
         elif key == "instructor_uid":
             return instructors.uid
+        elif key == "instructor_name":
+            return instructors.name
         elif key == "prompt_style":
             return Function("json_extract", interactive_prompts.prompt, "style")
         elif key == "blurred_background_image_file_uid":

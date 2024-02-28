@@ -210,7 +210,12 @@ async def write_stripe_price_to_local_cache(
     stampeding effects
     """
     cache = await itgs.local_cache()
-    cache.set(_cache_key(product_id), raw, expire=3600 + random.randint(2, 10))
+    cache.set(
+        _cache_key(product_id),
+        raw,
+        expire=3600 + random.randint(2, 10),
+        tag="collab",
+    )
 
 
 async def read_stripe_price_from_remote_cache(

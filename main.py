@@ -5,7 +5,10 @@ from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error, handle_error
 from itgs import Itgs, our_diskcache
-from lifespan import top_level_lifespan_handler, lifespan_handler
+from lifespan import (
+    first_lifespan_handler,
+    top_level_lifespan_handler,
+)
 from mp_helper import adapt_threading_event_to_asyncio
 import perpetual_pub_sub
 import secrets
@@ -74,7 +77,7 @@ while our_diskcache.evict(tag="collab") > 0:
     ...
 
 
-@lifespan_handler
+@first_lifespan_handler
 async def register_background_tasks():
     if perpetual_pub_sub.instance is None:
         perpetual_pub_sub.instance = perpetual_pub_sub.PerpetualPubSub()

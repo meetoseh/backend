@@ -252,6 +252,32 @@ particular inapp notification.
   It uses the native prompt, which does not tell us what action the user took.
   Has no actions.
 
+- Upgrade (`oseh_ian_UWqxuftHMXtUnzn9kxnTOA`) is shown whenever the user is
+  shown the upgrade screen, such as by navigating to /upgrade, clicking
+  one of the unlock with oseh+ buttons, etc.
+  - `open`: always added as the first action to provide additional context.
+    extra includes the following fields:
+    - `context (object)`: includes a `type (string)` which is one of:
+      - `generic`: no additional information
+      - `onboarding`: no additional information
+      - `series`: includes `course_uid (string)`
+      - `longerClasses`: includes `emotion (string)`
+    - `platform (string)`: one of `ios`, `android`, `stripe` for the payment provider
+    - `offering (object)`: the offering being presented
+      - `id (string)`: the RevenueCat offering id
+      - `products (array of string)` each string is a RevenueCat package id
+    - `initial (string)`: the package id of the initial selection
+  - `package_selected`: the user switched the selected offering
+    - `package (string)`: the package id of the newly selected package within the offering
+  - `subscribe_clicked`: the user clicked the subscribe button. this may require
+    additional work before we can display the purchase screen
+    - `immediate (boolean)`: if true, we can immediately delegate to native behavior
+      and there will not be a `purchase_screen_shown` action. if false, we will
+      need to perform some work first and then will call `purchase_screen_shown`
+  - `purchase_screen_shown`: we have completed all the work required to present the
+    purchase screen, and the native behavior (e.g., redirect to stripe) is taking over
+  - `close`: the user closed the upgrade screen
+
 ## Schema
 
 ```sql

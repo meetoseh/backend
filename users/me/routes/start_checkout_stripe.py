@@ -2,8 +2,8 @@ import os
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Annotated, Literal, Optional
 from auth import AuthResult, auth_id
 from itgs import Itgs
 from lib.contact_methods.user_current_email import get_user_current_email
@@ -12,15 +12,24 @@ from starlette.concurrency import run_in_threadpool
 from user_safe_error import UserSafeError
 from error_middleware import handle_error
 import users.lib.entitlements as entitlements
+import users.lib.offerings as offerings
 import stripe
 import secrets
 from urllib.parse import urlencode
+
+from users.lib.stripe_prices import get_stripe_price
 
 
 router = APIRouter()
 
 
 class StartCheckoutStripeRequest(BaseModel):
+    package_id: Annotated[
+        Optional[str], StringConstraints(min_length=1, max_length=255)
+    ] = Field(
+        description="The RevenueCat package identifier to use, or None for default"
+    )
+
     cancel_path: Literal["/"] = Field(
         description=("The path to redirect to if the user cancels the checkout flow.")
     )
@@ -120,6 +129,33 @@ async def start_checkout_stripe(
         except UserSafeError as exc:
             return exc.response
 
+        stripe_price_id = os.environ["OSEH_STRIPE_PRICE_ID"]
+        if args.package_id is not None:
+            user_offerings = await offerings.get_offerings(
+                itgs, user_sub=auth_result.result.sub, platform="stripe", force=False
+            )
+            stripe_product_id = None
+            if user_offerings is not None:
+                for offering in user_offerings.offerings:
+                    if offering.identifier != user_offerings.current_offering_id:
+                        continue
+                    for package in offering.packages:
+                        if package.identifier == args.package_id:
+                            stripe_product_id = package.platform_product_identifier
+                            break
+                    break
+
+            if stripe_product_id is not None:
+                try:
+                    product_default_price_id = await get_default_stripe_price_id(
+                        itgs, stripe_product_id=stripe_product_id
+                    )
+                except UserSafeError as exc:
+                    return exc.response
+
+                if product_default_price_id is not None:
+                    stripe_price_id = product_default_price_id
+
         uid = f"oseh_oscs_{secrets.token_urlsafe(16)}"
         try:
             session = await run_in_threadpool(
@@ -136,7 +172,7 @@ async def start_checkout_stripe(
                 mode="subscription",
                 line_items=[
                     {
-                        "price": os.environ["OSEH_STRIPE_PRICE_ID"],
+                        "price": stripe_price_id,
                         "quantity": 1,
                     }
                 ],
@@ -332,3 +368,45 @@ async def store_session(
             user_sub,
         ),
     )
+
+
+async def get_default_stripe_price_id(
+    itgs: Itgs, /, *, stripe_product_id: str
+) -> Optional[str]:
+    """Fetches the default stripe price id associated with the stripe product
+    with the given id. Caches the result in redis for 15 minutes.
+    """
+    try:
+        price = await get_stripe_price(itgs, product_id=stripe_product_id)
+    except Exception as exc:
+        await handle_error(exc, extra_info=f"fetching prices for {stripe_product_id=}")
+        raise UserSafeError(
+            f"failed to fetch prices for {stripe_product_id=}",
+            Response(
+                content=StandardErrorResponse[ERROR_503_TYPES](
+                    type="stripe_error",
+                    message="There was an error communicating with our payment provider.",
+                ).model_dump_json(),
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Retry-After": "5",
+                },
+            ),
+        )
+
+    if price is None:
+        raise UserSafeError(
+            f"failed to fetch prices for {stripe_product_id=}",
+            Response(
+                content=StandardErrorResponse[ERROR_503_TYPES](
+                    type="stripe_error",
+                    message="There was an error communicating with our payment provider.",
+                ).model_dump_json(),
+                headers={
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Retry-After": "5",
+                },
+            ),
+        )
+
+    return price.id

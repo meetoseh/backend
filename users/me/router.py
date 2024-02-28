@@ -11,9 +11,11 @@ import users.me.routes.read_daily_reminders
 import users.me.routes.read_entitlements
 import users.me.routes.read_history
 import users.me.routes.read_identities
+import users.me.routes.read_offerings
 import users.me.routes.read_merge_account_suggestions
 import users.me.routes.read_revenue_cat_id
 import users.me.routes.read_streak
+import users.me.routes.read_stripe_price
 import users.me.routes.read_wants_notif_time_prompt
 import users.me.routes.set_goal
 import users.me.routes.start_ai_journey
@@ -45,9 +47,11 @@ router.include_router(
 router.include_router(users.me.routes.read_entitlements.router)
 router.include_router(users.me.routes.read_history.router)
 router.include_router(users.me.routes.read_identities.router)
+router.include_router(users.me.routes.read_offerings.router)
 router.include_router(users.me.routes.read_merge_account_suggestions.router)
 router.include_router(users.me.routes.read_revenue_cat_id.router)
 router.include_router(users.me.routes.read_streak.router)
+router.include_router(users.me.routes.read_stripe_price.router)
 router.include_router(users.me.routes.read_wants_notif_time_prompt.router)
 router.include_router(users.me.routes.set_goal.router)
 router.include_router(users.me.routes.start_ai_journey.router)

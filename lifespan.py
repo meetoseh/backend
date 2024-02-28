@@ -23,6 +23,7 @@ async def handle_lifespan():
     ...  # teardown code
 ```
 """
+
 from fastapi import FastAPI
 from typing import Callable, AsyncGenerator, List
 from contextlib import asynccontextmanager
@@ -38,6 +39,13 @@ def lifespan_handler(func: Callable[[], AsyncGenerator]) -> None:
     assert _already_started is False
     global _registered_handlers
     _registered_handlers.append(func)
+
+
+def first_lifespan_handler(func: Callable[[], AsyncGenerator]) -> None:
+    """Decorator to register a lifespan handler."""
+    assert _already_started is False
+    global _registered_handlers
+    _registered_handlers.insert(0, func)
 
 
 @asynccontextmanager

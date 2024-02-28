@@ -371,6 +371,38 @@ the keys that we use in redis
   see also: diskcache key with the same name for the local cache, and
   `ps:transcripts` which is used to actively fill out instance caches
 
+- `revenue_cat:offerings:{revenue_cat_id}:{platform}` goes to the offerings
+  from https://www.revenuecat.com/docs/api-v1#tag/Project/operation/list-projects
+  for that revenue cat id and platform, gzip-compressed, with a 1 hour expiration
+
+  ```json
+  {
+    "current_offering_id": "string",
+    "offerings": [
+      {
+        "description": "string",
+        "identifier": "string",
+        "metadata": {
+          "alternative": { "dev": "string" },
+          "environment": "string"
+        },
+        "packages": [
+          {
+            "identifier": "string",
+            "platform_product_identifier": "string"
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+- `stripe:abridged_prices:{product_id}` goes to a json object containing
+  the abridged `stripe.Price` object associated with the stripe product
+  with the given id. The exact abridged information is
+  authoritatively described in `users.lib.stripe_prices`. Always has a
+  1 hour expiration.
+
 ### Push Namespace
 
 - `push:send_job:lock` is a basic redis lock key used to ensure only one send job is
@@ -3357,3 +3389,27 @@ These are regular keys used by the personalization module
   `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
   `length_bytes` of data to write to the corresponding local cache key. All
   numbers are big-endian encoded.
+
+- `ps:revenue_cat:offerings` is used to keep revenue cat offerings for revenue
+  cat identifiers in sync across instances. messages are formatted as
+  (uint16, blob, uint8, blob, uint64, blob), which mean, in order:
+
+  1. length of revenue cat id
+  2. revenue cat id
+  3. length of platform
+  4. platform
+  5. length of the blob to write to the local cache
+  6. the blob to write to the local cache
+
+  All numbers are big-endian encoded.
+
+- `ps:stripe:products:prices` is used to keep abridged stripe information for the
+  price associated with the stripe product with the given id in sync across instances.
+  messages are formatted as (uint16, blob, unit64, blob), which mean, in order:
+
+  1. length of the stripe product id
+  2. stripe product id
+  3. length of the blob to write to the local cache
+  4. the blob to write to the local cache
+
+  All numbers are big-endian encoded.

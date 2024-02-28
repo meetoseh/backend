@@ -388,6 +388,38 @@ the keys we store locally on backend instances via diskcache
   given date range (incl -> excl). see also:
   [journey_share_link_unique_view_stats](../../admin_journey_Share_links/routes/unique_view_stats.py)
 
+- `revenue_cat:offerings:{revenue_cat_id}:{platform}` goes to the offerings
+  from https://www.revenuecat.com/docs/api-v1#tag/Project/operation/list-projects
+  for that revenue cat id and platform, gzip-compressed, with a 1 hour expiration
+
+  ```json
+  {
+    "current_offering_id": "string",
+    "offerings": [
+      {
+        "description": "string",
+        "identifier": "string",
+        "metadata": {
+          "alternative": { "dev": "string" },
+          "environment": "string"
+        },
+        "packages": [
+          {
+            "identifier": "string",
+            "platform_product_identifier": "string"
+          }
+        ]
+      }
+    ]
+  }
+  ```
+
+- `stripe:abridged_prices:{product_id}` goes to a json object containing
+  the abridged `stripe.Price` object associated with the stripe product
+  with the given id. The exact abridged information is
+  authoritatively described in `users.lib.stripe_prices`. Has an about
+  1 hour expiration
+
 ## Personalization
 
 This contains keys for the personalization subspace

@@ -158,6 +158,9 @@ class JourneyFilter(BaseModel):
     variation_of_journey_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the journey this journey is a variation of"
     )
+    within_any_course: Optional[FilterItemModel[bool]] = Field(
+        None, description="whether the journey is within any course"
+    )
 
 
 class ReadJourneyRequest(BaseModel):
@@ -260,6 +263,7 @@ async def raw_read_journeys(
     interactive_prompt_sessions = Table("interactive_prompt_sessions")
     interactive_prompts = Table("interactive_prompts")
     variation_journeys = journeys.as_("variation_journeys")
+    course_journeys = Table("course_journeys")
 
     query: QueryBuilder = (
         Query.from_(journeys)
@@ -365,6 +369,12 @@ async def raw_read_journeys(
             )
         elif key == "variation_of_journey_uid":
             return variation_journeys.uid
+        elif key == "within_any_course":
+            return ExistsCriterion(
+                Query.from_(course_journeys)
+                .select(1)
+                .where(course_journeys.journey_id == journeys.id)
+            )
         raise ValueError(f"unknown key: {key}")
 
     for key, filter in filters_to_apply:

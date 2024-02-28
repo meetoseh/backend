@@ -197,15 +197,12 @@ async def get_image_playlist(
             SELECT
                 image_file_exports.uid, image_file_exports.width, image_file_exports.height,
                 image_file_exports.format, s3_files.file_size, image_file_exports.thumbhash
-            FROM image_file_exports
-            JOIN s3_files ON s3_files.id = image_file_exports.s3_file_id
+            FROM image_files, image_file_exports, s3_files
             WHERE
-                EXISTS (
-                    SELECT 1 FROM image_files
-                    WHERE image_files.id = image_file_exports.image_file_id
-                      AND image_files.uid = ?
-                )
-            ORDER BY image_file_exports.format ASC, s3_files.file_size ASC
+                image_files.uid = ?
+                AND image_files.id = image_file_exports.image_file_id
+                AND s3_files.id = image_file_exports.s3_file_id
+            ORDER BY image_file_exports.format ASC
             """,
             (uid,),
         )
@@ -248,6 +245,7 @@ async def get_image_playlist(
                 last_fmt = item.format
                 cur_list = [item]
             elif last_fmt != item.format:
+                cur_list.sort(key=lambda x: x.size_bytes)
                 items[last_fmt] = cur_list
                 last_fmt = item.format
                 cur_list = [item]
@@ -255,6 +253,7 @@ async def get_image_playlist(
                 cur_list.append(item)
 
         if cur_list is not None and last_fmt is not None:
+            cur_list.sort(key=lambda x: x.size_bytes)
             items[last_fmt] = cur_list
 
         result = PlaylistResponse(items=items)

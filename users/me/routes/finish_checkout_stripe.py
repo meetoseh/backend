@@ -4,6 +4,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from error_middleware import handle_error
 from itgs import Itgs
+from lib.shared.describe_user import enqueue_send_described_user_slack_message
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_id
 from starlette.concurrency import run_in_threadpool
@@ -25,7 +26,13 @@ class FinishCheckoutStripeRequest(BaseModel):
 
 
 class FinishCheckoutStripeResponse(BaseModel):
-    ...
+    has_pro: bool = Field(
+        description=(
+            "Whether the user now has the Pro entitlement. If this is false, the user "
+            "may not have a Pro entitlement, or the server may have been unable to "
+            "verify it."
+        )
+    )
 
 
 router = APIRouter()
@@ -223,14 +230,39 @@ async def finish_checkout_stripe(
             "DELETE FROM open_stripe_checkout_sessions WHERE uid=?",
             (args.checkout_uid,),
         )
-        await entitlements.get_entitlement(
+        pro_entitlement = await entitlements.get_entitlement(
             itgs,
             user_sub=auth_result.result.sub,
             identifier="pro",
             force=True,
         )
+        if pro_entitlement is None:
+            return Response(
+                content=StandardErrorResponse[ERROR_503_TYPES](
+                    type="user_not_found",
+                    message=(
+                        "Your user account could not be found. Please try again later."
+                    ),
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=503,
+            )
+
+        if (
+            checkout_session.amount_total is not None
+            and checkout_session.amount_total > 0
+        ):
+            await enqueue_send_described_user_slack_message(
+                itgs,
+                message=f"{{name}} just finalized a checkout session for ${checkout_session.amount_total / 100:.2f}! 🎉",
+                sub=auth_result.result.sub,
+                channel="oseh_bot",
+            )
+
         return Response(
-            content=FinishCheckoutStripeResponse().model_dump_json(),
+            content=FinishCheckoutStripeResponse(
+                has_pro=pro_entitlement.is_active
+            ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )

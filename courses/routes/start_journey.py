@@ -2,13 +2,14 @@ import secrets
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 from journeys.lib.notifs import on_entering_lobby
 from error_middleware import handle_contextless_error
 from journeys.lib.read_one_external import read_one_external
 from journeys.models.external_journey import ExternalJourney
 from journeys.models.series_flags import SeriesFlags
 from models import (
+    AUTHORIZATION_UNKNOWN_TOKEN,
     StandardErrorResponse,
     STANDARD_ERRORS_BY_CODE,
 )
@@ -18,6 +19,7 @@ from itgs import Itgs
 from journeys.auth import create_jwt as create_journey_jwt
 from response_utils import cleanup_response
 import time
+import courses.auth
 
 router = APIRouter()
 
@@ -26,6 +28,13 @@ class StartJourneyRequest(BaseModel):
     journey_uid: str = Field(description="The UID of the journey you want to start")
     course_uid: str = Field(
         description="The UID of the course that you own that includes the journey"
+    )
+    course_jwt: Optional[str] = Field(
+        None,
+        description=(
+            "If specified, must have the take journeys flag and is used instead of "
+            "the revenue cat entitlement. This will be required in the future."
+        ),
     )
 
 
@@ -82,12 +91,32 @@ async def start_journey(
     typically necessary for the client to consider if that would be appropriate
     given the context they are doing this in.
 
+    This requires that the course has been attached already.
+
     Requires standard authorization
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
         if auth_result.result is None:
             return auth_result.error_response
+
+        course_auth_result = (
+            None
+            if args.course_jwt is None
+            else await courses.auth.auth_any(itgs, f"bearer {args.course_jwt}")
+        )
+        if course_auth_result is not None:
+            if course_auth_result.result is None:
+                return course_auth_result.error_response
+            if (
+                course_auth_result.result.course_uid != args.course_uid
+                or (
+                    course_auth_result.result.oseh_flags
+                    & courses.auth.CourseAccessFlags.TAKE_JOURNEYS
+                )
+                == 0
+            ):
+                return AUTHORIZATION_UNKNOWN_TOKEN
 
         conn = await itgs.conn()
         cursor = conn.cursor("none")
@@ -101,22 +130,32 @@ async def start_journey(
             FROM courses 
             WHERE 
                 courses.uid = ?
-                AND (courses.flags & ?) != 0
-            """,
-            (args.course_uid, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)),
+            """
+            + (" AND (courses.flags & ?) != 0" if args.course_jwt is None else ""),
+            (
+                args.course_uid,
+                *(
+                    [int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)]
+                    if args.course_jwt is None
+                    else []
+                ),
+            ),
         )
         if not response.results:
             return JOURNEY_NOT_FOUND_RESPONSE
 
-        course_title: str = response.results[0][0]
-        course_slug: str = response.results[0][1]
-        revenue_cat_entitlement: str = response.results[0][2]
+        course_title = cast(str, response.results[0][0])
+        course_slug = cast(str, response.results[0][1])
+        revenue_cat_entitlement = cast(str, response.results[0][2])
 
-        entitlement_info = await entitlements.get_entitlement(
-            itgs, user_sub=auth_result.result.sub, identifier=revenue_cat_entitlement
-        )
-        if entitlement_info is None or not entitlement_info.is_active:
-            return JOURNEY_NOT_FOUND_RESPONSE
+        if args.course_jwt is None:
+            entitlement_info = await entitlements.get_entitlement(
+                itgs,
+                user_sub=auth_result.result.sub,
+                identifier=revenue_cat_entitlement,
+            )
+            if entitlement_info is None or not entitlement_info.is_active:
+                return JOURNEY_NOT_FOUND_RESPONSE
 
         response = await cursor.execute(
             """

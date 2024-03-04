@@ -403,6 +403,51 @@ the keys that we use in redis
   authoritatively described in `users.lib.stripe_prices`. Always has a
   1 hour expiration.
 
+- `stripe:customer_portals:{user_sub}` goes to a json object which is
+  discriminated by type, where the type is one of:
+  - `loading`:
+    - `hostname`: the hostname of the instance fetching the customer portal
+      for the user with the given sub
+    - `started_at`: the time the instance began working on this in seconds
+      since the epoch
+    - `id`: a random string for the request
+  - `unavailable`:
+    - `reason`: string enum:
+      - `no-customer`: the user has no stripe customer associated with
+        active subscriptions
+      - `multiple-customers`: the user has multiple stripe customers associated
+        with active subscriptions
+    - `checked_at`: when we checked if the customer portal was available
+      in seconds since the epoch
+  - `available`:
+    - `url`: the url of the customer portal
+    - `checked_at`: when we checked if the customer portal was available
+      in seconds since the epoch
+      always has an expiration set; 60s after it was fetched or 20s
+      after we started fetching it, depending on the type.
+      When setting this value to a non-loading type, also publish a message to
+      `ps:stripe:customer_portals:{user_sub}`, which allows for long-polling
+      to make the API easier to use
+
+- `stripe:synced_at:{user_sub}` goes to a string containing the time in seconds
+  since the epoch when we last synced the subscriptions of all the stripe
+  customers for the user with the given sub with revenue cat, actively. This
+  operation is mostly required for the dev environment, but can be helpful for
+  auto-resolving delays in syncs between stripe and revenue cat. This is always
+  set to expire 5m after it is set. A client can request their stripe
+  subscriptions be synced. This request is processed immediately and then a
+  value is set in this key. If this key is set, then instead the user sub is
+  inserted into `stripe:queued_syncs` (if not already there). This ensures:
+  - Whenever a client requests a sync, a sync will occur chronologically after
+    the request, "soon"
+  - Most syncs can be processed immediately
+  NOTE: in order to handle retries, the sweep job for `stripe:queued_syncs` may
+  push syncs to later without editing this key. Hence, the queue must be checked
+  in addition to this key.
+
+- `stripe:queued_syncs` goes to a sorted set where the scores are unix times
+  that the sync should be attempted and the values are the user subs to sync.
+
 ### Push Namespace
 
 - `push:send_job:lock` is a basic redis lock key used to ensure only one send job is
@@ -3413,3 +3458,7 @@ These are regular keys used by the personalization module
   4. the blob to write to the local cache
 
   All numbers are big-endian encoded.
+
+- `ps:stripe:customer_portals:{user_sub}` is sent one message when the corresponding
+  key `stripe:customer_portals:{user_sub}` is set to a non-loading type. The message
+  is the new value of the corresponding key.

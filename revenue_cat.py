@@ -1,5 +1,6 @@
 """This module assists with working with entitlements from RevenueCat"""
 
+import os
 from typing import Dict, List, Literal, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel, Field, TypeAdapter
@@ -152,6 +153,9 @@ class RevenueCat:
         self.stripe_pk: str = stripe_pk
         """The public key for the Stripe app in RevenueCat"""
 
+        self.is_sandbox: bool = os.environ["ENVIRONMENT"] == "dev"
+        """If we're accessing the sandbox environment on revenuecat"""
+
         self.session: Optional[aiohttp.ClientSession] = None
         """If this has been entered as an async context manager, this will be
         the aiohttp session
@@ -188,6 +192,7 @@ class RevenueCat:
                 headers={
                     "Authorization": f"Bearer {self.sk}",
                     "Accept": "application/json",
+                    "X-Is-Sandbox": "true" if self.is_sandbox else "false",
                 },
             ) as resp:
                 if handle_ratelimits and resp.status == 429:
@@ -291,6 +296,12 @@ class RevenueCat:
         Specifying is_restore=True will cause the default restore behavior, usually
         meaning that if the checkout session was used to apply entitlements to another
         user already, those entitlements are removed and added to this user.
+
+        Args:
+            revenue_cat_id (str): The RevenueCat ID of the user
+            stripe_checkout_session_id (str): The ID of the stripe checkout session
+                or subscription ID
+            is_restore (bool, optional): Whether this is a restore operation. Defaults to False.
         """
         assert self.session is not None
 

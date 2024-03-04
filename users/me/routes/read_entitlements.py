@@ -15,6 +15,17 @@ class ReadEntitlementResponse(BaseModel):
         description=("The identifier of the requested entitlement.")
     )
     is_active: bool = Field(description=("Whether the user has the given entitlement"))
+    active_info: Optional[entitlements.CachedEntitlementActiveInfo] = Field(
+        None,
+        description=(
+            "If the user has this entitlement, information about the "
+            "subscription they have for information purposes only. This "
+            "is not intended to be used for determining if the use has the "
+            "entitlement, as we do not directly manage subscriptions. For "
+            "stripe, for example, the customer portal shows authoritative "
+            "info. For ios, the App Store. For google, Google Play."
+        ),
+    )
     expiration_date: Optional[float] = Field(
         description=(
             "If the entitlement will expire unless renewed, this is the "
@@ -88,6 +99,7 @@ async def read_entitlement(
                 content=ReadEntitlementResponse(
                     identifier=identifier,
                     is_active=False,
+                    active_info=None,
                     expiration_date=None,
                     checked_at=time.time(),
                 ).model_dump_json(),
@@ -132,6 +144,7 @@ async def read_entitlement(
             content=ReadEntitlementResponse(
                 identifier=identifier,
                 is_active=result.is_active,
+                active_info=result.active_info,
                 expiration_date=result.expires_at,
                 checked_at=result.checked_at,
             ).model_dump_json(),

@@ -238,7 +238,7 @@ class PurchasesStoreProduct(BaseModel):
 
 get_localized_price_by_platform: Dict[
     Literal["stripe"],
-    Callable[[Itgs, str, str], Awaitable[Optional[PurchasesStoreProduct]]],
+    Callable[[Itgs, Optional[str], str], Awaitable[Optional[PurchasesStoreProduct]]],
 ] = dict()
 
 
@@ -246,7 +246,7 @@ async def get_localized_price(
     itgs: Itgs,
     /,
     *,
-    user_sub: str,
+    user_sub: Optional[str],
     platform_product_identifier: str,
     platform: Literal["stripe"],
 ) -> Optional[PurchasesStoreProduct]:
@@ -254,8 +254,9 @@ async def get_localized_price(
 
     Args:
         itgs (Itgs): the integrations to (re)use
-        user_sub (str): the sub of the user to ge the price for. This will return
-            a price without necessarily verifying the user is not already subscribed
+        user_sub (str, None): the sub of the user to ge the price for. This will return
+            a price without necessarily verifying the user is not already subscribed.
+            If the user sub is not provided, a generic locale is used
         platform_product_identifier (str): the platform specific identifier for the
             product they are trying to purchaser. For our purposes, the annual
             $99 subscription is a different product compared to the monthly $13

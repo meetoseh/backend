@@ -15,6 +15,7 @@ import users.me.routes.read_offerings
 import users.me.routes.read_merge_account_suggestions
 import users.me.routes.read_revenue_cat_id
 import users.me.routes.read_streak
+import users.me.routes.read_stripe_customer_portal
 import users.me.routes.read_stripe_price
 import users.me.routes.read_wants_notif_time_prompt
 import users.me.routes.set_goal
@@ -23,6 +24,7 @@ import users.me.routes.start_checkout_stripe
 import users.me.routes.start_introductory_journey
 import users.me.routes.start_journey_from_history
 import users.me.routes.started_ai_journey
+import users.me.routes.sync_stripe
 import users.me.routes.unlike_course
 import users.me.routes.unlike_journey
 import users.me.routes.unsubscribe_daily_reminders
@@ -51,6 +53,7 @@ router.include_router(users.me.routes.read_offerings.router)
 router.include_router(users.me.routes.read_merge_account_suggestions.router)
 router.include_router(users.me.routes.read_revenue_cat_id.router)
 router.include_router(users.me.routes.read_streak.router)
+router.include_router(users.me.routes.read_stripe_customer_portal.router)
 router.include_router(users.me.routes.read_stripe_price.router)
 router.include_router(users.me.routes.read_wants_notif_time_prompt.router)
 router.include_router(users.me.routes.set_goal.router)
@@ -62,6 +65,7 @@ router.include_router(users.me.routes.like_journey.router)
 router.include_router(users.me.routes.start_introductory_journey.router)
 router.include_router(users.me.routes.start_journey_from_history.router)
 router.include_router(users.me.routes.started_ai_journey.router)
+router.include_router(users.me.routes.sync_stripe.router)
 router.include_router(users.me.routes.unlike_course.router)
 router.include_router(users.me.routes.unlike_journey.router)
 router.include_router(

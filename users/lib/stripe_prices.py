@@ -22,7 +22,7 @@ import perpetual_pub_sub as pps
 
 async def get_localized_price(
     itgs: Itgs,
-    user_sub: str,
+    user_sub: Optional[str],
     product_id: str,
 ) -> Optional[PurchasesStoreProduct]:
     """Determines the localized price for the user with the given sub purchasing
@@ -30,7 +30,8 @@ async def get_localized_price(
 
     Args:
       itgs (Itgs): the integrations to (re)use
-      user_sub (str): the sub of the user whose trying to purchase the product
+      user_sub (str, None): the sub of the user whose trying to purchase the product, or
+        None for no localization
       product_id (str): the id of the stripe product
     """
     # For now we don't do any price localization on stripe, but the idea
@@ -109,10 +110,12 @@ class AbridgedStripePrice(BaseModel):
 
 async def convert_stripe_price_to_purchases_store_product(
     itgs: Itgs,
-    user_sub: str,
+    user_sub: Optional[str],
     stripe_price: AbridgedStripePrice,
 ) -> PurchasesStoreProduct:
-    """Localizes the given stripe price to the user with the given sub"""
+    """Localizes the given stripe price to the user with the given sub, or the
+    generic price if a user sub isn't available
+    """
     assert stripe_price.billing_scheme == "per_unit", stripe_price
     assert stripe_price.currency == "usd", stripe_price
     assert stripe_price.unit_amount is not None, stripe_price

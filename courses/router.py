@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 import courses.routes.activate
 import courses.routes.attach_free
+import courses.routes.attach_via_jwt
 import courses.routes.attach
 import courses.routes.start_next
 import courses.routes.advance
@@ -25,6 +26,7 @@ import courses.videos.router
 router = APIRouter()
 router.include_router(courses.routes.activate.router)
 router.include_router(courses.routes.attach_free.router)
+router.include_router(courses.routes.attach_via_jwt.router)
 router.include_router(courses.routes.attach.router)
 router.include_router(courses.routes.start_next.router)
 router.include_router(courses.routes.advance.router)

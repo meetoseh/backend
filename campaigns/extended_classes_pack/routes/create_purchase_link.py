@@ -117,9 +117,11 @@ async def create_purchase_link(
                 mode="payment",
                 line_items=[
                     {
-                        "price": "price_1NNd6AEYCG5oJAnI1LZlsUPs"
-                        if not is_dev
-                        else "price_1NNd6nEYCG5oJAnION7dBnik",
+                        "price": (
+                            "price_1NNd6AEYCG5oJAnI1LZlsUPs"
+                            if not is_dev
+                            else "price_1NNd6nEYCG5oJAnION7dBnik"
+                        ),
                         "quantity": 1,
                     }
                 ],

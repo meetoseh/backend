@@ -47,7 +47,7 @@ CourseVideoThumbnailSource = Union[
     CourseVideoThumbnailUserSource, CourseVideoThumbnailFrameSource
 ]
 
-source_validator = TypeAdapter(CourseVideoThumbnailFrameSource)
+source_validator = TypeAdapter(CourseVideoThumbnailSource)
 
 
 class CourseVideoThumbnail(BaseModel):

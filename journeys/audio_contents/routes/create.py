@@ -50,6 +50,7 @@ async def create_journey_audio_content(
             failure_job_name="runners.delete_file_upload",
             failure_job_kwargs=dict(),
             job_progress_uid=job_progress_uid,
+            expires_in=86400,
         )
         return Response(
             content=res.__pydantic_serializer__.to_json(res),

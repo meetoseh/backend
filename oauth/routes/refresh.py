@@ -18,6 +18,8 @@ import time
 import jwt
 import os
 
+from oauth.lib.feature_flags import get_feature_flags
+
 
 router = APIRouter()
 
@@ -282,6 +284,12 @@ async def refresh(args: RefreshRequest):
             key=os.environ["OSEH_REFRESH_TOKEN_SECRET"],
             algorithm="HS256",
         )
+        feature_flags = await get_feature_flags(
+            itgs,
+            user_sub=payload["sub"],
+            email=jwt_email,
+            email_verified=jwt_email_verified,
+        )
 
         new_id_jti = secrets.token_urlsafe(16)
         new_id_token = jwt.encode(
@@ -296,6 +304,11 @@ async def refresh(args: RefreshRequest):
                 "given_name": given_name,
                 "family_name": family_name,
                 **user_info_claims,
+                **(
+                    {}
+                    if feature_flags is None
+                    else {"oseh:feature_flags": feature_flags}
+                ),
             },
             os.environ["OSEH_ID_TOKEN_SECRET"],
             algorithm="HS256",

@@ -31,6 +31,7 @@ from lib.daily_reminders.registration_stats import (
 from lib.redis_stats_preparer import RedisStatsPreparer
 from lib.shared.clean_for_slack import clean_for_slack
 from lib.shared.describe_user import enqueue_send_described_user_slack_message
+from oauth.lib.feature_flags import get_feature_flags
 from oauth.models.oauth_state import OauthState
 from oauth.settings import ProviderSettings
 from redis.asyncio import Redis
@@ -434,18 +435,9 @@ async def create_tokens_for_user(
     }
 
     now = int(time.time())
-    feature_flags: Optional[List[str]] = None
-    if os.environ["ENVIRONMENT"] == "dev":
-        feature_flags = []
-        feature_flags.append("series")
-    else:
-        if (
-            jwt_email is not None
-            and jwt_email.endswith("@oseh.com")
-            and jwt_email_verified
-        ):
-            feature_flags = []
-            feature_flags.append("series")
+    feature_flags = await get_feature_flags(
+        itgs, user_sub=user.user_sub, email=jwt_email, email_verified=jwt_email_verified
+    )
 
     id_token = jwt.encode(
         {

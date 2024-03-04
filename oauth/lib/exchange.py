@@ -131,6 +131,7 @@ class OauthExchangeResponse(BaseModel):
             "- family_name: _optional_ the user's family name\n"
             "- email: _optional_ the users preferred email address\n"
             "- phone_number: _optional_ the users preferred phone number\n"
+            "- oseh:feature_flags: _optional_ a list of strings, each representing a feature flag\n"
         )
     )
     refresh_token: Optional[str] = Field(
@@ -433,6 +434,19 @@ async def create_tokens_for_user(
     }
 
     now = int(time.time())
+    feature_flags: Optional[List[str]] = None
+    if os.environ["ENVIRONMENT"] == "dev":
+        feature_flags = []
+        feature_flags.append("series")
+    else:
+        if (
+            jwt_email is not None
+            and jwt_email.endswith("@oseh.com")
+            and jwt_email_verified
+        ):
+            feature_flags = []
+            feature_flags.append("series")
+
     id_token = jwt.encode(
         {
             "sub": user.user_sub,
@@ -445,6 +459,7 @@ async def create_tokens_for_user(
             "given_name": given_name or interpreted_claims.given_name or "Anonymous",
             "family_name": family_name or interpreted_claims.family_name or "",
             **user_context_claims,
+            **({} if feature_flags is None else {"oseh:feature_flags": feature_flags}),
         },
         os.environ["OSEH_ID_TOKEN_SECRET"],
         algorithm="HS256",
@@ -583,12 +598,12 @@ async def initialize_user_from_info(
             example_claims=example_claims,
             now=time.time(),
         )
-        if user is not None and os.environ['ENVIRONMENT'] != 'dev':
+        if user is not None and os.environ["ENVIRONMENT"] != "dev":
             await enqueue_send_described_user_slack_message(
                 itgs,
-                message=f'{{name}} just signed up with {provider}!',
+                message=f"{{name}} just signed up with {provider}!",
                 sub=user.user_sub,
-                channel='oseh_bot'
+                channel="oseh_bot",
             )
             return user
         await asyncio.sleep(0.1 + 0.1 * random.random())

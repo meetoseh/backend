@@ -27,7 +27,7 @@ class CreateCourseRequest(BaseModel):
     )
     title: str = Field(description="The title of the course, used standalone")
     description: str = Field(
-        description="A roughly 250 character description for the course"
+        description="A roughly 400 character description for the course"
     )
     instructor_uid: str = Field(description="The UID of the instructor for this course")
     background_image_uid: str = Field(

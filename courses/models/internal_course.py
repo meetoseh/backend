@@ -26,7 +26,7 @@ class InternalCourse(BaseModel):
         description="The name of the entitlement on revenuecat required for this course"
     )
     title: str = Field(description="The title of the course, used standalone")
-    description: str = Field(description="A 250 character description for the course")
+    description: str = Field(description="A ~400 character description for the course")
     instructor: InternalCourseInstructor = Field(
         description="The instructor for this course"
     )

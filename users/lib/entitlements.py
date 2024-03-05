@@ -851,6 +851,8 @@ async def _period_from_subscription_key(itgs: Itgs, key: str) -> Optional[Period
         "semi_annual",
     ):
         return Period(iso8601="P6M")
+    if key.endswith('_lifetime'):
+        return Period(iso8601="P200Y")
 
     await handle_warning(
         f"{__name__}:bad_period_key:no_guess",

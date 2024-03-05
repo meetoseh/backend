@@ -271,6 +271,8 @@ async def get_entitlements_from_source(
                             period = Period(iso8601="P6M")
                         elif cycle_days_approx >= 355 and cycle_days_approx <= 375:
                             period = Period(iso8601="P1Y")
+                        elif cycle_days_approx == 73000:
+                            period = Period(iso8601="P200Y")
                         else:
                             await handle_warning(
                                 f"{__name__}:bad_cycle_approx",

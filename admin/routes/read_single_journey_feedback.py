@@ -12,11 +12,13 @@ from rqdb.result import ResultItem
 
 router = APIRouter()
 
+
 class SingleJourneyFeedbackInfo(BaseModel):
     loved: int = Field(description="The number of people who loved the journey")
     liked: int = Field(description="The number of people who liked the journey")
     disliked: int = Field(description="The number of people who disliked the journey")
     hated: int = Field(description="The number of people who hated the journey")
+
 
 class ReadSingleJourneyFeedbackResponse(BaseModel):
     unique: SingleJourneyFeedbackInfo = Field(description="The unique feedback")
@@ -34,8 +36,9 @@ NOT_FOUND_RESPONSE = Response(
 
 RATING_KEYS: List[bytes] = [b"loved", b"liked", b"disliked", b"hated"]
 
+
 @router.get(
-    '/journey_feedback/{uid}',
+    "/journey_feedback/{uid}",
     status_code=200,
     response_model=ReadSingleJourneyFeedbackResponse,
     responses={
@@ -65,9 +68,9 @@ async def read_single_journey_feedback(
         auth_res = await auth_admin(itgs, authorization)
         if auth_res.result is None:
             return auth_res.error_response
-        
-        total_key = f"journeys:feedback:total:{uid}".encode('utf-8')
-        unique_key = f"journeys:feedback:unique:{uid}".encode('utf-8')
+
+        total_key = f"journeys:feedback:total:{uid}".encode("utf-8")
+        unique_key = f"journeys:feedback:unique:{uid}".encode("utf-8")
 
         redis = await itgs.redis()
         async with redis.pipeline() as pipe:
@@ -77,11 +80,14 @@ async def read_single_journey_feedback(
             await pipe.expire(total_key, 3600)
             await pipe.expire(unique_key, 3600)
             total_redis_hash_raw, unique_redis_hash_raw, _, _ = await pipe.execute()
-        
+
         total_redis_hash = RedisHash(total_redis_hash_raw)
         unique_redis_hash = RedisHash(unique_redis_hash_raw)
 
-        if not any(any(h.get_int(k, default=None) is None for k in RATING_KEYS) for h in (total_redis_hash, unique_redis_hash)):
+        if not any(
+            any(h.get_int(k, default=None) is None for k in RATING_KEYS)
+            for h in (total_redis_hash, unique_redis_hash)
+        ):
             res = ReadSingleJourneyFeedbackResponse(
                 unique=SingleJourneyFeedbackInfo(
                     loved=unique_redis_hash.get_int(b"loved"),
@@ -102,11 +108,11 @@ async def read_single_journey_feedback(
                 headers={
                     "Content-Type": "application/json; charset=utf-8",
                     "Cache-Control": "private, max-age=10, stale-while-revalidate=10, stale-if-error=86400",
-                }
+                },
             )
 
         conn = await itgs.conn()
-        cursor = conn.cursor('none')
+        cursor = conn.cursor("none")
 
         response = await cursor.executeunified3(
             (
@@ -120,28 +126,34 @@ async def read_single_journey_feedback(
         exists = bool(response.items[0].results[0][0])
         if not exists:
             return NOT_FOUND_RESPONSE
-        
+
         unique_row = _parse_query_result(response.items[1])
         total_row = _parse_query_result(response.items[2])
 
         async with redis.pipeline() as pipe:
             pipe.multi()
-            await pipe.hset(total_key, mapping={  # type: ignore
-                b"loved": str(total_row.loved).encode('utf-8'), 
-                b"liked": str(total_row.liked).encode('utf-8'),
-                b"disliked": str(total_row.disliked).encode('utf-8'),
-                b"hated": str(total_row.hated).encode('utf-8'),
-            })
-            await pipe.hset(unique_key, mapping={  # type: ignore
-                b"loved": str(unique_row.loved).encode('utf-8'),
-                b"liked": str(unique_row.liked).encode('utf-8'),
-                b"disliked": str(unique_row.disliked).encode('utf-8'),
-                b"hated": str(unique_row.hated).encode('utf-8'),
-            })
+            await pipe.hset(
+                total_key,  # type: ignore
+                mapping={  # type: ignore
+                    b"loved": str(total_row.loved).encode("utf-8"),
+                    b"liked": str(total_row.liked).encode("utf-8"),
+                    b"disliked": str(total_row.disliked).encode("utf-8"),
+                    b"hated": str(total_row.hated).encode("utf-8"),
+                },
+            )
+            await pipe.hset(
+                unique_key,  # type: ignore
+                mapping={  # type: ignore
+                    b"loved": str(unique_row.loved).encode("utf-8"),
+                    b"liked": str(unique_row.liked).encode("utf-8"),
+                    b"disliked": str(unique_row.disliked).encode("utf-8"),
+                    b"hated": str(unique_row.hated).encode("utf-8"),
+                },
+            )
             await pipe.expire(total_key, 3600)
             await pipe.expire(unique_key, 3600)
             await pipe.execute()
-        
+
         res = ReadSingleJourneyFeedbackResponse(
             unique=SingleJourneyFeedbackInfo(
                 loved=unique_row.loved,
@@ -163,17 +175,14 @@ async def read_single_journey_feedback(
             headers={
                 "Content-Type": "application/json; charset=utf-8",
                 "Cache-Control": "private, max-age=10, stale-while-revalidate=10, stale-if-error=86400",
-            }
+            },
         )
 
-
-        
 
 def _make_query(unique: bool, uid: str) -> Tuple[str, list]:
     unique_restriction = ""
     if unique:
-        unique_restriction = (
-            """
+        unique_restriction = """
             AND NOT EXISTS (
                 SELECT 1 FROM journey_feedback AS jf2
                 WHERE
@@ -188,23 +197,17 @@ def _make_query(unique: bool, uid: str) -> Tuple[str, list]:
                     )
             )
             """
-        )
 
-    query = (
-        f"""
+    query = f"""
         WITH all_feedback(version, response, num) AS (
         SELECT
             journey_feedback.version,
             journey_feedback.response,
             COUNT(*)
-        FROM journey_feedback
+        FROM journeys, journey_feedback
         WHERE
-            EXISTS (
-                SELECT 1 FROM journeys 
-                WHERE
-                    journeys.id = journey_feedback.journey_id
-                    AND journeys.uid = ?
-            )
+            journeys.uid = ?
+            AND journey_feedback.journey_id = journeys.id
             {unique_restriction}
         GROUP BY journey_feedback.version, journey_feedback.response
         ), feedbackv1(liked, disliked) AS (
@@ -265,12 +268,8 @@ def _make_query(unique: bool, uid: str) -> Tuple[str, list]:
             COALESCE(feedbackv2.hated, 0) AS hated
         FROM feedbackv1, feedbackv2
         """
-    )
 
-    return (
-        query,
-        [uid]
-    )
+    return (query, [uid])
 
 
 @dataclass

@@ -49,7 +49,7 @@ ERROR_ALREADY_SUBSCRIBED_RESPONSE = Response(
     },
 )
 async def read_offerings(
-    platform: Literal["stripe"],
+    platform: Literal["stripe", "playstore", "appstore"],
     authorization: Annotated[Optional[str], Header()] = None,
 ):
     """Determines what RevenueCat offerings are available to the user. This is

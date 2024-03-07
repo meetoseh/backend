@@ -389,8 +389,15 @@ class Itgs:
 
             sk = os.environ["OSEH_REVENUE_CAT_SECRET_KEY"]
             stripe_pk = os.environ["OSEH_REVENUE_CAT_STRIPE_PUBLIC_KEY"]
+            playstore_pk = os.environ["OSEH_REVENUE_CAT_GOOGLE_PLAY_PUBLIC_KEY"]
+            appstore_pk = os.environ["OSEH_REVENUE_CAT_APPLE_PUBLIC_KEY"]
 
-            rc = revenue_cat.RevenueCat(sk=sk, stripe_pk=stripe_pk)
+            rc = revenue_cat.RevenueCat(
+                sk=sk,
+                stripe_pk=stripe_pk,
+                playstore_pk=playstore_pk,
+                appstore_pk=appstore_pk,
+            )
 
             await rc.__aenter__()
 

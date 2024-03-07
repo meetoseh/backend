@@ -29,7 +29,7 @@ async def get_offerings(
     itgs: Itgs,
     *,
     user_sub: str,
-    platform: Literal["stripe"],
+    platform: Literal["stripe", "playstore", "appstore"],
     force: bool,
     now: Optional[float] = None,
 ) -> Optional[OfferingsWithoutMetadata]:
@@ -54,7 +54,7 @@ async def get_offerings(
     Args:
         itgs (Itgs): the integrations to (re)use
         user_sub (str): the sub of the user whose offerings you want to fetch
-        platform ("stripe"): the platform for which to fetch the offerings
+        platform ("stripe", "playstore", "appstore"): the platform for which to fetch the offerings
         force (bool): true to skip intermediate caches, increasing latency in
             exchange for improved consistency
         now (float, optional): the current time, in seconds since the epoch,
@@ -161,7 +161,10 @@ def adapt_offerings_to_environment(offerings: Offerings) -> OfferingsWithoutMeta
 
 
 async def read_offerings_from_local_cache(
-    itgs: Itgs, *, revenue_cat_id: str, platform: Literal["stripe"]
+    itgs: Itgs,
+    *,
+    revenue_cat_id: str,
+    platform: Literal["stripe", "playstore", "appstore"],
 ) -> Optional[bytes]:
     """Fetches the offerings available to the user with the given sub on
     the given platform from the local cache, if available, in the stored
@@ -175,7 +178,11 @@ async def read_offerings_from_local_cache(
 
 
 async def write_offerings_to_local_cache(
-    itgs: Itgs, *, revenue_cat_id: str, platform: Literal["stripe"], raw: bytes
+    itgs: Itgs,
+    *,
+    revenue_cat_id: str,
+    platform: Literal["stripe", "playstore", "appstore"],
+    raw: bytes,
 ) -> None:
     """Writes the given serialized offerings to the local cache."""
     cache = await itgs.local_cache()
@@ -188,7 +195,10 @@ async def write_offerings_to_local_cache(
 
 
 async def read_offerings_from_remote_cache(
-    itgs: Itgs, *, revenue_cat_id: str, platform: Literal["stripe"]
+    itgs: Itgs,
+    *,
+    revenue_cat_id: str,
+    platform: Literal["stripe", "playstore", "appstore"],
 ) -> Optional[bytes]:
     """Fetches the offerings available to the user with the given sub on
     the given platform from the remote cache, if available, in the stored
@@ -201,7 +211,11 @@ async def read_offerings_from_remote_cache(
 
 
 async def write_offerings_to_remote_cache(
-    itgs: Itgs, *, revenue_cat_id: str, platform: Literal["stripe"], raw: bytes
+    itgs: Itgs,
+    *,
+    revenue_cat_id: str,
+    platform: Literal["stripe", "playstore", "appstore"],
+    raw: bytes,
 ) -> None:
     """Writes the given serialized offerings to the remote cache."""
     redis = await itgs.redis()
@@ -213,7 +227,11 @@ async def write_offerings_to_remote_cache(
 
 
 async def push_offerings_to_all_local_caches(
-    itgs: Itgs, *, revenue_cat_id: str, platform: Literal["stripe"], raw: bytes
+    itgs: Itgs,
+    *,
+    revenue_cat_id: str,
+    platform: Literal["stripe", "playstore", "appstore"],
+    raw: bytes,
 ) -> None:
     """Publishes a message which will cause the given serialized offerings to be
     pushed to all local caches
@@ -249,8 +267,8 @@ async def subscribe_to_offerings_pushes():
             raw_len = int.from_bytes(message.read(8), "big")
             raw = message.read(raw_len)
 
-            assert serd_platform == "stripe", serd_platform
-            platform = cast(Literal["stripe"], serd_platform)
+            assert serd_platform in ("stripe", "playstore", "appstore"), serd_platform
+            platform = cast(Literal["stripe", "playstore", "appstore"], serd_platform)
 
             async with Itgs() as itgs:
                 await write_offerings_to_local_cache(
@@ -264,7 +282,9 @@ async def do_subscribe_to_offerings_pushes():
     yield
 
 
-def _cache_key(revenue_cat_id: str, platform: Literal["stripe"]) -> bytes:
+def _cache_key(
+    revenue_cat_id: str, platform: Literal["stripe", "playstore", "appstore"]
+) -> bytes:
     return f"revenue_cat:offerings:{revenue_cat_id}:{platform}".encode("utf-8")
 
 

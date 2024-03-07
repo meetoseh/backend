@@ -177,12 +177,20 @@ async def get_entitlements_from_source(
                 )
                 continue
 
-            if raw_entitlement.expires_date is None:
+            if raw_entitlement.expires_date is None or (
+                round(
+                    (
+                        raw_entitlement.expires_date - raw_entitlement.purchase_date
+                    ).total_seconds()
+                    / (60 * 60 * 24)
+                )
+                == 73000
+            ):
                 logger.debug(
                     f"checking {entitlement_identifier=} for {revenue_cat_id=} found lifetime, searching for platform in non_subscriptions.."
                 )
                 platform: Optional[CachedEntitlementPlatform] = None
-                best_date: Optional[datetime.datetime] = None
+                best_difference: Optional[float] = None
                 for purchases in truth.subscriber.non_subscriptions.values():
                     for purchase in purchases:
                         if not rc.is_sandbox and purchase.is_sandbox:
@@ -191,11 +199,19 @@ async def get_entitlements_from_source(
                             )
                             continue
 
-                        if best_date is None or best_date < purchase.purchase_date:
+                        purchase_time_difference = abs(
+                            (
+                                purchase.purchase_date - raw_entitlement.purchase_date
+                            ).total_seconds()
+                        )
+                        if (
+                            best_difference is None
+                            or best_difference > purchase_time_difference
+                        ):
                             platform = await _store_to_platform(purchase.store)
-                            best_date = purchase.purchase_date
+                            best_difference = purchase_time_difference
                             logger.debug(
-                                f"found a purchase at {best_date=} via {platform=}"
+                                f"found a purchase at {purchase.purchase_date=} via {platform=} with time diff {best_difference=}"
                             )
 
                 if platform is None:
@@ -222,6 +238,7 @@ async def get_entitlements_from_source(
                 )
                 continue
 
+            assert raw_entitlement.expires_date is not None
             platform: Optional[CachedEntitlementPlatform] = None
             best_recurrence: Optional[CachedEntitlementRecurrenceRecurring] = None
             best_date: Optional[datetime.datetime] = None
@@ -851,7 +868,7 @@ async def _period_from_subscription_key(itgs: Itgs, key: str) -> Optional[Period
         "semi_annual",
     ):
         return Period(iso8601="P6M")
-    if key.endswith('_lifetime'):
+    if key.endswith("_lifetime"):
         return Period(iso8601="P200Y")
 
     await handle_warning(

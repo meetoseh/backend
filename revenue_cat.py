@@ -84,6 +84,10 @@ class Package(BaseModel):
     identifier: str = Field()
     platform_product_identifier: str = Field()
 
+    # https://community.revenuecat.com/third-party-integrations-53/android-subscription-adding-base-plan-id-to-product-id-2710
+    # used in android subscriptions, omitted from the docs
+    platform_product_plan_identifier: Optional[str] = Field(None)
+
 
 RCEnv = Literal["production", "dev"]
 
@@ -146,12 +150,20 @@ class RevenueCat:
     """The interface for interacting with RevenueCat. Acts as a
     async context manager, so you can use it with `async with`."""
 
-    def __init__(self, sk: str, stripe_pk: str) -> None:
+    def __init__(
+        self, sk: str, stripe_pk: str, playstore_pk: str, appstore_pk: str
+    ) -> None:
         self.sk: str = sk
         """The secret key for RevenueCat"""
 
         self.stripe_pk: str = stripe_pk
         """The public key for the Stripe app in RevenueCat"""
+
+        self.playstore_pk: str = playstore_pk
+        """The public key for the Play Store app in RevenueCat"""
+
+        self.appstore_pk: str = appstore_pk
+        """The public key for the App Store app in RevenueCat"""
 
         self.is_sandbox: bool = os.environ["ENVIRONMENT"] == "dev"
         """If we're accessing the sandbox environment on revenuecat"""
@@ -376,7 +388,10 @@ class RevenueCat:
             response.raise_for_status()
 
     async def list_offerings(
-        self, *, revenue_cat_id: str, platform: Literal["stripe"]
+        self,
+        *,
+        revenue_cat_id: str,
+        platform: Literal["stripe", "playstore", "appstore"],
     ) -> Optional[Offerings]:
         """Fetches the offerings of the app for the particular user on the given
         platform. If the user does not exist, this will return as if for a generic
@@ -401,7 +416,11 @@ class RevenueCat:
         assert self.session is not None
 
         if platform == "stripe":
-            platform_secret_key = self.stripe_pk
+            platform_public_key = self.stripe_pk
+        elif platform == "playstore":
+            platform_public_key = self.playstore_pk
+        elif platform == "appstore":
+            platform_public_key = self.appstore_pk
         else:
             raise ValueError(
                 f"unsupported platform (no public key available): {platform=}"
@@ -410,7 +429,7 @@ class RevenueCat:
         async with self.session.get(
             f"https://api.revenuecat.com/v1/subscribers/{revenue_cat_id}/offerings",
             headers={
-                "Authorization": f"Bearer {platform_secret_key}",
+                "Authorization": f"Bearer {platform_public_key}",
                 "Accept": "application/json",
             },
         ) as response:
@@ -419,4 +438,5 @@ class RevenueCat:
             result = list_offerings_result_validator.validate_json(data)
             if result.current_offering_id is None:
                 return None
+            logger.debug(f"converted revenue_cat offerings list {data!r} to {result!r}")
             return result

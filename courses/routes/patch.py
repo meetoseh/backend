@@ -412,7 +412,7 @@ def _check_simple_precondition(uid: str, field: str, expected: Any) -> List[_Que
     return [
         _Query(
             f"SELECT {field} FROM courses WHERE uid=? AND "
-            + (f"{field} IS NULL" if expected is None else f"{field} <> ?"),
+            + (f"{field} IS NOT NULL" if expected is None else f"{field} <> ?"),
             [uid, *([] if expected is None else [expected])],
             _check,
         )

@@ -10,7 +10,7 @@ from pypika.terms import (
     ValueWrapper,
     Node,
 )
-from pypika.queries import Table
+from pypika.queries import Table, Query
 from pypika.utils import builder, format_alias_sql
 from pypika.enums import Comparator
 from typing import Any, Dict, Iterator, List, Optional, Union
@@ -318,3 +318,18 @@ class BitwiseNotCriterion(Criterion):
             term=self.term.get_sql(**kwargs),
         )
         return format_alias_sql(sql, self.alias, **kwargs)
+
+
+class TableValuedFunction(Table):
+    def __init__(self, expression: Term, alias: str):
+        self.alias = alias
+        self.expression = expression
+        self._schema = None
+        self._query_cls = Query
+        self._for = None
+        self._for_portion = None
+
+    def get_sql(self, **kwargs: Any) -> str:
+        kwargs.pop("with_namespace", None)
+        table_sql = self.expression.get_sql(**kwargs, with_namespace=True)
+        return format_alias_sql(table_sql, self.alias, **kwargs)

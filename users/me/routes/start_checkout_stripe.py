@@ -30,7 +30,7 @@ class StartCheckoutStripeRequest(BaseModel):
         description="The RevenueCat package identifier to use, or None for default"
     )
 
-    cancel_path: Literal["/"] = Field(
+    cancel_path: Literal["/upgrade", "/"] = Field(
         description=("The path to redirect to if the user cancels the checkout flow.")
     )
 

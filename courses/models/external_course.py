@@ -28,6 +28,13 @@ class ExternalCourse(BaseModel):
     background_image: ImageFileRef = Field(
         description="The background image for the course"
     )
+    details_background_image: Optional[ImageFileRef] = Field(
+        description=(
+            "The background image for the details page of the course, which "
+            "is currently the blurred background for the first journey in the course, "
+            "where available."
+        )
+    )
     logo: Optional[ImageFileRef] = Field(
         description="The logo for the course, if available"
     )

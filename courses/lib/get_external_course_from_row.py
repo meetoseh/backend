@@ -42,7 +42,8 @@ SELECT
     intro_videos.duration_seconds,
     intro_video_transcripts.uid,
     intro_video_thumbnails.uid,
-    intro_video_thumbnail_exports.thumbhash
+    intro_video_thumbnail_exports.thumbhash,
+    first_journey_blurred_background_images.uid
 FROM courses
 JOIN instructors ON instructors.id = courses.instructor_id
 LEFT OUTER JOIN users ON users.sub = ?
@@ -73,6 +74,18 @@ LEFT OUTER JOIN image_file_exports AS intro_video_thumbnail_exports ON (
             AND other_exports.uid < intro_video_thumbnail_exports.uid
     )
 )
+LEFT OUTER JOIN image_files AS first_journey_blurred_background_images ON (
+    first_journey_blurred_background_images.id = (
+        SELECT
+            j.blurred_background_image_file_id
+        FROM course_journeys AS cj, journeys AS j
+        WHERE
+            cj.course_id = courses.id
+            AND cj.journey_id = j.id
+        ORDER BY cj.priority ASC
+        LIMIT 1
+    )
+)
     """,
         [user_sub],
     )
@@ -98,6 +111,7 @@ class ExternalCourseRow:
     intro_video_transcript_uid: Optional[str]
     intro_video_thumbnail_uid: Optional[str]
     intro_video_thumbhash: Optional[str]
+    details_background_image_uid: Optional[str]
 
 
 async def get_external_course_from_row(
@@ -161,6 +175,16 @@ async def get_external_course_from_row(
         background_image=ImageFileRef(
             uid=row.background_image_uid,
             jwt=await image_files_auth.create_jwt(itgs, row.background_image_uid),
+        ),
+        details_background_image=(
+            None
+            if row.details_background_image_uid is None
+            else ImageFileRef(
+                uid=row.details_background_image_uid,
+                jwt=await image_files_auth.create_jwt(
+                    itgs, row.details_background_image_uid
+                ),
+            )
         ),
         logo=(
             None

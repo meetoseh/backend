@@ -293,6 +293,9 @@ async def raw_read_external_courses(
     intro_video_thumbnails = image_files.as_("intro_video_thumbnails")
     image_file_exports = Table("image_file_exports")
     intro_video_thumbnail_exports = image_file_exports.as_("ivte")
+    first_journey_blurred_background_images = image_files.as_("fjbbi")
+    course_journeys_inner = course_journeys.as_("cji")
+    journeys_inner = Table("journeys").as_("ji")
 
     query: QueryBuilder = (
         Query.with_(
@@ -324,6 +327,7 @@ async def raw_read_external_courses(
             intro_video_transcripts.uid,
             intro_video_thumbnails.uid,
             intro_video_thumbnail_exports.thumbhash,
+            first_journey_blurred_background_images.uid,
         )
         .join(users)
         .on(users.sub == Parameter("?"))
@@ -372,6 +376,19 @@ async def raw_read_external_courses(
                         & (image_file_exports.uid < intro_video_thumbnail_exports.uid)
                     )
                 )
+            )
+        )
+        .left_outer_join(first_journey_blurred_background_images)
+        .on(
+            first_journey_blurred_background_images.id
+            == (
+                Query.from_(course_journeys_inner)
+                .select(journeys_inner.blurred_background_image_file_id)
+                .join(journeys_inner)
+                .on(journeys_inner.id == course_journeys_inner.journey_id)
+                .where(course_journeys_inner.course_id == courses.id)
+                .orderby(course_journeys_inner.priority)
+                .limit(1)
             )
         )
     )

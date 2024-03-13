@@ -12,6 +12,7 @@ import time
 from users.lib.timezones import (
     TimezoneTechniqueSlug,
     convert_timezone_technique_slug_to_db,
+    need_set_timezone,
 )
 
 
@@ -48,6 +49,11 @@ async def update_timezone(
         auth_result = await auth_any(itgs, authorization)
         if auth_result.result is None:
             return auth_result.error_response
+
+        if not await need_set_timezone(
+            itgs, user_sub=auth_result.result.sub, timezone=args.timezone
+        ):
+            return Response(status_code=202)
 
         conn = await itgs.conn()
         cursor = conn.cursor()

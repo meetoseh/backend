@@ -405,6 +405,7 @@ the keys that we use in redis
 
 - `stripe:customer_portals:{user_sub}` goes to a json object which is
   discriminated by type, where the type is one of:
+
   - `loading`:
     - `hostname`: the hostname of the instance fetching the customer portal
       for the user with the given sub
@@ -438,15 +439,27 @@ the keys that we use in redis
   subscriptions be synced. This request is processed immediately and then a
   value is set in this key. If this key is set, then instead the user sub is
   inserted into `stripe:queued_syncs` (if not already there). This ensures:
+
   - Whenever a client requests a sync, a sync will occur chronologically after
     the request, "soon"
   - Most syncs can be processed immediately
-  NOTE: in order to handle retries, the sweep job for `stripe:queued_syncs` may
-  push syncs to later without editing this key. Hence, the queue must be checked
-  in addition to this key.
+    NOTE: in order to handle retries, the sweep job for `stripe:queued_syncs` may
+    push syncs to later without editing this key. Hence, the queue must be checked
+    in addition to this key.
 
 - `stripe:queued_syncs` goes to a sorted set where the scores are unix times
   that the sync should be attempted and the values are the user subs to sync.
+
+- `home_screen_images:{date_iso8601}:{has_pro}:{wrapped_only}` goes to a gzip
+  compressed json array where each entry is a json object with keys
+  `home_screen_image_uid`, `start_time`, and `end_time`. These entries correspond
+  to the home screen images which can be shown on the given iso8601 formatted
+  date for users which have/don't have pro. `wrapped_only` is either `True` or
+  `False` and, if `True`, the returned `end_time` is always `> 86400`.
+
+- `user:timezones:{user_sub}`: contains the recently set IANA timezone string for
+  the user with the given sub, if its been set recently, to allow skipping the db
+  call. Always set to expire 15m after it was last set.
 
 ### Push Namespace
 
@@ -3183,7 +3196,7 @@ via a share code. The UTM is:
 
 These are regular keys used by the personalization module
 
-- `personalization:instructor_category_biases:{emotion}` goes to a special serialization
+- `personalization:instructor_category_biases:{emotion}:{premium}` goes to a special serialization
   for `List[InstructorCategoryAndBias]` used in
   [step 1](../../personalization/lib/s01_find_combinations.py)
 
@@ -3462,3 +3475,18 @@ These are regular keys used by the personalization module
 - `ps:stripe:customer_portals:{user_sub}` is sent one message when the corresponding
   key `stripe:customer_portals:{user_sub}` is set to a non-loading type. The message
   is the new value of the corresponding key.
+
+- `ps:home_screen_images:available` is used to keep available home screen images
+  in sync across instances. messages are formatted as
+  `(uint1, [blob of length 10, uint1, uint1, uint64, blob])`,
+
+  1. 1 if data is included, 0 if this is a purge request
+  2. date in ISO8601 ascii-encoded format, `YYYY-MM-DD`, which is always 10 characters
+  3. 1 if this list is for users with the `pro` entitlement, 0 if for users without the
+     pro entitlement.
+  4. 1 if this list only contains wrapping entries (ie., where end_time>86400), false if
+     it contains all entries
+  5. the length of the value to write to the cache
+  6. the value to write to the cache
+
+  all numbers are big-endian encoded.

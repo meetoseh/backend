@@ -68,7 +68,7 @@ def get_home_screen_image_flag_by_day_of_week_index(dow: int) -> HomeScreenImage
 
 def get_home_screen_image_flag_by_datetime_day_of_week(dow: int) -> HomeScreenImageFlag:
     """Determines the HomeScreenImageFlag for the given day of the week, specified
-    as would be returned from a `datetime.day`s `day_of_week` attribute, which has
+    as would be returned from a `datetime.date`s `weekday()` result, which has
     0 as Monday and 6 as Sunday
     """
     return get_home_screen_image_flag_by_day_of_week_index((dow + 1) % 7)

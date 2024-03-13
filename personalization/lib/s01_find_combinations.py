@@ -2,6 +2,7 @@
 a user picks an emotion: determining what instructor/category combinations are
 available for a given emotion, and what their biases are.
 """
+
 from typing import Dict, List, Optional
 from itgs import Itgs
 from dataclasses import dataclass
@@ -48,7 +49,7 @@ class InstructorCategoryAndBias:
 
 
 async def get_instructor_category_and_biases(
-    itgs: Itgs, *, emotion: str
+    itgs: Itgs, *, emotion: str, premium: bool = False
 ) -> List[InstructorCategoryAndBias]:
     """Returns all the instructor, category, bias combinations that are available
     for the emotion with the given word.
@@ -60,25 +61,29 @@ async def get_instructor_category_and_biases(
     # a basic time-based 2-layer cache and using read replicas.
 
     value = await get_instructor_category_and_biases_from_local_cache(
-        itgs, emotion=emotion
+        itgs, emotion=emotion, premium=premium
     )
     if value is not None:
         return deserialize_for_caches(value)
 
-    value = await get_instructor_category_and_biases_from_redis(itgs, emotion=emotion)
+    value = await get_instructor_category_and_biases_from_redis(
+        itgs, emotion=emotion, premium=premium
+    )
     if value is not None:
         await set_instructor_category_and_biases_in_local_cache(
-            itgs, emotion=emotion, serialized=value
+            itgs, emotion=emotion, premium=premium, serialized=value
         )
         return deserialize_for_caches(value)
 
-    parsed = await get_instructor_category_and_biases_from_db(itgs, emotion=emotion)
+    parsed = await get_instructor_category_and_biases_from_db(
+        itgs, emotion=emotion, premium=premium
+    )
     value = serialize_for_caches(parsed)
     await set_instructor_category_and_biases_in_local_cache(
-        itgs, emotion=emotion, serialized=value
+        itgs, emotion=emotion, premium=premium, serialized=value
     )
     await set_instructor_category_and_biases_in_redis(
-        itgs, emotion=emotion, serialized=value
+        itgs, emotion=emotion, premium=premium, serialized=value
     )
     return parsed
 
@@ -164,14 +169,16 @@ def deserialize_for_caches(raw: bytes) -> List[InstructorCategoryAndBias]:
 
 
 async def get_instructor_category_and_biases_from_local_cache(
-    itgs: Itgs, *, emotion: str
+    itgs: Itgs, *, emotion: str, premium: bool
 ) -> Optional[bytes]:
     """Fetches the serialized instructor category biases for the given emotion
     from the local cache, if they exist.
     """
     cache = await itgs.local_cache()
     result = cache.get(
-        f"personalization:instructor_category_biases:{emotion}".encode("utf-8")
+        f"personalization:instructor_category_biases:{emotion}:{premium}".encode(
+            "utf-8"
+        )
     )
     if result is None:
         return None
@@ -180,28 +187,32 @@ async def get_instructor_category_and_biases_from_local_cache(
 
 
 async def set_instructor_category_and_biases_in_local_cache(
-    itgs: Itgs, *, emotion: str, serialized: bytes
+    itgs: Itgs, *, emotion: str, premium: bool, serialized: bytes
 ) -> None:
     """Writes the serialized instructor category biases for the given emotion
     to the local cache.
     """
     cache = await itgs.local_cache()
     cache.set(
-        f"personalization:instructor_category_biases:{emotion}".encode("utf-8"),
+        f"personalization:instructor_category_biases:{emotion}:{premium}".encode(
+            "utf-8"
+        ),
         serialized,
         expire=REDIS_CACHE_TIME_SECONDS,
     )
 
 
 async def get_instructor_category_and_biases_from_redis(
-    itgs: Itgs, *, emotion: str
+    itgs: Itgs, *, emotion: str, premium: bool
 ) -> Optional[bytes]:
     """Fetches the serialized instructor category biases for the given emotion from
     redis, if they exist.
     """
     redis = await itgs.redis()
     result = await redis.get(
-        f"personalization:instructor_category_biases:{emotion}".encode("utf-8")
+        f"personalization:instructor_category_biases:{emotion}:{premium}".encode(
+            "utf-8"
+        )
     )
     if result is None:
         return None
@@ -210,21 +221,23 @@ async def get_instructor_category_and_biases_from_redis(
 
 
 async def set_instructor_category_and_biases_in_redis(
-    itgs: Itgs, *, emotion: str, serialized: bytes
+    itgs: Itgs, *, emotion: str, premium: bool, serialized: bytes
 ) -> None:
     """Writes the serialized instructor category biases for the given emotion to
     redis.
     """
     redis = await itgs.redis()
     await redis.set(
-        f"personalization:instructor_category_biases:{emotion}".encode("utf-8"),
+        f"personalization:instructor_category_biases:{emotion}:{premium}".encode(
+            "utf-8"
+        ),
         serialized,
         ex=REDIS_CACHE_TIME_SECONDS,
     )
 
 
 async def get_instructor_category_and_biases_from_db(
-    itgs: Itgs, *, emotion: str
+    itgs: Itgs, *, emotion: str, premium: bool
 ) -> List[InstructorCategoryAndBias]:
     """Fetches the instructor, category, bias combinations from the database."""
     conn = await itgs.conn()
@@ -255,6 +268,13 @@ async def get_instructor_category_and_biases_from_db(
                             AND courses.id = course_journeys.course_id
                             AND (courses.flags & ?) = 0
                     )
+                    AND (? = 0 OR EXISTS (
+                        SELECT 1 FROM course_journeys, courses
+                        WHERE
+                            course_journeys.journey_id = journeys.id
+                            AND courses.id = course_journeys.course_id
+                            AND (courses.flags & ?) <> 0
+                    ))
                     AND EXISTS (
                         SELECT 1 FROM journey_emotions, emotions
                         WHERE
@@ -264,7 +284,16 @@ async def get_instructor_category_and_biases_from_db(
                     )
             )
         """,
-        (int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE), emotion),
+        (
+            int(
+                SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM
+                if premium
+                else SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE
+            ),
+            int(premium),
+            int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM),
+            emotion,
+        ),
     )
 
     result: List[InstructorCategoryAndBias] = []

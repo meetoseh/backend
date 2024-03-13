@@ -12,6 +12,7 @@ from journeys.auth import create_jwt as create_journey_jwt
 from image_files.auth import create_jwt as create_image_file_jwt
 from personalization.lib.pipeline import select_journey
 import emotions.lib.emotion_users as emotion_users
+import users.lib.entitlements as entitlements
 
 router = APIRouter()
 
@@ -20,10 +21,14 @@ class StartRelatedJourneyRequest(BaseModel):
     emotion: str = Field(description="The emotion word to find a journey for")
     replaced_emotion_user_uid: Optional[str] = Field(
         description=(
-            "If this reuqest is because the user changed their mind before "
+            "If this request is because the user changed their mind before "
             "entering the class, the uid of the returned emotion/user "
             "relationship that is being replaced by this request."
         )
+    )
+    premium: bool = Field(
+        default=False,
+        description="True to request a premium class, false for a free class.",
     )
 
 
@@ -34,7 +39,7 @@ class StartRelatedJourneyResponse(BaseModel):
     emotion_user_uid: str = Field(
         description=(
             "The uid of the emotion/user relationship that was created, for "
-            "correctly tracking the users history if the user doens't actually "
+            "correctly tracking the users history if the user doesn't actually "
             "join the journey"
         )
     )
@@ -58,6 +63,17 @@ ERROR_EMOTION_NOT_FOUND = Response(
     ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=404,
+)
+
+ERROR_409_TYPES = Literal["entitlement_required"]
+
+ERROR_ENTITLEMENT_REQUIRED = Response(
+    content=StandardErrorResponse[ERROR_409_TYPES](
+        type="entitlement_required",
+        message="Oseh+ is required to take premium classes",
+    ).model_dump_json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+    status_code=409,
 )
 
 ERROR_503_TYPES = Literal["journey_not_found"]
@@ -128,6 +144,10 @@ async def _yield_response_from_nested(
             "description": "The emotion word was not found",
             "model": StandardErrorResponse[ERROR_404_TYPES],
         },
+        409: {
+            "description": "A premium class was requested, but the user is not subscribed",
+            "model": StandardErrorResponse[ERROR_409_TYPES],
+        },
         **STANDARD_ERRORS_BY_CODE,
     },
 )
@@ -151,8 +171,18 @@ async def start_related_journey(
         if auth_result.result is None:
             return auth_result.error_response
 
+        if args.premium:
+            entitlement = await entitlements.get_entitlement(
+                itgs, user_sub=auth_result.result.sub, identifier="pro"
+            )
+            if entitlement is None or not entitlement.is_active:
+                return ERROR_ENTITLEMENT_REQUIRED
+
         journey_uid = await select_journey(
-            itgs, emotion=args.emotion, user_sub=auth_result.result.sub
+            itgs,
+            emotion=args.emotion,
+            user_sub=auth_result.result.sub,
+            premium=args.premium,
         )
         if journey_uid is None:
             return ERROR_EMOTION_NOT_FOUND

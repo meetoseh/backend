@@ -14,7 +14,9 @@ from itgs import Itgs
 import asyncio
 
 
-async def select_journey(itgs: Itgs, *, emotion: str, user_sub: str) -> Optional[str]:
+async def select_journey(
+    itgs: Itgs, *, emotion: str, user_sub: str, premium: bool
+) -> Optional[str]:
     """The optimized pipeline to select which journey a user should see when they
     select a given emotion.
 
@@ -22,6 +24,7 @@ async def select_journey(itgs: Itgs, *, emotion: str, user_sub: str) -> Optional
         itgs (Itgs): the integrations to (re)use
         emotion (str): the emotion to select a journey for
         user_sub (str): the user to select a journey for
+        premium (bool): true for a premium class, false for a free class
 
     Returns:
         (str or None): The uid of the journey to show the user, or None if
@@ -29,7 +32,7 @@ async def select_journey(itgs: Itgs, *, emotion: str, user_sub: str) -> Optional
     """
 
     combinations_promise = asyncio.create_task(
-        get_instructor_category_and_biases(itgs=itgs, emotion=emotion)
+        get_instructor_category_and_biases(itgs=itgs, emotion=emotion, premium=premium)
     )
     feedback_promise = asyncio.create_task(find_feedback(itgs=itgs, user_sub=user_sub))
 
@@ -79,6 +82,7 @@ async def select_journey(itgs: Itgs, *, emotion: str, user_sub: str) -> Optional
         instructor_uid=best_combination.instructor_uid,
         emotion=emotion,
         user_sub=user_sub,
+        premium=premium,
         limit=1,
     )
     return journeys[0].uid

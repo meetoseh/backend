@@ -419,10 +419,17 @@ the keys we store locally on backend instances via diskcache
   authoritatively described in `users.lib.stripe_prices`. Has an about
   1 hour expiration
 
+- `home_screen_images:{date_iso8601}:{has_pro}:{wrapped_only}` goes to a gzip
+  compressed json array where each entry is a json object with keys
+  `home_screen_image_uid`, `start_time`, and `end_time`. These entries correspond
+  to the home screen images which can be shown on the given iso8601 formatted
+  date for users which have/don't have pro. `wrapped_only` is either `True` or
+  `False` and, if `True`, the returned `end_time` is always `> 86400`.
+
 ## Personalization
 
 This contains keys for the personalization subspace
 
-- `personalization:instructor_category_biases:{emotion}` goes to a special serialization
+- `personalization:instructor_category_biases:{emotion}:{premium}` goes to a special serialization
   for `List[InstructorCategoryAndBias]` used in
   [step 1](../../personalization/lib/s01_find_combinations.py)

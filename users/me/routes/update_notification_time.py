@@ -28,6 +28,7 @@ from users.lib.timezones import (
     TimezoneLogDataFromUser,
     TimezoneTechniqueSlug,
     convert_timezone_technique_slug_to_db,
+    need_set_timezone,
 )
 
 DayOfWeek = Literal[
@@ -119,7 +120,7 @@ async def update_notification_time(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        if not auth_result.success:
+        if auth_result.result is None:
             return auth_result.error_response
 
         timezone_technique = convert_timezone_technique_slug_to_db(
@@ -131,13 +132,19 @@ async def update_notification_time(
         now = time.time()
         tz = pytz.timezone("America/Los_Angeles")
         unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=tz)
-        queries = [
-            *_update_timezone(
+
+        queries: List[_Query] = []
+        if await need_set_timezone(
+            itgs, user_sub=auth_result.result.sub, timezone=args.timezone
+        ):
+            queries.extend(_update_timezone(
                 args.timezone,
                 timezone_technique,
                 auth_result=auth_result,
                 now=now,
-            ),
+            ))
+        
+        queries.extend([
             *(
                 v
                 for channel in (
@@ -154,7 +161,7 @@ async def update_notification_time(
                     unix_date=unix_date,
                 )
             ),
-        ]
+        ])
 
         conn = await itgs.conn()
         cursor = conn.cursor("none")

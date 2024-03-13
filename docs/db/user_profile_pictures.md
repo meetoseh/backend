@@ -29,6 +29,10 @@ current profile picture via a unique index.
   not a particularly meaningful value compared to the more relevant timestamps
   included in `source`
 
+- `last_processed_at (real not null)`: When we last successfully produced profile
+  picture targets for the image file. Used to automatically reprocess images over
+  time as the targets change.
+
 ## Schema
 
 ```sql
@@ -39,7 +43,8 @@ CREATE TABLE user_profile_pictures (
     latest BOOLEAN NOT NULL,
     image_file_id INTEGER NOT NULL REFERENCES image_files(id) ON DELETE CASCADE,
     source TEXT NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    last_processed_at REAL NOT NULL
 );
 
 /* Uniqueness */
@@ -50,4 +55,7 @@ CREATE INDEX user_profile_pictures_user_id_idx ON user_profile_pictures(user_id)
 
 /* Foreign key */
 CREATE INDEX user_profile_pictures_image_file_id_idx ON user_profile_pictures(image_file_id);
+
+/* Processing queue */
+CREATE INDEX user_profile_pictures_last_processed_at_idx ON user_profile_pictures(last_processed_at) WHERE latest = 1;
 ```

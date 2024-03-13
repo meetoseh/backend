@@ -29,6 +29,7 @@ from personalization.home.images.lib.internal_home_screen_image import (
     InternalHomeScreenImageRow,
     parse_internal_home_screen_image_row,
 )
+from users.lib.home_screen_images import purge_home_screen_images_cache
 
 router = APIRouter()
 
@@ -258,6 +259,9 @@ async def patch_home_screen_image(
         if not read_result.results:
             assert not made_changes, response
             return ERROR_404_RESPONSES["home_screen_image_not_found"]
+
+        if made_changes:
+            await purge_home_screen_images_cache(itgs)
 
         home_screen_image = await parse_read_result(itgs, read_result)
         return Response(

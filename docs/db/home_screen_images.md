@@ -14,9 +14,11 @@ the day, local time, and to cycle.
 - `darkened_image_file_id (integer not null references image_files(id))`: The image file
   after the standard darkening process has been applied
 - `start_time (real not null)`: the minimum number of seconds from midnight when the image
-  can be shown
+  can be shown. Must be 0 (incl) to 86400 (excl), or the behavior is undefined.
 - `end_time (real not null)`: the maximum number of seconds from midnight when the image
-  can be shown
+  can be shown. Must be larger than or equal to `start_time` and less than or equal to
+  `2*86400 = 172800`, or the behavior is undefined. Note that a home screen image will be
+  rated equally even if it's available "twice" due to the `end_time - start_time >= 86400`.
 - `flags (integer not null)`: A bitfield containing boolean values that configure when the
   image can be shown. The flags are, from least significant bit to most significant bit:
   - 1-7: day of the week, where 1 Sunday and 7 is Saturday, like in user daily reminders

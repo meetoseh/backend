@@ -17,6 +17,7 @@ from redis_helpers.stripe_del_customer_portal_if_held import (
     stripe_del_customer_portal_if_held_safe,
 )
 from redis_helpers.stripe_lock_or_retrieve_customer_portal import (
+    StripeCustomerPortalState,
     StripeCustomerPortalStateAvailable,
     StripeCustomerPortalStateUnavailable,
     StripeLockOrRetrieveCustomerPortalResultFailed,
@@ -182,8 +183,11 @@ async def read_stripe_customer_portal(
                 await pubsub.aclose()
 
                 if message is not None and message["type"] == "message":
-                    message_value = stripe_customer_portal_state_adapter.validate_json(
-                        message["data"]
+                    message_value = cast(
+                        StripeCustomerPortalState,
+                        stripe_customer_portal_state_adapter.validate_json(
+                            message["data"]
+                        ),
                     )
                     lock_result = StripeLockOrRetrieveCustomerPortalResultFailed(
                         success=False,
@@ -356,8 +360,9 @@ async def read_stripe_customer_portal(
                     "so this is not dangerous, but it does indicate we may need to adjust the lock timeout.",
                 )
             else:
-                parsed_old_value = stripe_customer_portal_state_adapter.validate_json(
-                    old_value
+                parsed_old_value = cast(
+                    StripeCustomerPortalState,
+                    stripe_customer_portal_state_adapter.validate_json(old_value),
                 )
                 if (
                     parsed_old_value.type != "loading"

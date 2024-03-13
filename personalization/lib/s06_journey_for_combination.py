@@ -38,6 +38,7 @@ async def get_journeys_for_combination(
     instructor_uid: str,
     emotion: str,
     user_sub: str,
+    premium: bool = False,
     limit: int = 1,
     debug: bool = False,
 ) -> List[JourneyForCombination]:
@@ -52,6 +53,7 @@ async def get_journeys_for_combination(
         instructor_uid (str): the uid of the instructor for returned journeys
         emotion (str): the emotion word that returned journeys must be associated with
         user_sub (str): the sub of the user for whom to fetch journeys
+        premium (bool): true for premium classes, false for free classes
         limit (int): the maximum number of journeys to fetch
         debug (bool): whether to include debug information in the response
 
@@ -100,6 +102,13 @@ async def get_journeys_for_combination(
                         AND course_journeys.course_id = courses.id
                         AND (courses.flags & ?) = 0
                 )
+                AND (? = 0 OR EXISTS (
+                    SELECT 1 FROM course_journeys, courses
+                    WHERE 
+                        course_journeys.journey_id = journeys.id
+                        AND course_journeys.course_id = courses.id
+                        AND (courses.flags & ?) <> 0
+                ))
                 AND users.sub = ?
                 AND NOT EXISTS (
                     SELECT 1 FROM user_journeys
@@ -168,6 +177,13 @@ async def get_journeys_for_combination(
                         AND course_journeys.course_id = courses.id
                         AND (courses.flags & ?) = 0
                 )
+                AND (? = 0 OR EXISTS (
+                    SELECT 1 FROM course_journeys, courses
+                    WHERE 
+                        course_journeys.journey_id = journeys.id
+                        AND course_journeys.course_id = courses.id
+                        AND (courses.flags & ?) <> 0
+                ))
             GROUP BY journeys.id
         )
         SELECT
@@ -182,13 +198,25 @@ async def get_journeys_for_combination(
             instructor_uid,
             category_uid,
             emotion,
-            int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE),
+            int(
+                SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM
+                if premium
+                else SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE
+            ),
+            int(premium),
+            int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM),
             user_sub,
             instructor_uid,
             category_uid,
             user_sub,
             emotion,
-            int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE),
+            int(
+                SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM
+                if premium
+                else SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE
+            ),
+            int(premium),
+            int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM),
             limit,
         ),
     )

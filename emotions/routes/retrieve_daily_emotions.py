@@ -32,7 +32,7 @@ class RetrieveDailyEmotionsRequest(BaseModel):
     )
 
     num_emotions: int = Field(
-        description="The number of emotions to return", ge=1, le=12
+        description="The number of emotions to return", ge=1, le=16
     )
 
     local_time: Optional[LocalTime] = Field(
@@ -49,9 +49,9 @@ class RetrieveDailyEmotionsRequest(BaseModel):
             raise ValueError("recently_seen cannot have more than 5 items")
 
         for emotion_list in recently_seen:
-            if len(emotion_list) > 12:
+            if len(emotion_list) > 16:
                 raise ValueError(
-                    "recently_seen cannot have a sublist with more than 12 items"
+                    "recently_seen cannot have a sublist with more than 16 items"
                 )
             if len(emotion_list) < 1:
                 raise ValueError(

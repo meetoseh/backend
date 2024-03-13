@@ -18,6 +18,7 @@ from loguru import logger
 from users.lib.timezones import (
     TimezoneTechniqueSlug,
     convert_timezone_technique_slug_to_db,
+    need_set_timezone,
 )
 
 
@@ -187,6 +188,10 @@ async def start_verify(
         conn = await itgs.conn()
         cursor = conn.cursor("weak")
         now = time.time()
+
+        await need_set_timezone(
+            itgs, user_sub=auth_result.result.sub, timezone=args.timezone
+        )
 
         response = await cursor.executemany3(
             (

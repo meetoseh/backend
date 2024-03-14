@@ -229,7 +229,7 @@ async def get_entitlements_from_source(
                     f"checking {entitlement_identifier=} for {revenue_cat_id=} found lifetime: {entitlements[entitlement_identifier]!r}"
                 )
                 continue
-                
+
             platform: Optional[CachedEntitlementPlatform] = None
             best_recurrence: Optional[CachedEntitlementRecurrenceRecurring] = None
             best_date: Optional[datetime.datetime] = None
@@ -252,7 +252,7 @@ async def get_entitlements_from_source(
                     )
                     continue
 
-                if best_date is None or subscription.expires_date > best_date:
+                if best_date is None or abs(subscription.expires_date.timestamp() - raw_entitlement.expires_date.timestamp())  < abs(best_date.timestamp() - raw_entitlement.expires_date.timestamp()):
                     platform = await _store_to_platform(subscription.store)
                     best_date = subscription.expires_date
 
@@ -311,7 +311,7 @@ async def get_entitlements_from_source(
                     auto_renews=False,
                 )
 
-            if best_recurrence.period.iso8601 == 'P200Y':
+            if best_recurrence.period.iso8601 == "P200Y":
                 entitlements[entitlement_identifier] = CachedEntitlement(
                     is_active=True,
                     active_info=CachedEntitlementActiveInfo(
@@ -845,6 +845,8 @@ async def _period_from_subscription_key(itgs: Itgs, key: str) -> Optional[Period
             is_urgent=True,
         )
         return None
+    elif key.startswith("rc_promo_") and key.endswith("_lifetime"):
+        return Period(iso8601="P200Y")
 
     await handle_warning(f"{__name__}:bad_period_key", f"unknown period key: {key}")
 

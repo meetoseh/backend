@@ -1,6 +1,6 @@
 import json
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from starlette.middleware.cors import CORSMiddleware
 from error_middleware import handle_request_error, handle_error
@@ -164,6 +164,15 @@ app = FastAPI(
     exception_handlers={Exception: handle_request_error},
     lifespan=top_level_lifespan_handler,
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"Request Starting: {request.url}")
+    response = await call_next(request)
+    logger.info(f"Request Finished: {request.url}")
+    return response
+
 
 if os.environ.get("ENVIRONMENT") == "dev":
     app.add_middleware(

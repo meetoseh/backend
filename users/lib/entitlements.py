@@ -177,15 +177,7 @@ async def get_entitlements_from_source(
                 )
                 continue
 
-            if raw_entitlement.expires_date is None or (
-                round(
-                    (
-                        raw_entitlement.expires_date - raw_entitlement.purchase_date
-                    ).total_seconds()
-                    / (60 * 60 * 24)
-                )
-                == 73000
-            ):
+            if raw_entitlement.expires_date is None:
                 logger.debug(
                     f"checking {entitlement_identifier=} for {revenue_cat_id=} found lifetime, searching for platform in non_subscriptions.."
                 )
@@ -237,8 +229,7 @@ async def get_entitlements_from_source(
                     f"checking {entitlement_identifier=} for {revenue_cat_id=} found lifetime: {entitlements[entitlement_identifier]!r}"
                 )
                 continue
-
-            assert raw_entitlement.expires_date is not None
+                
             platform: Optional[CachedEntitlementPlatform] = None
             best_recurrence: Optional[CachedEntitlementRecurrenceRecurring] = None
             best_date: Optional[datetime.datetime] = None
@@ -320,15 +311,26 @@ async def get_entitlements_from_source(
                     auto_renews=False,
                 )
 
-            entitlements[entitlement_identifier] = CachedEntitlement(
-                is_active=True,
-                active_info=CachedEntitlementActiveInfo(
-                    recurrence=best_recurrence,
-                    platform=platform,
-                ),
-                expires_at=raw_entitlement.expires_date.timestamp(),
-                checked_at=now,
-            )
+            if best_recurrence.period.iso8601 == 'P200Y':
+                entitlements[entitlement_identifier] = CachedEntitlement(
+                    is_active=True,
+                    active_info=CachedEntitlementActiveInfo(
+                        recurrence=CachedEntitlementRecurrenceLifetime(type="lifetime"),
+                        platform=platform,
+                    ),
+                    expires_at=None,
+                    checked_at=now,
+                )
+            else:
+                entitlements[entitlement_identifier] = CachedEntitlement(
+                    is_active=True,
+                    active_info=CachedEntitlementActiveInfo(
+                        recurrence=best_recurrence,
+                        platform=platform,
+                    ),
+                    expires_at=raw_entitlement.expires_date.timestamp(),
+                    checked_at=now,
+                )
             logger.debug(
                 f"final {entitlement_identifier=} for {revenue_cat_id=}: {entitlements[entitlement_identifier]!r}"
             )

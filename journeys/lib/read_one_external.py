@@ -1,5 +1,6 @@
 import asyncio
 import json
+import secrets
 import time
 from fastapi.responses import Response, StreamingResponse
 from typing import (
@@ -26,6 +27,7 @@ from pydantic import BaseModel, Field
 import perpetual_pub_sub as pps
 from itgs import Itgs
 import io
+from loguru import logger
 
 
 HEADERS = {
@@ -52,8 +54,11 @@ async def read_one_external(
     Returns:
         Response, None: The response, if the journey exists, otherwise None.
     """
+    req_id = secrets.token_urlsafe(4)
+    logger.debug(f"{req_id=} {journey_uid=}")
     locally_cached = await read_local_cache(itgs, journey_uid)
     if locally_cached is not None:
+        logger.debug(f"{req_id=} {journey_uid=} LOCAL CACHE HIT")
         if isinstance(locally_cached, (bytes, bytearray, memoryview)):
             locally_cached = io.BytesIO(locally_cached)
         return StreamingResponse(
@@ -62,11 +67,14 @@ async def read_one_external(
             headers=HEADERS,
         )
 
+    logger.debug(f"{req_id=} {journey_uid=} LOCAL CACHE MISS")
+
     redis = await itgs.redis()
     got_lock = await redis.set(
         f"journeys:external:cache_lock:{journey_uid}", "1", ex=3, nx=True
     )
     if not got_lock:
+        logger.debug(f"{req_id=} {journey_uid=} REMOTE CACHE LOCKED")
         received_data_event = asyncio.Event()
         received_data_task = asyncio.create_task(received_data_event.wait())
         arr = waiting_for_cache.get(journey_uid)
@@ -74,10 +82,14 @@ async def read_one_external(
             arr = []
             waiting_for_cache[journey_uid] = arr
 
+        arr.append(received_data_event)
+
         try:
             await asyncio.wait_for(received_data_task, timeout=3)
+            logger.debug(f"{req_id=} {journey_uid=} received data event")
             locally_cached = await read_local_cache(itgs, journey_uid)
             if locally_cached is not None:
+                logger.debug(f"{req_id=} {journey_uid=} PUSHED CACHE HIT")
                 if isinstance(locally_cached, (bytes, bytearray, memoryview)):
                     locally_cached = io.BytesIO(locally_cached)
                 return StreamingResponse(
@@ -111,17 +123,24 @@ async def read_one_external(
 
             # fall down to assuming we got the lock
 
+    logger.debug(f"{req_id=} {journey_uid=} reading from source")
+
     now = time.time()
     journey = await read_from_db(itgs, journey_uid)
     if journey is None:
+        logger.warning(f"{req_id=} {journey_uid=} NOT FOUND")
         return None
+
+    logger.debug(f"{req_id=} {journey_uid=} READ FROM SOURCE...pushing to other instances")
 
     cacheable = io.BytesIO()
     convert_to_cacheable(journey, cacheable)
     cacheable.seek(0)
 
     await push_to_caches(itgs, journey_uid, cacheable.getvalue(), now)
+    logger.debug(f"{req_id=} {journey_uid=} RELEASING LOCK")
     await redis.delete(f"journeys:external:cache_lock:{journey_uid}")
+    logger.debug(f"{req_id=} {journey_uid=} returning")
     return StreamingResponse(
         content=inject_from_cached(itgs, cacheable, jwt=jwt),
         status_code=200,

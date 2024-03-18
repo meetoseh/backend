@@ -322,11 +322,12 @@ the keys that we use in redis
   - `chatgpt`: for openai's chat completion model chat-gpt-3.5
   - `ccmixter`: for searching or downloading from ccmixter.org
 
-- `jobs:repopulate_emotions:lock`: A basic lock to ensure we only have one job to repopulate
-  the emotions table at a time. Goes to the string `1` while the lock is held.
+- `jobs:repopulate_emotions:lock`: A [smart lock](./locks.md) to ensure we only
+  have one job to repopulate the emotions table at a time.
 
-- `jobs:generate_transcript:{journey_uid}:lock`: A basic lock to ensure we don't have two jobs
-  tryin to generate a transcript for the same journey at the same time.
+- `jobs:generate_transcript:{journey_uid}:lock`: A [smart lock](./locks.md) to
+  ensure we don't have two jobs trying to generate a transcript for the same
+  journey at the same time.
 
 - `emotion_content_statistics:lock` goes to the string `1` while an instance
   is trying to fill the emotion content statistics lock.
@@ -351,8 +352,9 @@ the keys that we use in redis
 
 - `reddit:refresh_token`: the refresh token to use to authorize with reddit
 
-- `reddit:lock`: A lock that prevents us having multiple praw instances trying to use
-  reddit at once, which will cause issues with the refresh token.
+- `reddit:lock`: A [smart lock](./locks.md) that prevents us having multiple
+  praw instances trying to use reddit at once, which will cause issues with the
+  refresh token.
 
 - `described_users:{sub}` goes to a string which is `1` if an instance is fetching this
   value, otherwise containing the jsonified representation of a `DescribedUser`
@@ -463,7 +465,7 @@ the keys that we use in redis
 
 ### Push Namespace
 
-- `push:send_job:lock` is a basic redis lock key used to ensure only one send job is
+- `push:send_job:lock` is a [smart lock](./locks.md) used to ensure only one send job is
   running at a time, in case it takes more than a minute to complete.
 
 - `push:message_attempts:to_send` goes to a list (inserted on the right, removed from the
@@ -518,7 +520,7 @@ the keys that we use in redis
 - `push:message_attempts:purgatory` has the same structure as to_send, but contains messages
   that we are working on currently.
 
-- `push:ticket_hot_to_cold:lock` is a basic redis lock key used to ensure only one
+- `push:ticket_hot_to_cold:lock` is a [smart lock](./locks.md) used to ensure only one
   cold-to-hot job is running at a time.
 
 - `push:push_tickets:cold` goes to a sorted set (scores are
@@ -570,7 +572,7 @@ the keys that we use in redis
 - `push:push_tickets:purgatory` has the same structure as `hot`, but contains messages that we
   are working on currently.
 
-- `push:check_job:lock` is a basic redis lock key used to ensure only one push receipt check
+- `push:check_job:lock` is a [smart lock](./locks.md) used to ensure only one push receipt check
   job is running at a time
 
 - `daily_reminder_settings_improved_at` is a redis key that goes to the time in seconds since
@@ -655,10 +657,10 @@ the keys that we use in redis
   - `failure_job` is a json-encoded job callback, e.g., `{"name": "runners.example", "kwargs": {}}`
   - `success_job` is a json-encoded job callback
 
-- `sms:send_job:lock` is a basic redis lock key used to ensure only one sms send job is running
+- `sms:send_job:lock` is a [smart lock](./locks.md) used to ensure only one sms send job is running
   at a time
 
-- `twilio:lock` is a basic redis lock key used to ensure only one job is trying to connect
+- `twilio:lock` is a [smart lock](./locks.md) used to ensure only one job is trying to connect
   to twilio at a time
 
 - `sms:send_purgatory` goes to a list (inserted on the right, removed from the left) just
@@ -704,14 +706,14 @@ the keys that we use in redis
 - `sms:event:purgatory` is a list just like `sms:event`, except only containing the events the
   Receipt Reconciliation Job is currently working on
 
-- `sms:receipt_stale_detection_job:lock` is a basic redis lock to ensure only one receipt stale
-  detection job is running at a time
+- `sms:receipt_stale_detection_job:lock` is a [smart lock](./locks.md) to ensure
+  only one receipt stale detection job is running at a time
 
-- `sms:receipt_recovery_job:lock` is a basic redis lock to ensure only one receipt recovery
+- `sms:receipt_recovery_job:lock` is a [smart lock](./locks.md) to ensure only one receipt recovery
   job is running at a time
 
-- `sms:receipt_reconciliation_job:lock` is a basic redis lock to ensure only one receipt reconciliation
-  job is running at a time
+- `sms:receipt_reconciliation_job:lock` is a [smart lock](./locks.md) to ensure
+  only one receipt reconciliation job is running at a time
 
 ### Email namespace
 
@@ -742,7 +744,7 @@ the keys that we use in redis
   containing the same values as `email:to_send` but consisting only of those being worked
   on right now.
 
-- `email:send_job:lock` goes to a basic redis lock key for ensuring only one email send job
+- `email:send_job:lock` goes to a [smart lock](./locks.md) for ensuring only one email send job
   is running at a time
 
 - `email:receipt_pending` goes to a sorted set where the scores are `send_accepted_at`
@@ -774,14 +776,14 @@ the keys that we use in redis
     always passed the kwarg `data_raw` which can be decoded with
     `lib.emails.email_info#decode_data_for_success_job` in `jobs`.
 
-- `email:reconciliation_job:lock` goes to a basic redis lock key for ensuring only one email
+- `email:reconciliation_job:lock` goes to a [smart lock](./locks.md) for ensuring only one email
   reconciliation job is running at a time
 
 - `email:reconciliation_purgatory` goes to a list (inserted on the right, removed from the left)
   containing the same values as `email:event` but consisting only of those being worked
   on right now.
 
-- `email:stale_receipt_job:lock` goes to a basic redis lock key for ensuring only one email
+- `email:stale_receipt_job:lock` goes to a [smart lock](./locks.md) for ensuring only one email
   stale receipt job is running at a time
 
 - `email:event` goes to a redis list (inserted on the right, removed from the left)
@@ -874,7 +876,7 @@ They are generally used for persisting or deleting related resources, see e.g.,
   database. This operation can be effectively batched, so this purgatory may contain
   a reasonable number of items (hundreds, but probably not thousands).
 
-- `touch:send_job:lock` goes to a basic redis lock key to ensure only one touch send job
+- `touch:send_job:lock` goes to a [smart lock](./locks.md) to ensure only one touch send job
   is running at a time
 
 - `touch:to_log` goes to a list (inserted on the right, removed from the left) containing
@@ -930,7 +932,7 @@ They are generally used for persisting or deleting related resources, see e.g.,
   This operation can be effectively batched, so this purgatory may contain a reasonable
   number of items (hundreds, but probably not thousands).
 
-- `touch:log_job:lock` goes to a basic redis lock key to ensure only one touch log job is
+- `touch:log_job:lock` goes to a [smart lock](./locks.md) to ensure only one touch log job is
   running at a time
 
 - `touch:pending` goes to a sorted set where the keys are uids of touches and the
@@ -1027,10 +1029,10 @@ the link.
 - `touch_links:persist_purgatory` goes to a sorted set just like `touch_links:to_persist`
   but containing just the touch links that the persist link job is currently working on
 
-- `touch_links:persist_job:lock` goes to a basic redis lock that ensures only one
+- `touch_links:persist_job:lock` goes to a [smart lock](./locks.md) that ensures only one
   persist link job is running at a time
 
-- `touch_links:leaked_link_detection_job:lock` goes to a basic redis lock that ensures
+- `touch_links:leaked_link_detection_job:lock` goes to a [smart lock](./locks.md) that ensures
   only one leaked link detection job is running at a time
 
 - `touch_links:delayed_clicks` goes to a sorted set where the values are click uids and
@@ -1061,7 +1063,7 @@ the link.
   `touch_links:delayed_clicks` but only containing the clicks that the delayed
   click persist job is working on right now.
 
-- `touch_links:delayed_click_persist_job:lock` goes to a basic redis lock for ensuring
+- `touch_links:delayed_click_persist_job:lock` goes to a [smart lock](./locks.md) for ensuring
   only one delayed click persist job is running at a time
 
 - `touch_links:click_ratelimit:codes:{code}` goes to a number indicating how
@@ -1106,7 +1108,7 @@ a different base offset. To handle this, we iterate over each timezone separatel
 - `daily_reminders:progress:earliest` goes to the earliest unix date that we are still
   iterating over.
 
-- `daily_reminders:assign_time_job_lock` goes to a basic redis lock to ensure only
+- `daily_reminders:assign_time_job_lock` goes to a [smart lock](./locks.md) to ensure only
   one Assign Time job is running at a time. This job starts at the earliest date,
   proceeding until the next unix date, within each one iterating over the timezones,
   within each one iterating over the relevant rows in `user_daily_reminders`, to insert
@@ -1122,7 +1124,7 @@ a different base offset. To handle this, we iterate over each timezone separatel
   `daily_reminders:queued` containing the reminders the send job is working on
   right now.
 
-- `daily_reminders:send_job_lock` goes to a basic redis lock to ensure only one
+- `daily_reminders:send_job_lock` goes to a [smart lock](./locks.md) to ensure only one
   daily reminder Send job is running a time. This job pulls overdue messages from
   the queued sorted set and sends them as touches.
 
@@ -1536,13 +1538,13 @@ to share a specific journey via URL.
   - There must be 60 or fewer invalid requests in the last minute
   - There must be 200 or fewer invalid requests in the last 10 minutes
 
-- `journey_share_links:views_log_job:lock` a basic redis lock to prevent multiple journey
+- `journey_share_links:views_log_job:lock` a [smart lock](./locks.md) to prevent multiple journey
   share link view persist jobs from running at the same time
 
-- `journey_share_links:sweep_unconfirmed_job:lock` a basic redis lock to prevent multiple
+- `journey_share_links:sweep_unconfirmed_job:lock` a [smart lock](./locks.md) to prevent multiple
   journey share link view sweep unconfirmed jobs from running at the same time
 
-- `journey_share_links:raced_confirmations_job:lock` a basic redis lock to
+- `journey_share_links:raced_confirmations_job:lock` a [smart lock](./locks.md) to
   prevent multiple journey share link raced confirmations sweep jobs from
   running at the same time
 

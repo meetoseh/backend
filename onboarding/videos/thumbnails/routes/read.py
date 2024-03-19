@@ -16,14 +16,14 @@ router = APIRouter()
     response_model=ReadVideoThumbnailResponse,
     responses=STANDARD_ERRORS_BY_CODE,
 )
-async def read_course_video_thumbnails(
+async def read_onboarding_video_thumbnails(
     args: ReadVideoThumbnailRequest,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
-    """Lists out course video thumbnails
+    """Lists out onboarding video thumbnails
 
     This requires standard authorization for a user with admin access
     """
     return await read_video_thumbnails(
-        args, authorization=authorization, table_name="course_video_thumbnail_images"
+        args, authorization=authorization, table_name="onboarding_video_thumbnails"
     )

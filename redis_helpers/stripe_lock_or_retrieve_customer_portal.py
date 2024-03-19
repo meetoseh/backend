@@ -92,7 +92,9 @@ StripeCustomerPortalState = Union[
     StripeCustomerPortalStateUnavailable,
     StripeCustomerPortalStateAvailable,
 ]
-stripe_customer_portal_state_adapter = TypeAdapter(StripeCustomerPortalState)
+stripe_customer_portal_state_adapter: TypeAdapter[StripeCustomerPortalState] = (
+    TypeAdapter(StripeCustomerPortalState)
+)
 
 
 class StripeLockOrRetrieveCustomerPortalResultSuccess(BaseModel):

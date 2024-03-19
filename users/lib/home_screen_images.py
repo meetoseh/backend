@@ -46,7 +46,9 @@ class AvailableHomeScreenImage(BaseModel):
     """
 
 
-_available_home_screen_images_adapter = TypeAdapter(List[AvailableHomeScreenImage])
+_available_home_screen_images_adapter: TypeAdapter[List[AvailableHomeScreenImage]] = (
+    TypeAdapter(List[AvailableHomeScreenImage])
+)
 
 
 async def read_home_screen_image(

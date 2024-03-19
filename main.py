@@ -38,6 +38,7 @@ import interests.router
 import sms.router
 import emails.router
 import misc.router
+import onboarding.router
 import personalization.register_background_tasks
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.lib.read_one_external
@@ -168,7 +169,7 @@ app = FastAPI(
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    logger.info(f"Request Starting: {request.url}")
+    logger.info(f"Request Starting: {request.method} {request.url}")
     response = await call_next(request)
     logger.info(f"Request Finished: {request.url}")
     return response
@@ -239,6 +240,9 @@ app.include_router(
     transcripts.router.router, prefix="/api/1/transcripts", tags=["transcripts"]
 )
 app.include_router(misc.router.router, prefix="/api/1/misc", tags=["misc"])
+app.include_router(
+    onboarding.router.router, prefix="/api/1/onboarding", tags=["onboarding"]
+)
 app.router.redirect_slashes = False
 
 

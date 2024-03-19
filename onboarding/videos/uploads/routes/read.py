@@ -16,14 +16,14 @@ router = APIRouter()
     response_model=ReadUploadedVideoResponse,
     responses=STANDARD_ERRORS_BY_CODE,
 )
-async def read_course_videos(
+async def read_onboarding_video_uploads(
     args: ReadUploadedVideoRequest,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
-    """Lists out course videos
+    """Lists out onboarding video uploads
 
     This requires standard authorization for a user with admin access
     """
     return await read_uploaded_videos(
-        args, authorization=authorization, table_name="course_videos"
+        args, authorization=authorization, table_name="onboarding_video_uploads"
     )

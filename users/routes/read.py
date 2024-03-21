@@ -9,6 +9,8 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_admin
 from db.utils import CaseInsensitiveCriterion, sqlite_string_concat
+from lib.gender.by_user import GenderWithSource
+from lib.gender.gender_source import gender_source_adapter
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
 from resources.filter_item import FilterItem, FilterItemModel
@@ -201,6 +203,8 @@ async def raw_read_users(
     user_revenue_cat_ids = Table("user_revenue_cat_ids")
     aggregated_user_revenue_cat_ids = Table("aggregated_user_revenue_cat_ids")
 
+    user_genders = Table("user_genders")
+
     query: QueryBuilder = (
         Query.with_(
             Query.from_(visitor_users)
@@ -286,6 +290,8 @@ async def raw_read_users(
             image_files.uid,
             users.created_at,
             Coalesce(last_seen_ats.last_seen_at, users.created_at).as_("last_seen_at"),
+            user_genders.gender,
+            user_genders.source,
         )
         .left_outer_join(aggregated_email_addresses)
         .on(aggregated_email_addresses.user_id == users.id)
@@ -302,6 +308,8 @@ async def raw_read_users(
         .on(image_files.id == user_profile_pictures.image_file_id)
         .left_outer_join(last_seen_ats)
         .on(last_seen_ats.user_id == users.id)
+        .left_outer_join(user_genders)
+        .on((user_genders.user_id == users.id) & user_genders.active)
     )
     qargs = []
 
@@ -459,6 +467,14 @@ async def raw_read_users(
                 profile_picture=image_file_ref,
                 created_at=row[8],
                 last_seen_at=row[9],
+                gender=(
+                    None
+                    if row[10] is None
+                    else GenderWithSource(
+                        gender=row[10],
+                        source=gender_source_adapter.validate_json(row[11]),
+                    )
+                ),
             )
         )
     return items

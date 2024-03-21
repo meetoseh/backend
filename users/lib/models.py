@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from image_files.models import ImageFileRef
+from lib.gender.by_user import GenderWithSource
 
 
 class UserEmail(BaseModel):
@@ -76,6 +77,7 @@ class User(BaseModel):
     profile_picture: Optional[ImageFileRef] = Field(
         description="The users profile picture, if they have one"
     )
+    gender: Optional[GenderWithSource] = Field(description="the users gender, if known")
     created_at: float = Field(
         description="The time at which this user was created, in seconds since the epoch"
     )

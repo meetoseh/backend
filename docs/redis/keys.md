@@ -108,7 +108,15 @@ the keys that we use in redis
   a certain threshold, we stop sending requests to revenue cat and instead fail
   open, i.e., we assume that the user has the entitlement. This ensures that a
   revenuecat outage has a minimal impact on our users. This key is used in
-  [entitlements.py](../../users/lib/entitlements.py)
+  [entitlements.py](../../users/lib/entitlements.py). The identifiers are assigned
+  as incrementing integers, starting at 1, via `revenue_cat_errors:idcounter`
+
+- `revenue_cat_errors:idcounter` goes to a string containing the next id to use
+  for `revenue_cat_errors`. This is used to ensure that we don't have to scan
+  the entire `revenue_cat_errors` set to find the next id to use, nor do we have
+  to waste space on the redis server using random ids (which would have to be
+  large enough to avoid collisions), nor do we have to assume that our clocks are
+  in sync enough that every insert will be in the correct order.
 
 - `entitlements:read:force:ratelimit:{user_sub}` goes to the string '1' if the user
   is prevented from requesting that we fetch entitlements from the source of truth,
@@ -462,6 +470,56 @@ the keys that we use in redis
 - `user:timezones:{user_sub}`: contains the recently set IANA timezone string for
   the user with the given sub, if its been set recently, to allow skipping the db
   call. Always set to expire 15m after it was last set.
+
+- `gender_api:errors`: a sorted set which contains recent timestamps (via score)
+  of errors getting useful responses from gender-api.com. The values are
+  incrementing ids via `gender_api:errors:idcounter`. If too many errors occur
+  within 20 minutes we stop sending requests and instead treat all guesses as
+  `unknown`
+
+- `gender_api:errors:idcounter`: a string key containing the next id to use for
+  `gender_api:errors`
+
+- `users:gender:{sub}` goes to a string key containing a json object. always has
+  an expiration set of 1 hour since it was originally set. The json object has
+  the following shape:
+
+  ```json
+  {
+    "gender": "male",
+    "source": {
+      "type": "by-first-name",
+      "url": "https://gender-api.com/v2/gender",
+      "payload": {
+        "first_name": "John",
+        "locale": "en-US"
+      },
+      "response": {
+        "input": {
+          "first_name": "John"
+        },
+        "details": {
+          "credits_used": 1,
+          "samples": 150,
+          "country": null,
+          "first_name_sanitized": "john",
+          "duration": "78ms"
+        },
+        "result_found": true,
+        "first_name": "John",
+        "probability": 0.95,
+        "gender": "male"
+      }
+    }
+  }
+  ```
+
+  See also: `ps:users:gender`, the diskcache key with the same name, and the table
+  `user_genders`
+
+- `users:gender:{sub}:lock` goes to a string '1' while we are trying to fill the
+  gender for the user with the given sub and is not set otherwise. This is not a
+  smart lock, and utilizes `ps:users:gender` with a timeout to decide when to steal
 
 ### Push Namespace
 
@@ -3480,7 +3538,7 @@ These are regular keys used by the personalization module
 
 - `ps:home_screen_images:available` is used to keep available home screen images
   in sync across instances. messages are formatted as
-  `(uint1, [blob of length 10, uint1, uint1, uint64, blob])`,
+  `(uint8, [blob of length 10, uint8, uint8, uint64, blob])`,
 
   1. 1 if data is included, 0 if this is a purge request
   2. date in ISO8601 ascii-encoded format, `YYYY-MM-DD`, which is always 10 characters
@@ -3492,3 +3550,13 @@ These are regular keys used by the personalization module
   6. the value to write to the cache
 
   all numbers are big-endian encoded.
+
+- `ps:users:gender` is used to sync instances local cache for the local cache
+  of the user<->gender mapping. messages are formatted as `(uint8, uint16, blob[, uint64, blob])`
+  where:
+
+  1. 1 if data is included, 0 if this is a purge request
+  2. length of the user sub
+  3. user sub
+  4. length of the blob to write to the local cache
+  5. the blob to write to the local cache (json-encoded GenderWithSource)

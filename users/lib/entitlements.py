@@ -20,11 +20,10 @@ import perpetual_pub_sub as pps
 from pydantic import BaseModel, Field
 from error_middleware import handle_error, handle_warning
 from itgs import Itgs
-import hashlib
-from redis.exceptions import NoScriptError
-import secrets
 import datetime
 from loguru import logger
+from redis_helpers.zadd_exact_window import zadd_exact_window_safe
+from redis_helpers.zcard_exact_window import zcard_exact_window_safe
 from users.lib.prices import Period, get_localized_price
 
 
@@ -252,7 +251,12 @@ async def get_entitlements_from_source(
                     )
                     continue
 
-                if best_date is None or abs(subscription.expires_date.timestamp() - raw_entitlement.expires_date.timestamp())  < abs(best_date.timestamp() - raw_entitlement.expires_date.timestamp()):
+                if best_date is None or abs(
+                    subscription.expires_date.timestamp()
+                    - raw_entitlement.expires_date.timestamp()
+                ) < abs(
+                    best_date.timestamp() - raw_entitlement.expires_date.timestamp()
+                ):
                     platform = await _store_to_platform(subscription.store)
                     best_date = subscription.expires_date
 
@@ -587,21 +591,6 @@ async def get_entitlement(
     return to_cache.entitlements[identifier]
 
 
-COUNT_REVENUE_CAT_ERRORS_SCRIPT = """
-local key = KEYS[1]
-local later_than = tonumber(ARGV[1])
-
-redis.call('zremrangebyscore', key, '-inf', later_than)
-local count = redis.call('zcard', key)
-return count
-"""
-
-COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH = hashlib.sha1(
-    COUNT_REVENUE_CAT_ERRORS_SCRIPT.encode()
-).hexdigest()
-"""The sha1 for the lua script, used for evalsha"""
-
-
 async def is_revenue_cat_outage(itgs: Itgs) -> bool:
     """Determines if there is a revenue cat outage, based on the number of
     recent errors in `revenue_cat_errors`, in redis. This will automatically
@@ -616,22 +605,10 @@ async def is_revenue_cat_outage(itgs: Itgs) -> bool:
     Returns:
         bool: True if there is a revenue cat outage, False otherwise
     """
-    redis = await itgs.redis()
-    now = time.time()
-    try:
-        num_recent_errors = await redis.evalsha(  # type: ignore
-            COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH, 1, "revenue_cat_errors", now - 60 * 5  # type: ignore
-        )
-    except NoScriptError:
-        correct_sha = await redis.script_load(COUNT_REVENUE_CAT_ERRORS_SCRIPT)
-        assert (
-            correct_sha == COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH
-        ), f"{correct_sha=} != {COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH=}"
-        num_recent_errors = await redis.evalsha(  # type: ignore
-            COUNT_REVENUE_CAT_ERRORS_SCRIPT_HASH, 1, "revenue_cat_errors", now - 60 * 5  # type: ignore
-        )
-
-    return num_recent_errors >= 10  # type: ignore
+    num_recent_errors = await zcard_exact_window_safe(
+        itgs, b"revenue_cat_errors", int(time.time() - 60 * 5)
+    )
+    return num_recent_errors >= 10
 
 
 async def record_revenue_cat_error(itgs: Itgs, *, now: float) -> None:
@@ -641,8 +618,9 @@ async def record_revenue_cat_error(itgs: Itgs, *, now: float) -> None:
         itgs (Itgs): the integrations for networked services
         now (float): the time the error occurred
     """
-    redis = await itgs.redis()
-    await redis.zadd("revenue_cat_errors", mapping={secrets.token_urlsafe(8): now})
+    await zadd_exact_window_safe(
+        itgs, b"revenue_cat_errors", b"revenue_cat_errors:idcounter", int(now)
+    )
 
 
 async def fail_open_entitlement(

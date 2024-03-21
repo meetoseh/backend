@@ -19,6 +19,7 @@ import loguru
 import revenue_cat
 import asyncio
 import twilio.rest
+import lib.gender.api
 
 
 our_diskcache: diskcache.Cache = diskcache.Cache(
@@ -64,6 +65,9 @@ class Itgs:
 
         self._twilio: Optional[twilio.rest.Client] = None
         """the twilio connection if it had been opened"""
+
+        self._gender_api: Optional[lib.gender.api.GenderAPI] = None
+        """the gender api connection if it had been opened"""
 
         self._closures: List[Callable[["Itgs"], Coroutine]] = []
         """functions to run on __aexit__ to cleanup opened resources"""
@@ -431,3 +435,26 @@ class Itgs:
             self._twilio = tw
 
         return self._twilio
+
+    async def gender_api(self) -> lib.gender.api.GenderAPI:
+        """gets or creates the GenderAPI connection"""
+        if self._gender_api is not None:
+            return self._gender_api
+
+        async with self._lock:
+            if self._gender_api is not None:
+                return self._gender_api
+
+            api_key = os.environ["OSEH_GENDER_API_KEY"]
+
+            gender = lib.gender.api.GenderAPI(api_key)
+            await gender.__aenter__()
+
+            async def cleanup(me: "Itgs") -> None:
+                await gender.__aexit__(None, None, None)
+                me._gender_api = None
+
+            self._closures.append(cleanup)
+            self._gender_api = gender
+
+        return self._gender_api

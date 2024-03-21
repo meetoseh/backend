@@ -255,6 +255,7 @@ particular inapp notification.
 - Upgrade (`oseh_ian_UWqxuftHMXtUnzn9kxnTOA`) is shown whenever the user is
   shown the upgrade screen, such as by navigating to /upgrade, clicking
   one of the unlock with oseh+ buttons, etc.
+
   - `open`: always added as the first action to provide additional context.
     extra includes the following fields:
     - `context (object)`: includes a `type (string)` which is one of:
@@ -277,6 +278,18 @@ particular inapp notification.
   - `purchase_screen_shown`: we have completed all the work required to present the
     purchase screen, and the native behavior (e.g., redirect to stripe) is taking over
   - `close`: the user closed the upgrade screen
+
+- Welcome Video (`oseh_ian_Ua7cSqwMg3atEEG4sf1R5w`) is shown once per user and displays
+  one of the active onboarding videos with the purpose `welcome`.
+  - `open`: always added as the first action to provide additional context.
+    extra includes the following fields:
+    - `onboarding_video_uid (str)`: the uid of the row in onboarding_videos
+    - `content_file_uid (str)`: the uid of the video content file
+  - `play`: the user started playing the video
+  - `pause`: the user paused the video. extra includes the following fields:
+    - `time (float)`: the time in seconds from the start of the video
+  - `ended`: the user watched the video to the end
+  - `close`: the user closed the video
 
 ## Schema
 

@@ -426,6 +426,48 @@ the keys we store locally on backend instances via diskcache
   date for users which have/don't have pro. `wrapped_only` is either `True` or
   `False` and, if `True`, the returned `end_time` is always `> 86400`.
 
+- `users:gender:{sub}` goes to a string key containing a json object. always has
+  an expiration set of 1 hour since it was originally set. The json object has
+  the following shape:
+
+  ```json
+  {
+    "gender": "male",
+    "source": {
+      "type": "by-first-name",
+      "url": "https://gender-api.com/v2/gender",
+      "payload": {
+        "first_name": "John",
+        "locale": "en-US"
+      },
+      "response": {
+        "input": {
+          "first_name": "John"
+        },
+        "details": {
+          "credits_used": 1,
+          "samples": 150,
+          "country": null,
+          "first_name_sanitized": "john",
+          "duration": "78ms"
+        },
+        "result_found": true,
+        "first_name": "John",
+        "probability": 0.95,
+        "gender": "male"
+      }
+    }
+  }
+  ```
+
+  See also: redis key `ps:users:gender`, the redis key with the same name, and the table
+  `user_genders`
+
+- `onboarding:welcome:{gender}:{language}` where gender is one of `male`, `female`,
+  `nonbinary`, `unknown`, or `None`, and language is a 2-letter language code or `None`, goes to a
+  gzip-compressed json array containing json objects with `content_file_uid`, `thumbnail_uid`,
+  and optional `transcript_uid`. see `read_welcome_video.py`
+
 ## Personalization
 
 This contains keys for the personalization subspace

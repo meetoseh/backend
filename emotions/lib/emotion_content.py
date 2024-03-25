@@ -1,3 +1,4 @@
+import secrets
 from typing import (
     Callable,
     Coroutine,
@@ -13,6 +14,7 @@ from pydantic import BaseModel, Field
 import perpetual_pub_sub as pps
 import asyncio
 import random
+from loguru import logger
 
 
 class EmotionContentStatistics(BaseModel):
@@ -54,12 +56,17 @@ async def get_emotion_content_statistics(itgs: Itgs) -> List[EmotionContentStati
         list[EmotionContentStatistics]: The statistics on every emotion, sorted
             by the number of journeys in descending order
     """
+    req_id = secrets.token_urlsafe(4)
+    logger.info(f"get_emotion_content_statistics assigned {req_id=}")
+
     result = await get_emotion_content_statistics_from_cache(itgs)
     if result is not None:
+        logger.info(f"{req_id=} LOCAL CACHE HIT")
         return result
 
     result = await get_emotion_content_statistics_from_redis(itgs)
     if result is not None:
+        logger.info(f"{req_id=} REMOTE CACHE HIT")
         await set_emotion_content_statistics_in_cache(itgs, stats=result)
         return result
 
@@ -67,6 +74,7 @@ async def get_emotion_content_statistics(itgs: Itgs) -> List[EmotionContentStati
     lock_key = b"emotion_content_statistics:lock"
     got_lock = await redis.set(lock_key, b"1", nx=True, ex=10)
     if not got_lock:
+        logger.debug(f"{req_id=} RECHECKING (failed to acquire lock)")
         stats: Optional[List[EmotionContentStatistics]] = None
         stats_event = asyncio.Event()
 
@@ -75,24 +83,78 @@ async def get_emotion_content_statistics(itgs: Itgs) -> List[EmotionContentStati
             stats = stats_
             stats_event.set()
 
-        stats_listeners.append(on_stats)
+        my_stats_listeners = stats_listeners
+        my_stats_listeners.append(on_stats)
         wait_task = asyncio.create_task(stats_event.wait())
 
+        # have to double check now that we have listeners
+
+        result = await get_emotion_content_statistics_from_cache(itgs)
+        if result is not None:
+            logger.info(
+                f"{req_id=} LOCAL CACHE HIT (recheck after failed to acquire lock)"
+            )
+            my_stats_listeners.remove(on_stats)
+            wait_task.cancel()
+            return result
+
+        result = await get_emotion_content_statistics_from_redis(itgs)
+        if result is not None:
+            logger.info(
+                f"{req_id=} REMOTE CACHE HIT (recheck after failed to acquire lock)"
+            )
+            my_stats_listeners.remove(on_stats)
+            wait_task.cancel()
+            await set_emotion_content_statistics_in_cache(itgs, stats=result)
+            return result
+
+        if not wait_task.done():
+            assert (
+                stats_listeners is my_stats_listeners
+            ), "stats_listener invoked but wait_task not done?"
+
+        logger.debug(f"{req_id=} WAITING (failed to acquire lock)")
         try:
             await asyncio.wait_for(wait_task, timeout=10)
             if stats is not None:
+                logger.info(f"{req_id} RECEIVED STATS FROM SUBSCRIPTION")
                 return stats
+            else:
+                logger.warning(f"{req_id} wait_task done but stats is None")
         except asyncio.TimeoutError as e:
+            my_stats_listeners.remove(on_stats)
             wait_task.cancel()
             await handle_error(
                 e, extra_info="while waiting for emotion_content_statistics"
             )
 
-    result = await get_emotion_content_statistics_from_db(itgs)
-    await set_emotion_content_statistics_in_cache(itgs, stats=result)
-    await update_emotion_content_statistics_everywhere(itgs, stats=result)
-    await redis.delete(lock_key)
-    return result
+        logger.debug(f"{req_id=} FALLTHROUGH (failed to acquire lock, timed out)")
+    else:
+        logger.debug(f"{req_id=} RECHECKING (acquired lock)")
+    # need to recheck with the lock
+    result = await get_emotion_content_statistics_from_cache(itgs)
+    if result is not None:
+        logger.info(f"{req_id=} LOCAL CACHE HIT (recheck after acquired lock)")
+        if got_lock:
+            await redis.delete(lock_key)
+        return result
+
+    result = await get_emotion_content_statistics_from_redis(itgs)
+    if result is not None:
+        logger.info(f"{req_id=} REMOTE CACHE HIT (recheck after acquired lock)")
+        await set_emotion_content_statistics_in_cache(itgs, stats=result)
+        if got_lock:
+            await redis.delete(lock_key)
+        return result
+
+    try:
+        result = await get_emotion_content_statistics_from_db(itgs)
+        logger.info(f"{req_id=} DB HIT")
+        await set_emotion_content_statistics_in_cache(itgs, stats=result)
+        await update_emotion_content_statistics_everywhere(itgs, stats=result)
+        return result
+    finally:
+        await redis.delete(lock_key)
 
 
 async def get_emotion_content_statistics_from_redis(

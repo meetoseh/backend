@@ -825,6 +825,15 @@ async def _period_from_subscription_key(itgs: Itgs, key: str) -> Optional[Period
         return None
     elif key.startswith("rc_promo_") and key.endswith("_lifetime"):
         return Period(iso8601="P200Y")
+    
+    if key.startswith("oseh_"):
+        # ios keys are in the form oseh_{price}_{period}_{trialinfo}
+        parts = key.split("_")
+        if len(parts) == 4:
+            period_key = parts[2]
+            period_iso8601 = 'P' + period_key.upper()
+            if period_iso8601 in ("P1Y", "P1M", "P1W", "P1D", "P3M", "P6M", "P200Y"):
+                return Period(iso8601=period_iso8601)
 
     await handle_warning(f"{__name__}:bad_period_key", f"unknown period key: {key}")
 

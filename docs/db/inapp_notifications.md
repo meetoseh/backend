@@ -65,7 +65,9 @@ particular inapp notification.
   - `continue`
 
 - Goal: Days/Week (`oseh_ian_onUsRRweMgFGAg_ZHorM2A`) allows the user to set a
-  goal for how many days a week they want to practice. Actions:
+  goal for how many days a week they want to practice. This is the original
+  screen on a green background with horizontal options, and was replaced by
+  `oseh_ian_IGPEKaUU10jd53raAKfhxg`. Actions:
 
   - `choice` - extra is formatted as `{"value": 1}` where value is 1-7
   - `set_goal` - the continue button, extra is formatted as `{"days_per_week": 1}`
@@ -281,6 +283,7 @@ particular inapp notification.
 
 - Welcome Video (`oseh_ian_Ua7cSqwMg3atEEG4sf1R5w`) is shown once per user and displays
   one of the active onboarding videos with the purpose `welcome`.
+
   - `open`: always added as the first action to provide additional context.
     extra includes the following fields:
     - `onboarding_video_uid (str)`: the uid of the row in onboarding_videos
@@ -290,6 +293,74 @@ particular inapp notification.
     - `time (float)`: the time in seconds from the start of the video
   - `ended`: the user watched the video to the end
   - `close`: the user closed the video
+
+- Goal Categories (`oseh_ian_8SptGFOfn3GfFOqA_dHsjA`) is shown once per user and asks
+  them to select their goal with Oseh+
+
+  - `open`: always added as the first action to provide the initial state:
+    - `choices (object[])`: the options we are presenting, in the order we are presenting,
+      where each choice is an object with the following fields:
+      - `slug (str)`: one of `sleep_better`, `increase_focus`, `reduce_stress`, `be_present`
+      - `text (str)`: the nearest ascii representation of the text to display for this option,
+        e.g., `Reduce Stress + Anxiety`
+    - `checked (string[])`: the slugs of the categories that were checked
+  - `check`: the user checked one of the options. extra includes the following
+    fields:
+    - `slug (str)`: one of the slugs in choices
+  - `uncheck`: the user unchecked one of the options. extra includes the following
+    fields:
+    - `slug (str)`: one of the slugs in choices
+  - `continue`, `close`: the user closed the window or hit continue. extra includes the
+    following fields:
+    - `checked (string[])`: the slugs of the categories that were checked
+
+- Age (`oseh_ian_xRWoSM6A_F7moeaYSpcaaQ`) is shown once per user and asks them to
+  give us their approximate age:
+
+  - `open`: always added as the first action to provide the initial state:
+    - `choices (object[])`: the options we are presenting, where each option is
+      an object with the following fields:
+      - `slug (string)`: one of `18-24`, `25-34`, `35-44`, `45-54`, `55-64`, `65+`
+      - `text (string)`: the nearest ascii representation of the text to display for this option,
+        e.g., `18-24`
+      - `min (int, null)`: the minimum age for this option, or null if there is no minimum
+      - `max (int, null)`: the maximum age for this option, or null if there is no maximum
+    - `choice (string, null)`: the slug of the selected choice, or null if no choice is
+      initially selected
+  - `check`: the user selected one of the options. extra includes the following fields:
+    - `slug (string)`: one of the slugs in choices
+  - `uncheck`: the user unselected one of the options. extra includes the following fields:
+    - `slug (string)`: one of the slugs in choices
+  - `close`, `back`, `continue`: the user closed the window, hit back, or hit continue.
+    extra includes the following fields:
+    - `choice (string, null)`: the slug of the selected choice, or null if no choice is
+      selected
+
+- Goal: Days/Week V2 (`oseh_ian_IGPEKaUU10jd53raAKfhxg`) is shown once per user automatically
+  and upon request. It asks the user to set a goal for how many days a week they want to practice.
+
+  - `open`: always added as the first action to provide the initial state:
+    - `choice (integer, null)`: the number of days per week the user has selected, or null if
+      no choice is initially selected
+    - `back (string, null)`: if a back button will be rendered, where it goes
+  - `check`: the user selected one of the options. extra includes the following fields:
+    - `value (integer)`: the number of days per week the user has selected
+  - `close`, `back`, `continue`: the user closed the window, hit back, or hit continue.
+    extra includes the following fields:
+    - `choice (integer, null)`: the number of days per week the user has selected, or null if
+      no choice is selected
+  - `stored`: indicates that we successfully stored the users new choice via dedicated api call
+    - `choice (integer)`: the number of days per week we updated their goal to
+
+- Home Tutorial (`oseh_ian_8bGx8_3WK_tF5t-1hmvMzw`) is shown once per user as a tutorial for the
+  home screen.
+  - `open`: always added as the first action to provide the initial state:
+    - `step (string)`: the step of the tutorial the user is currently on, one of `explain_top`,
+      `explain_bottom`
+  - `next`: the user clicked the next button to move to the next step of the tutorial
+    - `step (string, null)`: the step of the tutorial the user is now on, or null if the
+      tutorial is complete
+  - `close`: the user closed the page or otherwise exited the tutorial early
 
 ## Schema
 

@@ -282,7 +282,7 @@ async def read_stripe_customer_portal(
                     timeout=60,
                 )
                 logger.debug(
-                    f"Customer Portal URL {request_id} for {auth_result.result.sub} found {len(stripe_customers)} customers..."
+                    f"Customer Portal URL {request_id} for {auth_result.result.sub} found {len(stripe_customers)} customer(s)..."
                 )
 
                 relevant_stripe_customers = [

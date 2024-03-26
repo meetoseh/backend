@@ -774,8 +774,10 @@ async def _period_from_subscription_key(itgs: Itgs, key: str) -> Optional[Period
         # shows in UI
         return Period(iso8601="P1M")
 
-    if key.startswith("rc_promo_pro_cat_"):
-        frequency_str = key[len("rc_promo_pro_cat_") :]
+    if key.startswith("rc_promo_pro_"):
+        frequency_str = key[len("rc_promo_pro_") :]
+        if frequency_str.startswith("cat_"):
+            frequency_str = frequency_str[len("cat_") :]
         if frequency_str == "monthly":
             # shows in UI
             return Period(iso8601="P1M")
@@ -825,13 +827,13 @@ async def _period_from_subscription_key(itgs: Itgs, key: str) -> Optional[Period
         return None
     elif key.startswith("rc_promo_") and key.endswith("_lifetime"):
         return Period(iso8601="P200Y")
-    
+
     if key.startswith("oseh_"):
         # ios keys are in the form oseh_{price}_{period}_{trialinfo}
         parts = key.split("_")
         if len(parts) == 4:
             period_key = parts[2]
-            period_iso8601 = 'P' + period_key.upper()
+            period_iso8601 = "P" + period_key.upper()
             if period_iso8601 in ("P1Y", "P1M", "P1W", "P1D", "P3M", "P6M", "P200Y"):
                 return Period(iso8601=period_iso8601)
 

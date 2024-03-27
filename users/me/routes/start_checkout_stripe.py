@@ -170,6 +170,7 @@ async def start_checkout_stripe(
                 ),
                 cancel_url=os.environ["ROOT_FRONTEND_URL"] + args.cancel_path,
                 mode="subscription",
+                allow_promotion_codes=True,
                 line_items=[
                     {
                         "price": stripe_price_id,

@@ -774,6 +774,11 @@ async def _period_from_subscription_key(itgs: Itgs, key: str) -> Optional[Period
         # shows in UI
         return Period(iso8601="P1M")
 
+    if key == "oseh_pro_1":
+        # android; subscription duration is not available without knowing the
+        # base plan id
+        return None
+
     if key.startswith("rc_promo_pro_"):
         frequency_str = key[len("rc_promo_pro_") :]
         if frequency_str.startswith("cat_"):

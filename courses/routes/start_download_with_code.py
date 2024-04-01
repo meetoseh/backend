@@ -90,8 +90,7 @@ async def start_course_download_with_code(args: StartCourseDownloadWithCodeReque
         code_created_at_raw: float = response.results[0][5]
 
         code_created_at_pretty = (
-            datetime.datetime.utcfromtimestamp(code_created_at_raw)
-            .replace(tzinfo=pytz.utc)
+            datetime.datetime.fromtimestamp(code_created_at_raw, tz=pytz.utc)
             .astimezone(pytz.timezone("America/Los_Angeles"))
             .strftime("%a %b %d %Y, %I:%M%p")
         )

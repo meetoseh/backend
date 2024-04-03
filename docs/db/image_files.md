@@ -8,28 +8,32 @@ an image file.
 
 We maintain the following invariants not expressed in the schema:
 
--   Every `image_file` has at least one `image_file_export`.
+- Every `image_file` has at least one `image_file_export`.
 
 Image files should only be deleted if they are not in use - see
 [delete_image_file.py](../../../jobs/runners/delete_image_file.py)
 
 ## Fields
 
--   `id (integer primary key)`: the internal identifier for the row
--   `uid (text unique not null)`: the primary external identifier for the row. The
-    uid prefix is `if`: see [uid_prefixes](../uid_prefixes.md).
--   `name (text not null)`: an arbitrary name given to the file, not necessarily unique,
-    typically user-provided (although not necessarily directly; e.g., could be from the
-    filename)
--   `original_s3_file_id (integer null references s3_files(id) on delete set null)`: the original
-    s3 file that was used to construct the exports, if available. Should never be served to
-    users, but can be used to repeat the export if our targets change.
--   `original_sha512 (text not null)`: the sha512 of the original image used to construct the
-    exports. This is used to automatically deduplicate images where possible.
--   `original_width (integer not null)`: the width of the original image in pixels
--   `original_height (integer not null)`: the height of the original image in pixels
--   `created_at (real not null)`: when this record was created in seconds since
-    the unix epoch
+- `id (integer primary key)`: the internal identifier for the row
+- `uid (text unique not null)`: the primary external identifier for the row. The
+  uid prefix is `if`: see [uid_prefixes](../uid_prefixes.md).
+- `name (text not null)`: an arbitrary name given to the file, not necessarily unique,
+  typically user-provided (although not necessarily directly; e.g., could be from the
+  filename)
+- `original_s3_file_id (integer null references s3_files(id) on delete set null)`: the original
+  s3 file that was used to construct the exports, if available. Should never be served to
+  users, but can be used to repeat the export if our targets change.
+- `original_sha512 (text not null)`: the sha512 of the original image used to construct the
+  exports. This is used to automatically deduplicate images where possible. Note that images
+  which are generated can use e.g. a json file as the original file, and the sha512 of that
+  is used here.
+- `original_width (integer not null)`: the width of the original image in pixels, if meaningful,
+  otherwise an arbitrary value.
+- `original_height (integer not null)`: the height of the original image in pixels, if meaningful,
+  otherwise an arbitrary value.
+- `created_at (real not null)`: when this record was created in seconds since
+  the unix epoch
 
 ## Schema
 

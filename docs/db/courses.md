@@ -75,6 +75,10 @@ course videos and a basic index file to play them.
   The hero image for the course. This is the image that is shown on the course
   share page. Typically this will correspond to the `image_file_id` on a `course_hero_images`
   row, though this is not required.
+- `share_image_file_id (integer null references image_files(id) on delete set null)`:
+  The share image for the course. This is used for the open graph meta images on the
+  generated share page for the course. This is generated from a combination of the
+  hero image, series title, and the instructor name.
 - `created_at (real not null)`: When this course record was first created
 
 ## Schema
@@ -95,6 +99,7 @@ CREATE TABLE courses(
     video_thumbnail_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
     logo_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
     hero_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
+    share_image_file_id INTEGER NULL REFERENCES image_files(id) ON DELETE SET NULL ON UPDATE RESTRICT,
     created_at REAL NOT NULL
 );
 
@@ -118,6 +123,9 @@ CREATE INDEX courses_logo_image_file_id_idx ON courses(logo_image_file_id);
 
 /* Foreign key */
 CREATE INDEX courses_hero_image_file_id_idx ON courses(hero_image_file_id);
+
+/* Foreign key */
+CREATE INDEX courses_share_image_file_id_idx ON courses(share_image_file_id);
 
 /* Series listing sort */
 CREATE INDEX courses_created_at_series_listing_idx ON courses(created_at) WHERE (flags & 64) != 0;

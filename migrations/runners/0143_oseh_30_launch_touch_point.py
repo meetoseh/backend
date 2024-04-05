@@ -80,7 +80,7 @@ def push(title: str, body: str, *, p=1):
         title_parameters=[],
         body_format=body,
         body_parameters=[],
-        channel_id="default",
+        channel_id="daily_reminder",
     )
 
 

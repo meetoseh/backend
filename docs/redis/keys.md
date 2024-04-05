@@ -1188,9 +1188,15 @@ a different base offset. To handle this, we iterate over each timezone separatel
 
 - `daily_reminders:counts` goes to a redis hash containing how many users are
   registered to receive daily reminders on the given channel. the keys are:
+
   - `email`
   - `sms`
   - `push`
+
+- `daily_reminders:swaps:{slug}:{channel}` goes to the set of user subs for whom
+  we have already performed the daily reminder swap for the given slug on the given
+  channel. This always has an expiration set. Set `runners.daily_reminders.send` in
+  the jobs repo for details on how daily reminder swaps function.
 
 ### Sign in with Oseh namespace
 
@@ -2548,6 +2554,7 @@ rather than external functionality.
   - `sms`: how many sms touches we created
   - `push`: how many push touches we created
   - `email`: how many email touches we created
+  - `swaps`: how many touches were swapped with the current daily reminder swap
   - `stop_reason`: one of `list_exhausted`, `time_exhausted`, `backpressure`,
     or `signal`
 

@@ -46,6 +46,16 @@ Template:
   - see also:
     - `frontend-ssr-web/uikit/ProvidersList--click`
     - `frontend-ssr-web/uikit/DownloadAppLinks--click`
+- `/frontend-ssr-web/routers/courses/components/CoursePublicPageApp.tsx`
+  - Used when people directly navigate to the sitemap-included share pages for
+    courses, e.g., https://oseh.io/shared/series/sleep-vibes
+  - pageview props:
+    - `slug (string)`: the slug they navigated to, e.g., `sleep-vibes`
+    - `instructor (string)`: the name of the instructor
+  - idempotency: `pageview--frontend-ssr-web/routers/courses/components/CoursePublicPageApp.tsx`
+  - see also:
+    - `frontend-ssr-web/uikit/ProvidersList--click`
+    - `frontend-ssr-web/uikit/DownloadAppLinks--click`
 
 ## Custom Events
 

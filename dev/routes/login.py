@@ -47,6 +47,10 @@ async def dev_login(args: DevLoginRequest):
         given_name = "Timothy"
         family_name = "Moore"
         email = "tj@oseh.com"
+    elif args.sub == "timothy2":
+        given_name = "Timothy"
+        family_name = "Moore"
+        email = "mtimothy984@gmail.com"
     elif args.sub == "paul":
         given_name = "Paul"
         family_name = "Javid"

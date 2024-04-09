@@ -38,7 +38,7 @@ we don't want that to take too long / use too much memory.
 CREATE TABLE user_home_screen_images (
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
-    user_id INTEGER NOT NULL REFERENCES users(id),
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE ON UPDATE RESTRICT,
     home_screen_image_id INTEGER NOT NULL REFERENCES home_screen_images(id),
     created_at REAL NOT NULL
 );

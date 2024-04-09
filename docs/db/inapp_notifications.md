@@ -270,6 +270,10 @@ particular inapp notification.
       - `id (string)`: the RevenueCat offering id
       - `products (array of string)` each string is a RevenueCat package id
     - `initial (string)`: the package id of the initial selection
+    - `layout (string)`: used only in some later versions of the upgrade screen
+      to indicate which version they saw (where it differed between platforms/over time)
+      - `original`: the original version
+      - `continue_for_free`: a continue for free button was displayed instead of an x
   - `package_selected`: the user switched the selected offering
     - `package (string)`: the package id of the newly selected package within the offering
   - `subscribe_clicked`: the user clicked the subscribe button. this may require

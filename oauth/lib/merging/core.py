@@ -152,6 +152,12 @@ async def create_merging_queries(
         *await _create_standard_move_merge_queries(
             itgs,
             ctx,
+            table_name="user_home_screen_images",
+            operation_order=OperationOrder.move_user_home_screen_images,
+        ),
+        *await _create_standard_move_merge_queries(
+            itgs,
+            ctx,
             table_name="open_stripe_checkout_sessions",
             operation_order=OperationOrder.move_open_stripe_checkout_sessions,
         ),

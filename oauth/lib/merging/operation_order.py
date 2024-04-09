@@ -17,6 +17,7 @@ class OperationOrder(IntEnum):
     move_journey_background_images = auto()
     move_journey_feedback = auto()
     move_journey_public_link_views = auto()
+    move_user_home_screen_images = auto()
     move_open_stripe_checkout_sessions = auto()
     move_phone_verifications = auto()
     move_stripe_customers = auto()

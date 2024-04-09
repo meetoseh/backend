@@ -177,21 +177,22 @@ alphabetical order, with logs moved to the bottom:
 7. `move_journey_background_images`
 8. `move_journey_feedback`
 9. `move_journey_public_link_views`
-10. `move_open_stripe_checkout_sessions`
-11. `move_phone_verifications`
-12. `move_stripe_customers`
+10. `move_user_home_screen_images`
+11. `move_open_stripe_checkout_sessions`
+12. `move_phone_verifications`
+13. `move_stripe_customers`
 
     - `context`:
       - `ids`: a list of stripe customer ids (these are strings) that are being
         moved
       - `rows`: the length of ids
 
-13. We do not attempt to transfer `user_daily_reminder_settings`; instead, immediately
+14. We do not attempt to transfer `user_daily_reminder_settings`; instead, immediately
     after the transaction completes we refetch their settings and user_daily_reminder
     records to ensure they are in sync. after the merge, the user is asked to
     review their settings again.
 
-14. `move_user_email_addresses__disable_without_hint`: if we are merging two
+15. `move_user_email_addresses__disable_without_hint`: if we are merging two
     accounts and don't have an email hint, i.e., there is no email conflict,
     it is possible that both accounts have enabled email addresses but at least
     one of them has email reminders disabled via `user_daily_reminder_settings`
@@ -215,7 +216,7 @@ alphabetical order, with logs moved to the bottom:
       - `disabling_original_emails`: true if both accounts have enabled email
         addresses and we are not disabling merging emails
 
-15. `move_user_email_addresses__transfer`: the email addresses that are simply transferred over
+16. `move_user_email_addresses__transfer`: the email addresses that are simply transferred over
     because they exist on the merging user but not on the original user (case
     insensitive). This does not require writing to the contact method log, since
     the old contact method log entries will be transfered and are still accurate
@@ -230,7 +231,7 @@ alphabetical order, with logs moved to the bottom:
         - `receives_notifications`: see `user_email_addresses`, as a boolean
       - `rows`: the length of transferred
 
-16. `move_user_email_addresses__verify`: the email addresses that are verified on the
+17. `move_user_email_addresses__verify`: the email addresses that are verified on the
     original user because they existed for both the original user and the merging user,
     but they were only verified on the merging user. the nature of this query means it
     excludes transfered emails despite being after the transfer step. after the
@@ -241,7 +242,7 @@ alphabetical order, with logs moved to the bottom:
       - `verified`: goes to a list of email addresses (strings)
       - `rows`: the length of verified
 
-17. `move_user_email_addresses__disable`: the email addresses that are disabled on the
+18. `move_user_email_addresses__disable`: the email addresses that are disabled on the
     original user because a hint email was provided and they don't match it. note that
     this occurs after emails have already been transferred and hence does not distinguish
     emails on the original user vs merging user. after the transaction completes we will
@@ -251,8 +252,8 @@ alphabetical order, with logs moved to the bottom:
       - `disabled`: goes to a list of email addresses (strings)
       - `rows`: the length of verified
 
-18. We do not transfer `user_goals`; instead the frontend should prompt again
-19. `move_user_identities`
+19. We do not transfer `user_goals`; instead the frontend should prompt again
+20. `move_user_identities`
     - `context`
       - `merging`: goes to a list of json objects with the following keys from
         `user_identities`
@@ -260,15 +261,15 @@ alphabetical order, with logs moved to the bottom:
         - `provider`
         - `sub`
       - `rows`: the length of merging
-20. We do not transfer `user_interests`, though they might be incidentally changed from the
+21. We do not transfer `user_interests`, though they might be incidentally changed from the
     new visitors.
-21. `move_user_journeys`
-22. `move_user_likes` we ignore duplicates
-23. `move_user_phone_numbers__disable_without_hint`: see `move_user_email_addresses__disable_without_hint`; `email` -> `phone`
-24. `move_user_phone_numbers__transfer`: see `move_user_email_addresses__transfer`; `email` -> `phone`
-25. `move_user_phone_numbers__verify`: see `move_user_email_addresses__verify`
-26. `move_user_phone_numbers__disable`: see `move_user_email_addresses__disable`
-27. `move_user_profile_pictures`: the general idea is we will keep the latest on the current
+22. `move_user_journeys`
+23. `move_user_likes` we ignore duplicates
+24. `move_user_phone_numbers__disable_without_hint`: see `move_user_email_addresses__disable_without_hint`; `email` -> `phone`
+25. `move_user_phone_numbers__transfer`: see `move_user_email_addresses__transfer`; `email` -> `phone`
+26. `move_user_phone_numbers__verify`: see `move_user_email_addresses__verify`
+27. `move_user_phone_numbers__disable`: see `move_user_email_addresses__disable`
+28. `move_user_profile_pictures`: the general idea is we will keep the latest on the current
     account but copy over the merging account as non-latest. However, if the oroginal account
     doesn't have a latest item, we'll set the original accounts latest profile picture as well
 
@@ -279,20 +280,20 @@ alphabetical order, with logs moved to the bottom:
         profile picture, false otherwise. If true we just update the user_id column, if false
         we first set latest to 0 on all of them before updating the user_id column
 
-28. `move_user_push_tokens`
-29. `move_user_revenue_cat_ids`
+29. `move_user_push_tokens`
+30. `move_user_revenue_cat_ids`
 
     - `context`
       - `rows`: the number of rows to move over
       - `merging`: a list of strings representing revenue cat ids that are being merged
 
-30. We do not merge `user_tokens`; if they are using api-only auth, they can regenerate them
-31. `move_user_touch_link_clicks`
-32. We do not merge `user_touch_point_states` as there is no straight-forward algorithm to do so
-33. `move_user_touches`
-34. `move_vip_chat_requests__user_id`: refers to the `user_id` column only
-35. `move_vip_chat_requests__added_by_user_id`: refers to the `added_by_user_id` column only
-36. `move_visitor_users`: This record will exist if there are any visitors associated with
+31. We do not merge `user_tokens`; if they are using api-only auth, they can regenerate them
+32. `move_user_touch_link_clicks`
+33. We do not merge `user_touch_point_states` as there is no straight-forward algorithm to do so
+34. `move_user_touches`
+35. `move_vip_chat_requests__user_id`: refers to the `user_id` column only
+36. `move_vip_chat_requests__added_by_user_id`: refers to the `added_by_user_id` column only
+37. `move_visitor_users`: This record will exist if there are any visitors associated with
     the merging user, regardless of if they are actually moved over. Furthermore, within SQL
     we don't change the `user_id` column; instead we delete the records and bump the version
     on the corresponding visitors, then after the transaction we go back to check this row
@@ -302,7 +303,7 @@ alphabetical order, with logs moved to the bottom:
       - `uids`: a list of strings corresponding to visitor uids associated with the merging
         user
       - `rows`: length of uids
-37. `delete_user_daily_reminders`: we simply delete the user daily reminders of
+38. `delete_user_daily_reminders`: we simply delete the user daily reminders of
     the merging user so that we can look at this log entry after and use it to
     update user daily reminder registration stats.
 
@@ -315,17 +316,17 @@ alphabetical order, with logs moved to the bottom:
       - `channels`: a list of channels (strings, e.g., `"sms"`) being deleted
       - `rows`: the length of channels
 
-38. `move_contact_method_log`: all entries have their reason updated to have a new top level
+39. `move_contact_method_log`: all entries have their reason updated to have a new top level
     key inserted: the `_merged_{sub}` of the merging account (to avoid duplicates in the case
     of sequential merges) and the value is a json object with the following keys:
     - `original`: sub of the original user
     - `operation_uid`: the uid of the merge operation
     - `merged_at`: the canonical timestamp of when the merge occurred
-39. `move_daily_reminder_settings_log`: same strategy as `contact_method_log`
-40. we do not copy over `user_timezone_log` and we do not update `timezone` on users
-41. `move_merge_account_log`: same strategy as `contact_method_log`
-42. `move_user_touch_debug_log`: standard update
-43. `move_created_at`: we set the `created_at` timestamp of the original user to the
+40. `move_daily_reminder_settings_log`: same strategy as `contact_method_log`
+41. we do not copy over `user_timezone_log` and we do not update `timezone` on users
+42. `move_merge_account_log`: same strategy as `contact_method_log`
+43. `move_user_touch_debug_log`: standard update
+44. `move_created_at`: we set the `created_at` timestamp of the original user to the
     earlier of the original users created at and the merging users created at. this may
     mean that, incidentally, some computed attribution information is excluded.
     - `context`:

@@ -12,6 +12,8 @@ from itgs import Itgs
 import users.lib.entitlements as entitlements
 from content_files.auth import create_jwt as create_content_file_jwt
 from journeys.lib.notifs import on_entering_lobby
+from users.lib.timezones import get_user_timezone
+import unix_dates
 
 router = APIRouter()
 
@@ -118,14 +120,18 @@ async def start_journey_download(
         video_content_file_uid: Optional[str] = response.results[0][1]
 
         user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
+        user_tz = await get_user_timezone(itgs, user_sub=auth_result.result.sub)
         new_last_taken_at = time.time()
+        created_at_unix_date = unix_dates.unix_timestamp_to_unix_date(
+            new_last_taken_at, tz=user_tz
+        )
         response = await cursor.execute(
             """
             INSERT INTO user_journeys (
-                uid, user_id, journey_id, created_at
+                uid, user_id, journey_id, created_at, created_at_unix_date
             )
             SELECT
-                ?, users.id, journeys.id, ?
+                ?, users.id, journeys.id, ?, ?
             FROM users, journeys
             WHERE
                 users.sub = ?
@@ -134,6 +140,7 @@ async def start_journey_download(
             (
                 user_journey_uid,
                 new_last_taken_at,
+                created_at_unix_date,
                 auth_result.result.sub,
                 args.journey_uid,
             ),

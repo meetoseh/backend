@@ -10,6 +10,8 @@ from auth import auth_any
 from journeys.auth import auth_any as auth_journey_any
 from itgs import Itgs
 from journeys.lib.notifs import on_entering_lobby
+from users.lib.timezones import get_user_timezone
+import unix_dates
 
 router = APIRouter()
 
@@ -54,13 +56,18 @@ async def started_ai_journey(
         conn = await itgs.conn()
         cursor = conn.cursor("none")
         user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
+        user_tz = await get_user_timezone(itgs, user_sub=auth_result.result.sub)
+        created_at = time.time()
+        created_at_unix_date = unix_dates.unix_timestamp_to_unix_date(
+            created_at, tz=user_tz
+        )
         response = await cursor.execute(
             """
             INSERT INTO user_journeys (
-                uid, user_id, journey_id, created_at
+                uid, user_id, journey_id, created_at, created_at_unix_date
             )
             SELECT
-                ?, users.id, journeys.id, ?
+                ?, users.id, journeys.id, ?, ?
             FROM users, journeys
             WHERE
                 users.sub = ?
@@ -68,7 +75,8 @@ async def started_ai_journey(
             """,
             (
                 user_journey_uid,
-                time.time(),
+                created_at,
+                created_at_unix_date,
                 auth_result.result.sub,
                 journey_auth_result.result.journey_uid,
             ),

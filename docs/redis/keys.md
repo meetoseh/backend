@@ -228,9 +228,22 @@ the keys that we use in redis
 - `frontend-web:server_images:config` used by frontend-web/server_images for maintaining
   configuration from the last time an instance processed the static public server images
 
-- `users:{sub}:streak` goes to a string containing the response content for read_sterak.
-  This is a very short-lived cache to avoid having to ratelimit this endpoint while also not
-  allowing for a trivial DOS attack as the endpoint is somewhat costly.
+- `users:{sub}:streak` goes to a string containing the response content for the users
+  streak, which is a json object with the following keys:
+
+  - `streak (integer)`: the users current streak in days
+  - `days_of_week (list[string])`: the days they've practiced this week
+  - `goal (integer or null)`: the users current goal in days per week, 1-7, or null if none
+    set
+  - `journeys (integer)`: the number of journeys they've completed in total
+  - `prev_best_all_time_streak (integer)`: the users best streak in days, all-time, excluding
+    the current streak
+  - `checked_at (number)`: when this value was checked, in seconds since the unix epoch
+
+  see also: backend `lib.users.streak`. always has an expiration set.
+
+- `users:{sub}:streak:lock` goes to a [smart lock](./locks.md) for the users streak. this
+  uses web acquire_lock timeouts and will be skipped if it can't be acquired within 3s.
 
 - `phone_verifications:{user_sub}:start` goes to a string acting as an integer (e.g., '1', '2')
   for how many phone numbers the user has tried to verify with less than 24 hours between

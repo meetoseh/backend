@@ -62,7 +62,7 @@ class UserCourseJourneyFilter(BaseModel):
     journey_liked_at: Optional[FilterItemModel[float]] = Field(
         None, description="the last time the journey was liked by the user"
     )
-    course_uid: Optional[FilterItemModel[str]] = Field(
+    course_uid: Optional[FilterTextItemModel] = Field(
         None, description="the uid of the course"
     )
     course_flags: Optional[FilterBitFieldItemModel] = Field(

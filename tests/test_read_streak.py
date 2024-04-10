@@ -3,11 +3,16 @@ try:
 except:
     import tests.helper  # type: ignore
 
-from typing import Literal, Optional, Union
+from typing import Literal, Optional, Union, cast
 import unittest
 from itgs import Itgs
 import asyncio
-from users.me.routes.read_streak import read_streak_from_db, read_days_of_week_from_db
+from users.lib.streak import (
+    read_prev_best_streak_from_db,
+    read_streak_from_db,
+    read_days_of_week_from_db,
+    read_total_journeys_from_db,
+)
 import os
 import time
 import secrets
@@ -15,6 +20,11 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import json
 from enum import Enum
+import pytz
+import unix_dates
+
+
+tz = cast(pytz.BaseTzInfo, pytz.FixedOffset(-480))
 
 
 @asynccontextmanager
@@ -26,21 +36,19 @@ async def temp_user(itgs: Itgs, *, created_at: Optional[float] = None):
         created_at = time.time()
 
     new_sub = f"oseh_u_{secrets.token_urlsafe(16)}"
-    new_email = f"{secrets.token_urlsafe(8)}@oseh.com"
     await cursor.execute(
         """
         INSERT INTO users (
-            sub, email, email_verified, given_name, family_name, admin, created_at
+            sub, given_name, family_name, admin, timezone, created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         """,
         (
             new_sub,
-            new_email,
-            1,
             "Test",
             "User",
             0,
+            "America/Los_Angeles",
             created_at,
         ),
     )
@@ -172,6 +180,20 @@ async def temp_journey(
         )
 
 
+@asynccontextmanager
+async def temp_journey2(
+    itgs: Itgs,
+    *,
+    created_at: Optional[float] = None,
+    available_at: Union[float, Literal[_NotSetEnum.NotSet], None] = _sent,
+):
+    """Convenience function which combines temp_prompt and temp_journey"""
+    async with temp_prompt(itgs, created_at=created_at) as prompt, temp_journey(
+        itgs, prompt_uid=prompt, created_at=created_at, available_at=available_at
+    ) as journey:
+        yield journey
+
+
 async def create_prompt_event(
     itgs: Itgs, *, user_sub: str, prompt_uid: str, join_at: float, leave_at: float
 ):
@@ -243,16 +265,22 @@ async def create_user_journey(
     response = await cursor.execute(
         """
         INSERT INTO user_journeys (
-            uid, user_id, journey_id, created_at
+            uid, user_id, journey_id, created_at, created_at_unix_date
         )
         SELECT
-            ?, users.id, journeys.id, ?
+            ?, users.id, journeys.id, ?, ?
         FROM users, journeys
         WHERE
             users.sub = ?
             AND journeys.uid = ?
         """,
-        (journey_user_uid, created_at, user_sub, journey_uid),
+        (
+            journey_user_uid,
+            created_at,
+            unix_dates.unix_timestamp_to_unix_date(created_at, tz=tz),
+            user_sub,
+            journey_uid,
+        ),
     )
     assert response.rows_affected == 1
     return journey_user_uid
@@ -291,12 +319,17 @@ async def simulate_user_in_journey(
 
 if os.environ["ENVIRONMENT"] != "test":
 
+    def _today(now: Optional[float] = None):
+        if now is None:
+            now = time.time()
+        return unix_dates.unix_timestamp_to_unix_date(now, tz=tz)
+
     class Test(unittest.TestCase):
         def test_new_user_streak(self):
             async def _inner():
                 async with Itgs() as itgs, temp_user(itgs) as user_sub:
                     streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=time.time()
+                        itgs, user_sub=user_sub, unix_date_today=_today()
                     )
                     self.assertEqual(streak, 0)
 
@@ -309,7 +342,9 @@ if os.environ["ENVIRONMENT"] != "test":
                 async with Itgs() as itgs, temp_user(
                     itgs, created_at=one_week_ago
                 ) as user_sub, temp_prompt(itgs, created_at=one_week_ago) as prompt:
-                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 0)
 
                     await create_prompt_event(
@@ -319,7 +354,9 @@ if os.environ["ENVIRONMENT"] != "test":
                         join_at=one_week_ago,
                         leave_at=one_week_ago + 1,
                     )
-                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 0)
 
             asyncio.run(_inner())
@@ -330,7 +367,9 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs
                 ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     now = time.time()
-                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 0)
 
                     await simulate_user_in_journey(
@@ -341,8 +380,36 @@ if os.environ["ENVIRONMENT"] != "test":
                         join_at=now,
                         leave_at=now + 1,
                     )
-                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 1)
+
+            asyncio.run(_inner())
+
+        def test_user_with_old_one_day_streak(self):
+            async def _inner():
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
+                    itgs
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
+                    now = time.time()
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        journey_uid=journey.journey_uid,
+                        join_at=now - 86402,
+                        leave_at=now - 86401,
+                    )
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
 
             asyncio.run(_inner())
 
@@ -352,7 +419,9 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs
                 ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     now = time.time()
-                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 0)
 
                     await create_prompt_event(
@@ -362,7 +431,9 @@ if os.environ["ENVIRONMENT"] != "test":
                         join_at=now,
                         leave_at=now + 1,
                     )
-                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 0)
 
             asyncio.run(_inner())
@@ -373,7 +444,9 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs
                 ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     now = time.time()
-                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 0)
 
                     await create_user_journey(
@@ -382,7 +455,9 @@ if os.environ["ENVIRONMENT"] != "test":
                         journey_uid=journey.journey_uid,
                         created_at=now,
                     )
-                    streak = await read_streak_from_db(itgs, user_sub=user_sub, now=now)
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 1)
 
             asyncio.run(_inner())
@@ -402,7 +477,7 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs, prompt_uid=prompt2, created_at=now
                 ) as journey2:
                     streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=now + 1
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, 0)
 
@@ -415,7 +490,7 @@ if os.environ["ENVIRONMENT"] != "test":
                         leave_at=yesterday + 1,
                     )
                     streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=now + 1
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, 0)
 
@@ -428,7 +503,7 @@ if os.environ["ENVIRONMENT"] != "test":
                         leave_at=now + 1,
                     )
                     streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=now + 1
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, 2)
 
@@ -454,7 +529,7 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs, prompt_uid=prompt3, created_at=now
                 ) as journey3:
                     streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=now + 1
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, 0)
 
@@ -467,7 +542,7 @@ if os.environ["ENVIRONMENT"] != "test":
                         leave_at=two_days_ago + 1,
                     )
                     streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=now + 1
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, 0)
 
@@ -480,7 +555,7 @@ if os.environ["ENVIRONMENT"] != "test":
                         leave_at=now + 1,
                     )
                     streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=now + 1
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, 1)
 
@@ -493,7 +568,7 @@ if os.environ["ENVIRONMENT"] != "test":
                         leave_at=yesterday + 1,
                     )
                     streak = await read_streak_from_db(
-                        itgs, user_sub=user_sub, now=now + 1
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, 3)
 
@@ -504,7 +579,7 @@ if os.environ["ENVIRONMENT"] != "test":
             async def _inner():
                 async with Itgs() as itgs, temp_user(itgs) as user_sub:
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=time.time()
+                        itgs, user_sub=user_sub, unix_date_today=_today()
                     )
                     self.assertEqual(streak, [])
 
@@ -517,7 +592,7 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs
                 ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=now
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, [])
 
@@ -532,12 +607,12 @@ if os.environ["ENVIRONMENT"] != "test":
 
                     for i in range(7):
                         streak = await read_days_of_week_from_db(
-                            itgs, user_sub=user_sub, now=now + i * 86400
+                            itgs, user_sub=user_sub, unix_date_today=_today(now) + i
                         )
                         self.assertEqual(streak, ["Monday"])
 
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=now + 7 * 86400
+                        itgs, user_sub=user_sub, unix_date_today=_today(now) + 7
                     )
                     self.assertEqual(streak, [])
 
@@ -550,7 +625,7 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs
                 ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=now
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
                     self.assertEqual(streak, [])
 
@@ -564,12 +639,12 @@ if os.environ["ENVIRONMENT"] != "test":
                     )
                     for i in range(6):
                         streak = await read_days_of_week_from_db(
-                            itgs, user_sub=user_sub, now=now + i * 86400
+                            itgs, user_sub=user_sub, unix_date_today=_today(now) + i
                         )
                         self.assertEqual(streak, ["Tuesday"])
 
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=now + 6 * 86400
+                        itgs, user_sub=user_sub, unix_date_today=_today(now) + 6
                     )
                     self.assertEqual(streak, [])
 
@@ -583,7 +658,7 @@ if os.environ["ENVIRONMENT"] != "test":
                     itgs
                 ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=wed
+                        itgs, user_sub=user_sub, unix_date_today=_today(wed)
                     )
                     self.assertEqual(streak, [])
 
@@ -596,7 +671,7 @@ if os.environ["ENVIRONMENT"] != "test":
                         leave_at=wed + 1,
                     )
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=wed
+                        itgs, user_sub=user_sub, unix_date_today=_today(wed)
                     )
                     self.assertEqual(streak, ["Wednesday"])
 
@@ -609,18 +684,309 @@ if os.environ["ENVIRONMENT"] != "test":
                         leave_at=sun + 1,
                     )
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=wed
+                        itgs, user_sub=user_sub, unix_date_today=_today(wed)
                     )
                     self.assertEqual(streak, ["Wednesday"])
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=sun
+                        itgs, user_sub=user_sub, unix_date_today=_today(sun)
                     )
                     self.assertEqual(streak, ["Wednesday", "Sunday"])
 
                     streak = await read_days_of_week_from_db(
-                        itgs, user_sub=user_sub, now=sun + 86400
+                        itgs, user_sub=user_sub, unix_date_today=_today(sun) + 1
                     )
                     self.assertEqual(streak, [])
+
+            asyncio.run(_inner())
+
+    class TestTotalJourneys(unittest.TestCase):
+        def test_new_user(self):
+            async def _inner():
+                async with Itgs() as itgs, temp_user(itgs) as user_sub:
+                    cnt = await read_total_journeys_from_db(
+                        itgs, user_sub=user_sub
+                    )
+                    self.assertEqual(cnt, 0)
+
+            asyncio.run(_inner())
+
+        def test_one_journey(self):
+            async def _inner():
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(itgs) as journey:
+                    cnt = await read_total_journeys_from_db(
+                        itgs, user_sub=user_sub
+                    )
+                    self.assertEqual(cnt, 0)
+
+                    await create_user_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        created_at=time.time(),
+                    )
+                    cnt = await read_total_journeys_from_db(
+                        itgs, user_sub=user_sub
+                    )
+                    self.assertEqual(cnt, 1)
+
+        def test_many_journeys(self):
+            async def _inner():
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(itgs) as journey:
+                    cnt = await read_total_journeys_from_db(
+                        itgs, user_sub=user_sub
+                    )
+                    self.assertEqual(cnt, 0)
+
+                    for _ in range(10):
+                        await create_user_journey(
+                            itgs,
+                            user_sub=user_sub,
+                            journey_uid=journey.journey_uid,
+                            created_at=time.time(),
+                        )
+                    cnt = await read_total_journeys_from_db(
+                        itgs, user_sub=user_sub
+                    )
+                    self.assertEqual(cnt, 10)
+
+            asyncio.run(_inner())
+
+    class TestPrevBestStreak(unittest.TestCase):
+        def test_new_user_streak(self):
+            async def _inner():
+                async with Itgs() as itgs, temp_user(itgs) as user_sub:
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today()
+                    )
+                    self.assertEqual(streak, 0)
+
+            asyncio.run(_inner())
+
+        def test_current_one_day_streak(self):
+            async def _inner():
+                now = time.time()
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs,
+                ) as journey:
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        prompt_uid=journey.prompt_uid,
+                        join_at=now,
+                        leave_at=now + 1,
+                    )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+            asyncio.run(_inner())
+
+        def test_old_one_day_streak(self):
+            async def _inner():
+                now = time.time()
+                yesterday = now - 86400
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs,
+                ) as journey:
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        prompt_uid=journey.prompt_uid,
+                        join_at=yesterday,
+                        leave_at=yesterday + 1,
+                    )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 1)
+
+            asyncio.run(_inner())
+
+        def test_older_one_day_streak(self):
+            async def _inner():
+                now = time.time()
+                two_days_ago = now - 86400 * 2
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs,
+                ) as journey:
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        prompt_uid=journey.prompt_uid,
+                        join_at=two_days_ago,
+                        leave_at=two_days_ago + 1,
+                    )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 1)
+
+            asyncio.run(_inner())
+
+        def test_current_two_day_streak(self):
+            async def _inner():
+                now = time.time()
+                yesterday = now - 86400
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs,
+                ) as journey:
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        prompt_uid=journey.prompt_uid,
+                        join_at=yesterday,
+                        leave_at=yesterday + 1,
+                    )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 1)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        prompt_uid=journey.prompt_uid,
+                        join_at=now,
+                        leave_at=now + 1,
+                    )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+            asyncio.run(_inner())
+
+        def test_old_and_current_one_day_streak(self):
+            async def _inner():
+                now = time.time()
+                two_days_ago = now - 86400 * 2
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs,
+                ) as journey:
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        prompt_uid=journey.prompt_uid,
+                        join_at=two_days_ago,
+                        leave_at=two_days_ago + 1,
+                    )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 1)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        journey_uid=journey.journey_uid,
+                        prompt_uid=journey.prompt_uid,
+                        join_at=now,
+                        leave_at=now + 1,
+                    )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 1)
+
+            asyncio.run(_inner())
+
+        def test_two_day_then_one_day_then_current_one_day_streak(self):
+            async def _inner():
+                now = time.time()
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs,
+                ) as journey:
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    for days_ago in [4, 3, 1, 0]:
+                        await simulate_user_in_journey(
+                            itgs,
+                            user_sub=user_sub,
+                            journey_uid=journey.journey_uid,
+                            prompt_uid=journey.prompt_uid,
+                            join_at=now - 86400 * days_ago,
+                            leave_at=now - 86400 * days_ago + 1,
+                        )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 2)
+
+            asyncio.run(_inner())
+
+        def test_long_gaps(self):
+            async def _inner():
+                now = time.time()
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs,
+                ) as journey:
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    for days_ago in [
+                        210,
+                        190,
+                        185,
+                        184,
+                        183,
+                        182,
+                        140,
+                        139,
+                        50,
+                        40,
+                        30,
+                        1,
+                        0,
+                    ]:
+                        await simulate_user_in_journey(
+                            itgs,
+                            user_sub=user_sub,
+                            journey_uid=journey.journey_uid,
+                            prompt_uid=journey.prompt_uid,
+                            join_at=now - 86400 * days_ago,
+                            leave_at=now - 86400 * days_ago + 1,
+                        )
+                    streak = await read_prev_best_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 4)
 
             asyncio.run(_inner())
 

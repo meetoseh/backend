@@ -9,7 +9,7 @@ from lib.daily_reminders.setting_stats import DailyReminderTimeRange
 from models import STANDARD_ERRORS_BY_CODE
 from auth import auth_any
 from itgs import Itgs
-from users.me.routes.read_streak import DayOfWeek, days_of_week
+from users.lib.streak import DayOfWeek, days_of_week
 
 
 router = APIRouter()

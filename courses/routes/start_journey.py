@@ -20,6 +20,8 @@ from journeys.auth import create_jwt as create_journey_jwt
 from response_utils import cleanup_response
 import time
 import courses.auth
+from users.lib.timezones import get_user_timezone
+import unix_dates
 
 router = APIRouter()
 
@@ -224,19 +226,27 @@ async def start_journey(
             return FAILED_TO_START_RESPONSE
 
         user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
+        user_tz = await get_user_timezone(itgs, user_sub=auth_result.result.sub)
+        created_at_unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=user_tz)
         response = await cursor.execute(
             """
             INSERT INTO user_journeys (
-                uid, user_id, journey_id, created_at
+                uid, user_id, journey_id, created_at, created_at_unix_date
             )
             SELECT
-                ?, users.id, journeys.id, ?
+                ?, users.id, journeys.id, ?, ?
             FROM users, journeys
             WHERE
                 users.sub = ?
                 AND journeys.uid = ?
             """,
-            (user_journey_uid, now, auth_result.result.sub, args.journey_uid),
+            (
+                user_journey_uid,
+                now,
+                created_at_unix_date,
+                auth_result.result.sub,
+                args.journey_uid,
+            ),
         )
         if response.rows_affected is None or response.rows_affected < 1:
             await handle_contextless_error(

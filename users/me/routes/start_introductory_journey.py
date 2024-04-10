@@ -1,3 +1,4 @@
+import os
 import secrets
 import time
 from fastapi import APIRouter, Header
@@ -10,7 +11,8 @@ from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 import journeys.auth
-import os
+import unix_dates
+from users.lib.timezones import get_user_timezone
 
 
 router = APIRouter()
@@ -72,19 +74,30 @@ async def start_introductory_journey(
         conn = await itgs.conn()
         cursor = conn.cursor("none")
         user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
+        user_tz = await get_user_timezone(itgs, user_sub=auth_result.result.sub)
+        created_at = time.time()
+        created_at_unix_date = unix_dates.unix_timestamp_to_unix_date(
+            created_at, tz=user_tz
+        )
         response = await cursor.execute(
             """
             INSERT INTO user_journeys (
-                uid, user_id, journey_id, created_at
+                uid, user_id, journey_id, created_at, created_at_unix_date
             )
             SELECT
-                ?, users.id, journeys.id, ?
+                ?, users.id, journeys.id, ?, ?
             FROM users, journeys
             WHERE
                 users.sub = ?
                 AND journeys.uid = ?
             """,
-            (user_journey_uid, time.time(), auth_result.result.sub, journey_uid),
+            (
+                user_journey_uid,
+                created_at,
+                created_at_unix_date,
+                auth_result.result.sub,
+                journey_uid,
+            ),
         )
         if response.rows_affected is None or response.rows_affected < 1:
             await handle_contextless_error(

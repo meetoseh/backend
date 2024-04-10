@@ -5,6 +5,8 @@ from error_middleware import handle_contextless_error
 from itgs import Itgs
 from dataclasses import dataclass
 import time
+from users.lib.timezones import get_user_timezone
+import unix_dates
 
 
 @dataclass
@@ -183,23 +185,25 @@ async def on_started_emotion_user_journey(
 
     user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
     now = time.time()
+    user_tz = await get_user_timezone(itgs, user_sub=user_sub)
+    now_unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=user_tz)
 
     response = await cursor.executemany3(
         (
             (
                 """
-            UPDATE emotion_users
-            SET status = ?
-            WHERE
-                uid = ?
-                AND json_extract(status, '$.type') = 'selected'
-                AND EXISTS (
-                    SELECT 1 FROM users
-                    WHERE
-                        users.id = emotion_users.user_id
-                        AND users.sub = ?
-                )
-            """,
+UPDATE emotion_users
+SET status = ?
+WHERE
+    uid = ?
+    AND json_extract(status, '$.type') = 'selected'
+    AND EXISTS (
+        SELECT 1 FROM users
+        WHERE
+            users.id = emotion_users.user_id
+            AND users.sub = ?
+    )
+                """,
                 (
                     json.dumps({"type": "joined", "joined_at": now}),
                     emotion_user_uid,
@@ -208,20 +212,21 @@ async def on_started_emotion_user_journey(
             ),
             (
                 """
-            INSERT INTO user_journeys (
-                uid, user_id, journey_id, created_at
-            )
-            SELECT
-                ?, users.id, emotion_users.journey_id, ?
-            FROM emotion_users, users
-            WHERE
-                emotion_users.uid = ?
-                AND users.id = emotion_users.user_id
-                AND users.sub = ?
+INSERT INTO user_journeys (
+    uid, user_id, journey_id, created_at, created_at_unix_date
+)
+SELECT
+    ?, users.id, emotion_users.journey_id, ?, ?
+FROM emotion_users, users
+WHERE
+    emotion_users.uid = ?
+    AND users.id = emotion_users.user_id
+    AND users.sub = ?
             """,
                 (
                     user_journey_uid,
                     now,
+                    now_unix_date,
                     emotion_user_uid,
                     user_sub,
                 ),

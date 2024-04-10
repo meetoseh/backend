@@ -41,3 +41,8 @@ name (not the PID, which would tend not to be reused and thus wouldn't speed up
 detecting a stuck lock) to the hostname, since many process managers can be
 configured to use predictable process names for each worker that will be reused
 in the event of a restart (Worker1, Worker2, etc).
+
+Note that the script used to acquire a lock depends on the context; for jobs
+we use a more conservative approach than on the web request handler which has
+strict timeouts, and will continue without the lock if it can't be acquired
+in a short amount of time.

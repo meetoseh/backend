@@ -14,6 +14,9 @@ from journeys.auth import create_jwt as create_journey_jwt
 from auth import auth_any
 from itgs import Itgs
 import logging
+import unix_dates
+
+from users.lib.timezones import get_user_timezone
 
 
 class StartJourneyFromHistoryRequest(BaseModel):
@@ -95,7 +98,11 @@ async def start_journey_from_history(
                         )
                 ) AS b1
             """,
-            (auth_result.result.sub, args.journey_uid, int(SeriesFlags.JOURNEYS_IN_SERIES_IN_HISTORY)),
+            (
+                auth_result.result.sub,
+                args.journey_uid,
+                int(SeriesFlags.JOURNEYS_IN_SERIES_IN_HISTORY),
+            ),
         )
         assert response.results
         if not response.results[0][0]:
@@ -109,13 +116,18 @@ async def start_journey_from_history(
             logging.error(f"Failed to fetch journey {args.journey_uid}")
             return RACED_RESPONSE
 
+        user_tz = await get_user_timezone(itgs, user_sub=auth_result.result.sub)
+        created_at = time.time()
+        created_at_unix_date = unix_dates.unix_timestamp_to_unix_date(
+            created_at, tz=user_tz
+        )
         response = await cursor.execute(
             """
             INSERT INTO user_journeys (
-                uid, user_id, journey_id, created_at
+                uid, user_id, journey_id, created_at, created_at_unix_date
             )
             SELECT
-                ?, users.id, journeys.id, ?
+                ?, users.id, journeys.id, ?, ?
             FROM users, journeys
             WHERE
                 users.sub = ?
@@ -123,7 +135,8 @@ async def start_journey_from_history(
             """,
             (
                 f"oseh_uj_{secrets.token_urlsafe(16)}",
-                time.time(),
+                created_at,
+                created_at_unix_date,
                 auth_result.result.sub,
                 args.journey_uid,
             ),

@@ -363,11 +363,13 @@ async def check_without_security_code(
             stats.incr_check_attempts(unix_date=check_unix_date)
             stats.incr_check_succeeded(
                 unix_date=check_unix_date,
-                reason=b"normal"
-                if elevate_reason is None
-                else typing_cast(
-                    CheckSucceededReason,
-                    f"{elevate_reason}:{override_reason}".encode("utf-8"),
+                reason=(
+                    b"normal"
+                    if elevate_reason is None
+                    else typing_cast(
+                        CheckSucceededReason,
+                        f"{elevate_reason}:{override_reason}".encode("utf-8"),
+                    )
                 ),
             )
         return Response(
@@ -483,7 +485,14 @@ async def is_disposable_email(itgs: Itgs, email: str) -> bool:
 async def is_strange_email(itgs: Itgs, email: str) -> bool:
     # We don't want to post to slack here in case this is overridden later
     name, _, domain = email.partition("@")
-    if domain not in ("gmail.com", "hotmail.com", "yahoo.com", "outlook.com"):
+    if domain not in (
+        "gmail.com",
+        "hotmail.com",
+        "yahoo.com",
+        "outlook.com",
+        "comcast.net",
+        "icloud.com",
+    ):
         if os.environ["ENVIRONMENT"] == "dev" and domain == "oseh.com":
             logger.info(
                 f"Sign in with Oseh - Check {email} - Strange Email - allowing in development"

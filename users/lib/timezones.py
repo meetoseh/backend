@@ -80,7 +80,7 @@ async def get_user_timezone(itgs: Itgs, *, user_sub: str) -> pytz.BaseTzInfo:
         "SELECT timezone FROM users WHERE sub=?",
         (user_sub,),
     )
-    if not response.results or response.results[0] is None:
+    if not response.results or response.results[0][0] is None:
         logging.info(f"{req_id=} DB MISS")
         return pytz.timezone("America/Los_Angeles")
 

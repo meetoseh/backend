@@ -28,6 +28,8 @@ import perpetual_pub_sub as pps
 from itgs import Itgs
 import io
 from loguru import logger
+from transcripts.models.transcript_ref import TranscriptRef
+import transcripts.auth
 
 
 HEADERS = {
@@ -131,7 +133,9 @@ async def read_one_external(
         logger.warning(f"{req_id=} {journey_uid=} NOT FOUND")
         return None
 
-    logger.debug(f"{req_id=} {journey_uid=} READ FROM SOURCE...pushing to other instances")
+    logger.debug(
+        f"{req_id=} {journey_uid=} READ FROM SOURCE...pushing to other instances"
+    )
 
     cacheable = io.BytesIO()
     convert_to_cacheable(journey, cacheable)
@@ -207,6 +211,10 @@ async def inject_from_cached(
                 itgs, content_file_uid
             )
             yield content_file_jwt.encode("ascii")
+        elif part_type == b"\x05":
+            transcript_uid = value.decode("ascii")
+            transcript_jwt = await transcripts.auth.create_jwt(itgs, transcript_uid)
+            yield transcript_jwt.encode("ascii")
         else:
             raise ValueError(f"Unknown part type {part_type}")
 
@@ -289,6 +297,17 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
         f.write(journey.sample.uid.encode("ascii"))
         finish_mark()
         f.write(b'\x00\x00\x00\x00\x01"}')
+    if journey.transcript is None:
+        f.write(b',"transcript":null')
+    else:
+        f.write(b',"transcript":{"uid":"')
+        f.write(journey.transcript.uid.encode("ascii"))
+        f.write(b'","jwt":"')
+        finish_mark()
+        f.write(b"\x00\x00\x00\x00\x05")
+        f.write(journey.transcript.uid.encode("ascii"))
+        finish_mark()
+        f.write(b'\x00\x00\x00\x00\x01"}')
     f.write(b"}")
     finish_mark()
 
@@ -353,7 +372,8 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
             journeys.description,
             blurred_image_files.uid,
             darkened_image_files.uid,
-            samples.uid
+            samples.uid,
+            transcripts.uid
         FROM journeys
         JOIN image_files ON image_files.id = journeys.background_image_file_id
         JOIN image_files AS blurred_image_files ON blurred_image_files.id = journeys.blurred_background_image_file_id
@@ -362,6 +382,13 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         JOIN journey_subcategories ON journey_subcategories.id = journeys.journey_subcategory_id
         JOIN instructors ON instructors.id = journeys.instructor_id
         LEFT OUTER JOIN content_files AS samples ON samples.id = journeys.sample_content_file_id
+        LEFT OUTER JOIN transcripts ON transcripts.id = (
+            SELECT content_file_transcripts.transcript_id 
+            FROM content_file_transcripts 
+            WHERE 
+                content_file_transcripts.content_file_id = journeys.audio_content_file_id 
+            ORDER BY content_file_transcripts.created_at ASC, content_file_transcripts.uid
+        )
         WHERE
             journeys.uid = ?
         """,
@@ -386,6 +413,7 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         blurred_background_image=ImageFileRef(uid=row[7], jwt=""),
         darkened_background_image=ImageFileRef(uid=row[8], jwt=""),
         sample=ContentFileRef(uid=row[9], jwt="") if row[9] is not None else None,
+        transcript=TranscriptRef(uid=row[10], jwt="") if row[10] is not None else None,
     )
 
 

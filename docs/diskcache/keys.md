@@ -200,6 +200,8 @@ the keys we store locally on backend instances via diskcache
     the uid of the image file.
   - `4`: a marker to indicate that a content file jwt should be inserted here. The value is
     the uid of the content file.
+  - `5`: a marker to indicate that a transcript jwt should be inserted here. The value is the
+    uid of the transcript.
 
   Note that this format allows us to inject the JWTs without a deserialize/serialize round trip,
   which can be a significant performance improvement.

@@ -2,6 +2,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from image_files.models import ImageFileRef
 from content_files.models import ContentFileRef
+from transcripts.models.transcript_ref import TranscriptRef
 
 
 class ExternalJourneyCategory(BaseModel):
@@ -54,6 +55,10 @@ class ExternalJourney(BaseModel):
 
     audio_content: ContentFileRef = Field(
         description="The audio content for the journey"
+    )
+
+    transcript: Optional[TranscriptRef] = Field(
+        description="The transcript for the journey, if available"
     )
 
     category: ExternalJourneyCategory = Field(

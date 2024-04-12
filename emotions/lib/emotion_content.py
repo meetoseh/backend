@@ -15,6 +15,7 @@ import perpetual_pub_sub as pps
 import asyncio
 import random
 from loguru import logger
+from lifespan import lifespan_handler
 
 
 class EmotionContentStatistics(BaseModel):
@@ -306,6 +307,8 @@ async def update_emotion_content_statistics_everywhere(
         CachedEmotionContentStatistics(stats=stats).model_dump_json().encode("utf-8")
     )
 
+    req_id = secrets.token_urlsafe(4)
+    logger.debug(f"publishing new emotion content statistics assigned {req_id=}")
     redis = await itgs.redis()
     async with redis.pipeline(transaction=True) as pipe:
         pipe.multi()
@@ -316,6 +319,7 @@ async def update_emotion_content_statistics_everywhere(
         )
         await pipe.publish("ps:emotion_content_statistics:push_cache", msg)
         await pipe.execute()
+    logger.info(f"{req_id=} finished")
 
 
 async def purge_emotion_content_statistics_everywhere(
@@ -381,5 +385,14 @@ async def emotion_content_statistics_purge_cache_loop() -> Never:
     ) as subscription:
         async for raw_message in subscription:
             message = EmotionContentPurgeMessage.model_validate_json(raw_message)
+            logger.info(
+                f"Received emotion content statistics {'purge' if message.replace_stats is None else 'fill'} message"
+            )
             async with Itgs() as itgs:
                 await handle_emotion_content_purge_message(itgs, message=message)
+
+
+@lifespan_handler
+async def _purge_cache_loop():
+    task = asyncio.create_task(emotion_content_statistics_purge_cache_loop())
+    yield

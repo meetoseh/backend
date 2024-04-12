@@ -24,6 +24,7 @@ these values
   - `start_verify_phone`: set while starting to verify a phone number
   - `update_notification_time`: set while updating their notification time
   - `read_home_image`: set while reading their homescreen image
+  - `read_home_copy`: set while reading their homescreen copy
 - `style (text not null)`: how the timezone was fetched. one of:
   - `browser`: browser apis were used to determine the users timezone
   - `app`: native app apis were used to determine the users timezone

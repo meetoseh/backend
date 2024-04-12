@@ -10,6 +10,7 @@ import users.me.routes.read_daily_reminder_settings
 import users.me.routes.read_daily_reminders
 import users.me.routes.read_entitlements
 import users.me.routes.read_history
+import users.me.routes.read_home_copy
 import users.me.routes.read_home_image
 import users.me.routes.read_identities
 import users.me.routes.read_offerings
@@ -49,6 +50,7 @@ router.include_router(
 )
 router.include_router(users.me.routes.read_entitlements.router)
 router.include_router(users.me.routes.read_history.router)
+router.include_router(users.me.routes.read_home_copy.router)
 router.include_router(users.me.routes.read_home_image.router)
 router.include_router(users.me.routes.read_identities.router)
 router.include_router(users.me.routes.read_offerings.router)

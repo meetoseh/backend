@@ -33,8 +33,8 @@ VALUES (?, ?, ?, ?, ?)
                             sms=[sms("🎉 Discover What's New: Oseh 3.0.2 {url}")],
                             push=[
                                 push(
-                                    "🚀 Upgrade Alert: Oseh 3.0.2 Now Available!",
-                                    "🌟 Dive into Oseh 3.0.2! Enjoy personalized insights, an improved media player with closed captioning 🎬, and smoother transitions between series.",
+                                    "🚀 Upgrade Alert: Oseh 3.0.2",
+                                    "Take a mindful minute. New insights 💡, media player 🎬, and more! 📈",
                                 )
                             ],
                             email=[

@@ -53,14 +53,26 @@ SEE ALSO: [user_touch_point_states](./user_touch_point_states.md)
 - `selection_strategy (text not null)`: the selection strategy used to
   choose amongst multiple options for the desired channel. This dictates the state
   format as well. The state formats corresponding to each option are documented
-  more extensively within `user_touch_point_states`. One of:
-  - `random_with_replacement`: Selects one at random; no state required. This
-    is mostly for example purposes.
-  - `fixed`: Notifications are selected according to ascending `priority`,
-    breaking ties uniformly at random, resetting when all notifications have
-    been seen. When all of the options have the same priority, this is just
-    selecting at random without replacement. State stores which notifications
-    they have already seen. This strategy covers the majority of use-cases.
+  more extensively within `user_touch_point_states`. Note that when the selection
+  strategy is applied the touch and state are available, meaning the selection
+  strategy may require specific event parameters. Where touch point event parameters
+  are required, they SHOULD be prefixed with `ss_` (for selection strategy). One of:
+  - `random_with_replacement`: No event parameters. Selects one at random; no
+    state required. This is mostly for example purposes.
+  - `fixed`: No event parameters. Notifications are selected according to
+    ascending `priority`, breaking ties uniformly at random, resetting when all
+    notifications have been seen. When all of the options have the same
+    priority, this is just selecting at random without replacement. State stores
+    which notifications they have already seen. This strategy covers the
+    majority of use-cases.
+  - `ordered_resettable`: Uses the optional `ss_reset (boolean)` parameter. Notifications
+    are selected according to ascending priority. Initially, when multiple
+    messages have the same priority, the one with the lower index is used and
+    the rest are skipped. When the `ss_reset` parameter is set to `true`, or when
+    there are no more messages to send, we return to the lowest priority, and on
+    duplicates for that priority we first prefer unrepeated, then the lowest
+    index. This is used in, for example, the daily reminder non-engagement flow
+    to have multiple variations, resetting when they engage.
 - `messages (text not null)`: the messages that can be sent from this touch point,
   as a gzip-compressed, b85 encoded json object in the following shape:
 

@@ -5,6 +5,10 @@ select the notification to use the next time the touch point is triggered. User
 touch point state is initialized only after the first time a user receives a
 touch on that channel from that touch point.
 
+An effort is made to describe these states in such a way that messages are added
+or removed from the underlying touch point the behavior is still highly
+predictable.
+
 SEE ALSO: `touch_points`
 SEE ALSO: `user_touches`
 
@@ -23,6 +27,15 @@ SEE ALSO: `user_touches`
   selection strategy of the touch point:
   - `fixed`: `["string"]` where each item is a uid of a touch point message they have
     already seen
+  - `ordered_resettable`: json object with the following fields:
+    - `last_priority (integer)`: the priority of the last sent message. when sending a
+      message, we send the lowest priority strictly greater than this, or, if there is
+      not one, we reset.
+    - `counter (integer)`: incremented by one every time this state is used, to provide
+      a well-ordered value for seen
+    - `seen (object)`: keys are uids of messages within the touch point, the values are
+      the counter value (pre-increment) of the last time that message was sent. Messages
+      which have never been sent are not in this object.
 - `version (integer not null)`: a value which starts at 1 and should be incremented every
   time this row is changed, to facilitate optimistic locking.
 - `created_at (real not null)`: when this record was created in unix seconds since the unix

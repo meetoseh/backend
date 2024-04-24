@@ -137,7 +137,12 @@ async def advance_course(
                 AND journeys.uid = ?
                 AND (courses.flags & ?) != 0
             """,
-            (args.course_uid, auth_result.result.sub, args.journey_uid, int(SeriesFlags.SERIES_VISIBLE_IN_OWNED)),
+            (
+                args.course_uid,
+                auth_result.result.sub,
+                args.journey_uid,
+                int(SeriesFlags.SERIES_VISIBLE_IN_OWNED),
+            ),
         )
         if not response.results:
             return NOT_FOUND_RESPONSE
@@ -192,7 +197,13 @@ async def advance_course(
                 )
                 AND (courses.flags & ?) != 0
             """,
-            (time.time(), args.course_uid, auth_result.result.sub, args.journey_uid, SeriesFlags.SERIES_VISIBLE_IN_OWNED),
+            (
+                time.time(),
+                args.course_uid,
+                auth_result.result.sub,
+                args.journey_uid,
+                SeriesFlags.SERIES_VISIBLE_IN_OWNED,
+            ),
         )
         if response.rows_affected is None or response.rows_affected < 1:
             return JOURNEY_IS_NOT_NEXT_RESPONSE

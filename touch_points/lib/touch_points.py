@@ -68,20 +68,20 @@ class TouchPointEmailMessage(BaseModel):
     template_parameters_fixed: Dict[str, Any] = Field(
         description="non-substituted template parameters"
     )
-    template_parameters_substituted: List[
-        TouchPointTemplateParameterSubstitution
-    ] = Field(description="substituted template parameters")
+    template_parameters_substituted: List[TouchPointTemplateParameterSubstitution] = (
+        Field(description="substituted template parameters")
+    )
 
 
 class TouchPointMessages(BaseModel):
     sms: List[TouchPointSmsMessage] = Field(
-        description="the sms messages to send, in ascending priority order, ties broken arbitrarily"
+        description="the sms messages to send, in ascending priority order, ties broken according to selection strategy"
     )
     push: List[TouchPointPushMessage] = Field(
-        description="the push messages to send, in ascending priority order, ties broken arbitrarily"
+        description="the push messages to send, in ascending priority order, ties broken according to selection strategy"
     )
     email: List[TouchPointEmailMessage] = Field(
-        description="the email messages to send, in ascending priority order, ties broken arbitrarily"
+        description="the email messages to send, in ascending priority order, ties broken according to selection strategy"
     )
 
     def get_required_parameters(self) -> Set[str]:

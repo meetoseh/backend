@@ -5,17 +5,16 @@ from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 
 PRECONDITION_DOCS = """The precondition for the update. The update will only go through
 if for each explicitly set field in the precondition, the current
-value of the field in the image being updated matches the value
+value of the field in the item being updated matches the value
 set in the precondition.
 
-Explicitly setting null in the precondition
-will require the field is null in the image being updated, whereas
-omitting a key in the precondition will allow any value in the course
-being updated.
+Explicitly setting null in the precondition will require the field is null in
+the item being updated, whereas omitting a key in the precondition will allow
+any value in the course being updated.
 """
 
-PATCH_DOCS = """The patch to apply to the home screen image. Any explicitly set field in the
-patch will be applied to the image being updated, provided the
+PATCH_DOCS = """The patch to apply to the item. Any explicitly set field in the
+patch will be applied to the item being updated, provided the
 precondition is met."""
 
 ERROR_412_TYPES = Literal["precondition_failed"]

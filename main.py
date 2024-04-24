@@ -39,6 +39,7 @@ import sms.router
 import emails.router
 import misc.router
 import onboarding.router
+import touch_points.router
 import personalization.register_background_tasks
 import admin.routes.read_journey_subcategory_view_stats
 import journeys.lib.read_one_external
@@ -242,6 +243,9 @@ app.include_router(
 app.include_router(misc.router.router, prefix="/api/1/misc", tags=["misc"])
 app.include_router(
     onboarding.router.router, prefix="/api/1/onboarding", tags=["onboarding"]
+)
+app.include_router(
+    touch_points.router.router, prefix="/api/1/touch_points", tags=["touch_points"]
 )
 app.router.redirect_slashes = False
 

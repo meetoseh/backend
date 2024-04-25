@@ -82,9 +82,7 @@ async def create_preview_parameters(
                 goal = streak_info.goal_days_per_week or 3
                 filled = min(classes_this_week, goal)
 
-                result[key] = (
-                    f"{root_frontend_url}/goalBadges/{filled}of{goal}-192h.png"
-                )
+                result[key] = f"{root_frontend_url}/goalBadge/{filled}of{goal}-192h.png"
         elif key.endswith("url"):
             prefix = key[:-3].strip("_")
             result[key] = f"https://oseh.io#{prefix}"

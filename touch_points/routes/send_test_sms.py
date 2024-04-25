@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Annotated, Literal, Optional, cast
+from touch_points.lib.create_preview_parameters import create_preview_parameters
 from touch_points.lib.touch_points import TouchPointSmsMessage
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_admin
@@ -52,19 +53,14 @@ async def send_touch_point_test_sms(
         phone_numbers = [cast(str, row[0]) for row in response.results]
         jobs = await itgs.jobs()
 
-        body_parameters = dict()
-        for key in message.body_parameters:
-            if key == "url":
-                body_parameters[key] = "oseh.io/a/1234"
-            elif key == "name":
-                body_parameters[key] = (
-                    auth_result.result.claims.get("given_name", "User")
-                    if auth_result.result.claims is not None
-                    else "User"
-                )
-            else:
-                body_parameters[key] = "<" + key + ">"
-        body = message.body_format.format_map(body_parameters)
+        parameters = await create_preview_parameters(
+            itgs,
+            user_sub=auth_result.result.sub,
+            requested=set(message.body_parameters),
+        )
+        if "url" in parameters:
+            parameters["url"] = "oseh.io/a/1234"
+        body = message.body_format.format_map(parameters)
 
         for phone_number in phone_numbers[:3]:
             await jobs.enqueue(

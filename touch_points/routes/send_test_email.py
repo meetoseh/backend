@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Annotated, Literal, Optional, cast
+from touch_points.lib.create_preview_parameters import create_preview_parameters
 from touch_points.lib.touch_points import TouchPointEmailMessage
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_admin
@@ -52,19 +53,15 @@ async def send_touch_point_test_email(
         emails = [cast(str, row[0]) for row in response.results]
         jobs = await itgs.jobs()
 
-        subject_parameters = dict()
-        for key in message.subject_parameters:
-            if key.endswith("url"):
-                subject_parameters[key] = f"https://oseh.io#{key}"
-            elif key == "name":
-                subject_parameters[key] = (
-                    auth_result.result.claims.get("given_name", "User")
-                    if auth_result.result.claims is not None
-                    else "User"
-                )
-            else:
-                subject_parameters[key] = "<" + key + ">"
-        subject = message.subject_format.format_map(subject_parameters)
+        requested_parameters = set(message.subject_parameters)
+        for substitute in message.template_parameters_substituted:
+            requested_parameters.update(substitute.parameters)
+
+        preview_parameters = await create_preview_parameters(
+            itgs, user_sub=auth_result.result.sub, requested=requested_parameters
+        )
+
+        subject = message.subject_format.format_map(preview_parameters)
 
         template_parameters = dict()
         stack = [[template_parameters, message.template_parameters_fixed]]
@@ -85,19 +82,7 @@ async def send_touch_point_test_email(
                 ele = ele[key]
 
             last_key = substitute.key[-1]
-            parameters = dict()
-            for parameter in substitute.parameters:
-                if parameter == "url":
-                    parameters[parameter] = f"https://oseh.io#{parameter}"
-                elif parameter == "name":
-                    parameters[parameter] = (
-                        auth_result.result.claims.get("given_name", "User")
-                        if auth_result.result.claims is not None
-                        else "User"
-                    )
-                else:
-                    parameters[parameter] = "<" + parameter + ">"
-            ele[last_key] = substitute.format.format_map(parameters)
+            ele[last_key] = substitute.format.format_map(preview_parameters)
 
         for email in emails[:3]:
             await jobs.enqueue(

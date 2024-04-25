@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Annotated, Literal, Optional, cast
+from touch_points.lib.create_preview_parameters import create_preview_parameters
 from touch_points.lib.touch_points import TouchPointPushMessage
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_admin
@@ -51,16 +52,12 @@ async def send_touch_point_test_push(
         tokens = [cast(str, row[0]) for row in response.results]
         jobs = await itgs.jobs()
 
-        parameters = dict()
-        for key in set(message.body_parameters + message.title_parameters):
-            if key == "name":
-                parameters[key] = (
-                    auth_result.result.claims.get("given_name", "User")
-                    if auth_result.result.claims is not None
-                    else "User"
-                )
-            else:
-                parameters[key] = "<" + key + ">"
+        parameters = await create_preview_parameters(
+            itgs,
+            user_sub=auth_result.result.sub,
+            requested=set(message.body_parameters + message.title_parameters),
+        )
+
         body = message.body_format.format_map(parameters)
         title = message.title_format.format_map(parameters)
 

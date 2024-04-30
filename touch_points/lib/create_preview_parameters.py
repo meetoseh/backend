@@ -76,6 +76,11 @@ async def create_preview_parameters(
                     )
                 else:
                     result[key] = "Not set"
+            elif key == "goal_simple":
+                if streak_info.goal_days_per_week is not None:
+                    result[key] = f"{streak_info.goal_days_per_week}"
+                else:
+                    result[key] = "0"
             elif key == "goal_badge_url":
                 root_frontend_url = os.environ["ROOT_FRONTEND_URL"]
                 classes_this_week = len(streak_info.days_of_week)

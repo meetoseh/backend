@@ -38,6 +38,12 @@ class ReadLastSendJobResponse(BaseModel):
     push: int = Field(description="how many push touches we created")
     email: int = Field(description="how many email touches we created")
     swaps: int = Field(description="how many daily reminder swaps occurred")
+    marked_engaged: int = Field(
+        description="how many users switched to the engaged flow from disengaged"
+    )
+    marked_disengaged: int = Field(
+        description="how many users switched to the disengaged flow from engaged"
+    )
     purgatory_size: int = Field(description="how many items are in the send purgatory")
 
 
@@ -81,6 +87,8 @@ async def last_send_job(
                 b"push",  # type: ignore
                 b"email",  # type: ignore
                 b"swaps",  # type: ignore
+                b"marked_engaged",  # type: ignore
+                b"marked_disengaged",  # type: ignore
             )  # type: ignore
             await pipe.zcard(b"daily_reminders:send_purgatory")
             response = await pipe.execute()
@@ -104,6 +112,8 @@ async def last_send_job(
                 push=int(result[9]),
                 email=int(result[10]),
                 swaps=int(result[11]),
+                marked_engaged=int(result[12]),
+                marked_disengaged=int(result[13]),
                 purgatory_size=purgatory_size,
             ).model_dump_json(),
             status_code=200,

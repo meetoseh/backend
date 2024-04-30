@@ -34,6 +34,14 @@ class PlaylistItemResponse(BaseModel):
         )
     )
 
+    uid: str = Field(
+        description=(
+            "A stable, unique identifier for the content of this image file export. Although "
+            "the URL may differ between two playlist items, it is guarranteed that if their "
+            "UIDs are the same, then the content that would be downloaded is identical."
+        )
+    )
+
     format: ImageFileFormat = Field(
         description=(
             "The format of the image. The client SHOULD prefer the content-type from "
@@ -234,6 +242,7 @@ async def get_image_playlist(
         for row in response.results:
             item = PlaylistItemResponse(
                 url=f"{root_backend_url}/api/1/image_files/image/{row[0]}.{row[3]}{presign_suffix}",
+                uid=row[0],
                 format=row[3],
                 width=row[1],
                 height=row[2],

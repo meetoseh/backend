@@ -60,7 +60,7 @@ LEFT OUTER JOIN transcripts AS intro_video_transcripts ON (
             AND content_file_transcripts.transcript_id = intro_video_transcripts.id
     )
 )
-LEFT OUTER JOIN image_files AS intro_video_thumbnails ON intro_video_thumbnails.id = intro_videos.video_thumbnail_image_file_id
+LEFT OUTER JOIN image_files AS intro_video_thumbnails ON intro_video_thumbnails.id = courses.video_thumbnail_image_file_id
 LEFT OUTER JOIN image_file_exports AS intro_video_thumbnail_exports ON (
     intro_video_thumbnail_exports.image_file_id = intro_video_thumbnails.id
     AND intro_video_thumbnail_exports.width = 180

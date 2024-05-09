@@ -290,7 +290,7 @@ async def _read_streak_query(
 
     async def _process(response: ResultItem) -> None:
         assert response.results, response
-        result.streak = response.results[0][0] - 1
+        result.streak = response.results[0][0] - 1 + response.results[1][0]
 
     return Query(
         sql="""
@@ -310,8 +310,14 @@ WITH RECURSIVE events(unix_date) AS (
         )
 )
 SELECT COUNT(*) FROM events
+UNION ALL
+SELECT COUNT(*) FROM users, user_journeys
+WHERE
+    users.sub = ?
+    AND user_journeys.user_id = users.id
+    AND user_journeys.created_at_unix_date = ?
 """,
-        args=[unix_date_today, user_sub],
+        args=[unix_date_today - 1, user_sub, user_sub, unix_date_today],
         process_result=_process,
     )
 

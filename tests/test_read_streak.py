@@ -409,6 +409,34 @@ if os.environ["ENVIRONMENT"] != "test":
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
+                    self.assertEqual(streak, 1)
+
+            asyncio.run(_inner())
+
+        def test_user_with_two_day_old_streak(self):
+            async def _inner():
+                now = time.time()
+                two_days_ago = now - 86400 * 2
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_prompt(
+                    itgs
+                ) as prompt, temp_journey(itgs, prompt_uid=prompt) as journey:
+                    now = time.time()
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
+                    self.assertEqual(streak, 0)
+
+                    await simulate_user_in_journey(
+                        itgs,
+                        user_sub=user_sub,
+                        prompt_uid=prompt,
+                        journey_uid=journey.journey_uid,
+                        join_at=two_days_ago - 1,
+                        leave_at=two_days_ago,
+                    )
+                    streak = await read_streak_from_db(
+                        itgs, user_sub=user_sub, unix_date_today=_today(now)
+                    )
                     self.assertEqual(streak, 0)
 
             asyncio.run(_inner())
@@ -492,7 +520,7 @@ if os.environ["ENVIRONMENT"] != "test":
                     streak = await read_streak_from_db(
                         itgs, user_sub=user_sub, unix_date_today=_today(now)
                     )
-                    self.assertEqual(streak, 0)
+                    self.assertEqual(streak, 1)
 
                     await simulate_user_in_journey(
                         itgs,
@@ -703,19 +731,17 @@ if os.environ["ENVIRONMENT"] != "test":
         def test_new_user(self):
             async def _inner():
                 async with Itgs() as itgs, temp_user(itgs) as user_sub:
-                    cnt = await read_total_journeys_from_db(
-                        itgs, user_sub=user_sub
-                    )
+                    cnt = await read_total_journeys_from_db(itgs, user_sub=user_sub)
                     self.assertEqual(cnt, 0)
 
             asyncio.run(_inner())
 
         def test_one_journey(self):
             async def _inner():
-                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(itgs) as journey:
-                    cnt = await read_total_journeys_from_db(
-                        itgs, user_sub=user_sub
-                    )
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs
+                ) as journey:
+                    cnt = await read_total_journeys_from_db(itgs, user_sub=user_sub)
                     self.assertEqual(cnt, 0)
 
                     await create_user_journey(
@@ -724,17 +750,15 @@ if os.environ["ENVIRONMENT"] != "test":
                         journey_uid=journey.journey_uid,
                         created_at=time.time(),
                     )
-                    cnt = await read_total_journeys_from_db(
-                        itgs, user_sub=user_sub
-                    )
+                    cnt = await read_total_journeys_from_db(itgs, user_sub=user_sub)
                     self.assertEqual(cnt, 1)
 
         def test_many_journeys(self):
             async def _inner():
-                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(itgs) as journey:
-                    cnt = await read_total_journeys_from_db(
-                        itgs, user_sub=user_sub
-                    )
+                async with Itgs() as itgs, temp_user(itgs) as user_sub, temp_journey2(
+                    itgs
+                ) as journey:
+                    cnt = await read_total_journeys_from_db(itgs, user_sub=user_sub)
                     self.assertEqual(cnt, 0)
 
                     for _ in range(10):
@@ -744,9 +768,7 @@ if os.environ["ENVIRONMENT"] != "test":
                             journey_uid=journey.journey_uid,
                             created_at=time.time(),
                         )
-                    cnt = await read_total_journeys_from_db(
-                        itgs, user_sub=user_sub
-                    )
+                    cnt = await read_total_journeys_from_db(itgs, user_sub=user_sub)
                     self.assertEqual(cnt, 10)
 
             asyncio.run(_inner())

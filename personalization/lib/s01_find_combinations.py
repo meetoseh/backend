@@ -202,6 +202,20 @@ async def set_instructor_category_and_biases_in_local_cache(
     )
 
 
+async def delete_instructor_category_and_biases_from_local_cache(
+    itgs: Itgs, *, emotion: str, premium: bool
+) -> None:
+    """Deletes the serialized instructor category biases for the given emotion
+    from the local cache.
+    """
+    cache = await itgs.local_cache()
+    cache.delete(
+        f"personalization:instructor_category_biases:{emotion}:{premium}".encode(
+            "utf-8"
+        )
+    )
+
+
 async def get_instructor_category_and_biases_from_redis(
     itgs: Itgs, *, emotion: str, premium: bool
 ) -> Optional[bytes]:
@@ -233,6 +247,20 @@ async def set_instructor_category_and_biases_in_redis(
         ),
         serialized,
         ex=REDIS_CACHE_TIME_SECONDS,
+    )
+
+
+async def delete_instructor_category_and_biases_from_redis(
+    itgs: Itgs, *, emotion: str, premium: bool
+) -> None:
+    """Deletes the serialized instructor category biases for the given emotion from
+    redis.
+    """
+    redis = await itgs.redis()
+    await redis.delete(
+        f"personalization:instructor_category_biases:{emotion}:{premium}".encode(
+            "utf-8"
+        )
     )
 
 

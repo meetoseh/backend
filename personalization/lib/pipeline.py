@@ -1,5 +1,11 @@
+import random
 from typing import Optional
-from personalization.lib.s01_find_combinations import get_instructor_category_and_biases
+from error_middleware import handle_warning
+from personalization.lib.s01_find_combinations import (
+    delete_instructor_category_and_biases_from_local_cache,
+    delete_instructor_category_and_biases_from_redis,
+    get_instructor_category_and_biases,
+)
 from personalization.lib.s02_lowest_view_count import map_to_lowest_view_counts
 from personalization.lib.s03a_find_feedback import find_feedback
 from personalization.lib.s03b_feedback_score import map_to_feedback_score
@@ -85,4 +91,42 @@ async def select_journey(
         premium=premium,
         limit=1,
     )
+
+    if not journeys:
+        await handle_warning(
+            f"{__name__}:bad_combination",
+            (
+                f"Cached available journeys for emotion={emotion}, premium={premium} "
+                f"includes {best_combination.instructor_name}, {best_combination.category_internal_name}, "
+                f"but that no longer has any journeys. Using fallback for {user_sub}."
+            ),
+            is_urgent=True,
+        )
+        await delete_instructor_category_and_biases_from_redis(
+            itgs, emotion=emotion, premium=premium
+        )
+        await delete_instructor_category_and_biases_from_local_cache(
+            itgs, emotion=emotion, premium=premium
+        )
+
+        combination_indices = list(
+            i for i in range(len(combinations)) if i != best_combination_index
+        )
+        random.shuffle(combination_indices)
+
+        for i in combination_indices:
+            journeys = await get_journeys_for_combination(
+                itgs,
+                category_uid=combinations[i].category_uid,
+                instructor_uid=combinations[i].instructor_uid,
+                emotion=emotion,
+                user_sub=user_sub,
+                premium=premium,
+                limit=1,
+            )
+            if journeys:
+                break
+        else:
+            return None
+
     return journeys[0].uid

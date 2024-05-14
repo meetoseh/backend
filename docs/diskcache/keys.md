@@ -470,6 +470,26 @@ the keys we store locally on backend instances via diskcache
   gzip-compressed json array containing json objects with `content_file_uid`, `thumbnail_uid`,
   and optional `transcript_uid`. see `read_welcome_video.py`
 
+- `daily_client_flows:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily client flow stats for the given date range (incl -> excl)
+  see also: [client_flow_stats](../../admin/client_flows/routes/flow_stats.py)
+
+- `daily_client_screens:{start_unix_date}:{end_unix_date}` goes to a string containing
+  the serialized daily client screen stats for the given date range (incl -> excl)
+  see also: [client_screen_stats](../../admin/client_flows/routes/screen_stats.py)
+
+- `client_flows:{slug}` goes to the raw representation of the client flow with the
+  given slug; see [flow_cache](../../lib/client_flows/flow_cache.py)
+
+- `client_screens:{slug}` goes to the raw representation of the client screen with the
+  given slug; see [screen_cache](../../lib/client_flows/screen_cache.py)
+
+- `thumbhashes:{image_uid}:{width}x{height}` goes to a string containing the best available
+  base64url-encoded thumbhash for the image with the given uid when its expected to be
+  rendered at the given physical width by height. Note that for thumbhashes it's only
+  the aspect ratio that really matters. Always set to expire after about 8 hours from when
+  it was last checked.
+
 ## Personalization
 
 This contains keys for the personalization subspace

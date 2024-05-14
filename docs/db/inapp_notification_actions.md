@@ -1,5 +1,15 @@
 # inapp_notification_actions
 
+## DEPRECATED
+
+This table is _no longer used_. It is kept for historical records and to maintain
+support for older versions of the app.
+
+`inapp_notifications`, and the corresponding stack-based client navigation paradigm,
+have been replaced with `client_flows`.
+
+## HISTORICAL
+
 The actions that a user can take on a particular inapp notification, for
 tracking purposes. The frontend identifies these actions with a slug instead
 of uid, which is unique only to the particular notification and thus doesn't

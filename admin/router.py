@@ -21,6 +21,7 @@ import admin.touch.router
 import admin.daily_reminders.router
 import admin.siwo.router
 import admin.logs.router
+import admin.client_flows.router
 
 router = APIRouter()
 router.include_router(admin.routes.read_daily_active_users.router)
@@ -48,3 +49,4 @@ router.include_router(admin.touch.router.router, prefix="/touch")
 router.include_router(admin.daily_reminders.router.router, prefix="/daily_reminders")
 router.include_router(admin.siwo.router.router, prefix="/siwo")
 router.include_router(admin.logs.router.router, prefix="/logs")
+router.include_router(admin.client_flows.router.router, prefix="/client_flows")

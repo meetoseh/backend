@@ -110,11 +110,22 @@ router = APIRouter()
     "/search_sessions",
     response_model=ReadInappNotificationUserResponse,
     responses=STANDARD_ERRORS_BY_CODE,
+    deprecated=True,
 )
 async def read_inapp_notification_users(
     args: ReadInappNotificationUserRequest, authorization: Optional[str] = Header(None)
 ):
-    """Lists out the inapp notification / user relating rows. Each row corresponds
+    """
+    ## DEPRECATED
+
+    This endpoint SHOULD NOT be used, except for investigating historical data.
+
+    `inapp_notifications`, and the corresponding stack-based client navigation paradigm,
+    have been replaced with `client_flows`.
+
+    ## HISTORICAL
+
+    Lists out the inapp notification / user relating rows. Each row corresponds
     to one user seeing a particular inapp notification. Thus, it's also reasonable
     to refer to it as a session a user had with a particular inapp notification,
     and the actions can be fetched using search_actions.

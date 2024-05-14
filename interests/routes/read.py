@@ -42,7 +42,7 @@ class ReadInterestRequest(BaseModel):
         None, description="the order to sort by"
     )
     limit: int = Field(
-        100, description="the maximum number of instructors to return", ge=1, le=1000
+        100, description="the maximum number of items to return", ge=1, le=1000
     )
 
 

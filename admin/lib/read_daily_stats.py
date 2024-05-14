@@ -465,8 +465,7 @@ def _create_historical(
         async def _void_handler(authorization: Optional[str]) -> Response:
             return Response(status_code=404)
 
-        async def _void_background_task() -> Never:
-            ...
+        async def _void_background_task() -> Never: ...
 
         return _void_handler, _void_background_task
 

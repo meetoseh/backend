@@ -326,7 +326,16 @@ alphabetical order, with logs moved to the bottom:
 41. we do not copy over `user_timezone_log` and we do not update `timezone` on users
 42. `move_merge_account_log`: same strategy as `contact_method_log`
 43. `move_user_touch_debug_log`: standard update
-44. `move_created_at`: we set the `created_at` timestamp of the original user to the
+44. `move_user_client_screens_log`: standard update
+45. `delete_user_client_screens`: we will reset both the merging user and the original
+    users client screen queue. this is done defensively; generally a `merge` client flow
+    should be triggered after which will have `replaces=True` which obviates the need
+    for this step
+    - `step_result`: `delete`
+    - `context`:
+      - `original`: the number of rows deleted from the original user
+      - `merging`: the number of rows deleted from the merging user
+46. `move_created_at`: we set the `created_at` timestamp of the original user to the
     earlier of the original users created at and the merging users created at. this may
     mean that, incidentally, some computed attribution information is excluded.
     - `context`:

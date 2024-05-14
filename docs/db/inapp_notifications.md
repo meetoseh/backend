@@ -1,5 +1,15 @@
 # inapp_notifications
 
+## DEPRECATED
+
+This table is _no longer used_. It is kept for historical records and to maintain
+support for older versions of the app.
+
+`inapp_notifications`, and the corresponding stack-based client navigation paradigm,
+have been replaced with `client_flows`.
+
+## HISTORICAL
+
 Describes in-app notifications that we send to the user. These are typically
 one-off notifications that we send to all users for a short period of time,
 and the frontend will only show them if they haven't been shown to the user

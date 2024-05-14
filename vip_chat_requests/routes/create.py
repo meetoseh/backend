@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 from auth import auth_admin
 from image_files.models import ImageFileRef
 from image_files.auth import create_jwt as create_image_file_jwt
@@ -209,7 +209,7 @@ async def create_vip_chat_request(
                         "Content-Type": "application/json; charset=utf-8",
                     },
                 )
-            args.user_sub = response.results[0][0]
+            args.user_sub = cast(str, response.results[0][0])
 
         response = await cursor.execute(
             "SELECT given_name, family_name, created_at FROM users WHERE sub = ?",

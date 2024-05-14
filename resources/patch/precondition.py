@@ -71,7 +71,7 @@ def check_simple_precondition(
 
     return [
         Query(
-            f"SELECT {has} FROM {in_} WHERE uid=? AND {has} <> ?",
+            f"SELECT {has} FROM {in_} WHERE uid=? AND ({has} IS NULL OR {has} <> ?)",
             [uid, db_eq],
             _check,
         )

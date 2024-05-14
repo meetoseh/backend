@@ -5,6 +5,7 @@ from error_middleware import handle_contextless_error
 from itgs import Itgs
 from dataclasses import dataclass
 import time
+from users.lib.streak import purge_user_streak_cache
 from users.lib.timezones import get_user_timezone
 import unix_dates
 
@@ -188,7 +189,7 @@ async def on_started_emotion_user_journey(
     user_tz = await get_user_timezone(itgs, user_sub=user_sub)
     now_unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=user_tz)
 
-    response = await cursor.executemany3(
+    response = await cursor.executeunified3(
         (
             (
                 """
@@ -209,6 +210,17 @@ WHERE
                     emotion_user_uid,
                     user_sub,
                 ),
+            ),
+            (
+                """
+SELECT 1 FROM users, user_journeys
+WHERE
+    users.sub = ?
+    AND user_journeys.user_id = users.id
+    AND user_journeys.created_at_unix_date = ?
+LIMIT 1
+                """,
+                (user_sub, now_unix_date),
             ),
             (
                 """
@@ -237,7 +249,10 @@ WHERE
         await handle_contextless_error(
             extra_info=f"failed to update emotion_users to joined; {emotion_user_uid=}, {user_sub=}"
         )
-    if response[1].rows_affected is None or response[1].rows_affected < 1:
+    if not response[1].results:
+        # bust streak cache
+        await purge_user_streak_cache(itgs, sub=user_sub)
+    if response[2].rows_affected is None or response[2].rows_affected < 1:
         await handle_contextless_error(
             extra_info=f"failed to insert into user_journeys; {emotion_user_uid=}, {user_sub=}"
         )

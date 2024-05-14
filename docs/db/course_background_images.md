@@ -30,6 +30,8 @@ CREATE TABLE course_background_images(
     last_uploaded_at REAL NOT NULL
 );
 
+/* todo: this is missing indices on the image files */
+
 /* Foreign key */
 CREATE INDEX course_background_images_uploaded_by_user_id_idx ON course_background_images(uploaded_by_user_id);
 ```

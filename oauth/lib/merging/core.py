@@ -268,6 +268,13 @@ async def create_merging_queries(
             table_name="user_touch_debug_log",
             operation_order=OperationOrder.move_user_touch_debug_log,
         ),
+        *await _create_standard_move_merge_queries(
+            itgs,
+            ctx,
+            table_name="user_client_screens_log",
+            operation_order=OperationOrder.move_user_client_screens_log,
+        ),
+        *await _delete_user_client_screens(itgs, ctx),
         *await _create_move_created_at_queries(itgs, ctx),
         *await _delete_merging_user(itgs, ctx),
     ]
@@ -427,9 +434,9 @@ async def _delete_user_daily_reminders(
             mctx.log,
         )
 
-        registrations_by_channel: Dict[
-            str, Optional[DailyReminderChannelSettings]
-        ] = dict()
+        registrations_by_channel: Dict[str, Optional[DailyReminderChannelSettings]] = (
+            dict()
+        )
         for (
             row_channel,
             row_start_time,
@@ -752,6 +759,167 @@ async def _delete_user_daily_reminders(
             ),
             qargs=[*ctes_qargs],
             handler=partial(handler, "delete"),
+        ),
+    ]
+
+
+async def _delete_user_client_screens(
+    itgs: Itgs, octx: _Ctx, /
+) -> Sequence[MergeQuery]:
+    log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
+    await octx.log.write(
+        b"- delete_user_client_screens -\n"
+        b"computed:\n"
+        b"  log_uid: " + log_uid.encode("ascii") + b"\n"
+    )
+
+    logged: Optional[bool] = None
+    logged_original_rows: Optional[int] = None
+    logged_merging_rows: Optional[int] = None
+
+    async def handler(
+        step: Literal["log", "delete_original", "delete_merging"], mctx: MergeContext
+    ):
+        nonlocal logged, logged_original_rows, logged_merging_rows
+
+        if step == "log":
+            if not mctx.merging_expected:
+                assert (
+                    not mctx.result.rows_affected
+                ), "unexpectedly logged to delete user_client_screens"
+                return
+
+            assert logged is None, "handler called twice for log step"
+            assert logged_original_rows is None
+
+            logged = bool(mctx.result.rows_affected)
+
+            if not logged:
+                return
+
+            conn = await itgs.conn()
+            cursor = conn.cursor("weak")
+            response = await _log_and_execute_query(
+                cursor,
+                "SELECT reason FROM merge_account_log WHERE uid=?",
+                (log_uid,),
+                mctx.log,
+            )
+            assert response.results, response
+            assert len(response.results) == 1, response
+            assert len(response.results[0]) == 1, response
+
+            parsed_reason = json.loads(response.results[0][0])
+            assert isinstance(parsed_reason, dict), response
+            await mctx.log.write(
+                b"parsed_reason:\n"
+                + json.dumps(parsed_reason, indent=2).encode("utf-8")
+                + b"\n"
+            )
+
+            logged_original_rows = parsed_reason["context"]["original_rows"]
+            logged_merging_rows = parsed_reason["context"]["merging_rows"]
+
+            assert isinstance(logged_original_rows, int), response
+            assert isinstance(logged_merging_rows, int), response
+            assert logged_original_rows >= 0, response
+            assert logged_merging_rows >= 0, response
+            assert logged_original_rows + logged_merging_rows > 0, response
+        elif step == "delete_original":
+            if not mctx.merging_expected:
+                assert (
+                    not mctx.result.rows_affected
+                ), "unexpectedly deleted user_client_screens"
+                return
+
+            assert (
+                logged is not None
+            ), "delete_original step handler called before log step"
+
+            if not logged or logged_original_rows is None or logged_original_rows <= 0:
+                assert (
+                    not mctx.result.rows_affected
+                ), "unexpectedly deleted original rows"
+                return
+
+            assert (
+                mctx.result.rows_affected == logged_original_rows
+            ), f"logged that we intended to delete {logged_original_rows} user_client_screens, but deleted {mctx.result.rows_affected}"
+
+            await mctx.log.write(
+                b"when clearing the original users user_client_screens, deleted "
+                + str(logged_original_rows).encode("ascii")
+                + b" rows \n"
+            )
+        elif step == "delete_merging":
+            if not mctx.merging_expected:
+                assert (
+                    not mctx.result.rows_affected
+                ), "unexpectedly deleted user_client_screens"
+                return
+
+            assert (
+                logged is not None
+            ), "delete_merging step handler called before log step"
+
+            if not logged or logged_merging_rows is None or logged_merging_rows <= 0:
+                assert (
+                    not mctx.result.rows_affected
+                ), "unexpectedly deleted merging rows"
+                return
+
+            assert (
+                mctx.result.rows_affected == logged_merging_rows
+            ), f"logged that we intended to delete {logged_merging_rows} user_client_screens, but deleted {mctx.result.rows_affected}"
+
+            await mctx.log.write(
+                b"when clearing the merging users user_client_screens, deleted "
+                + str(logged_merging_rows).encode("ascii")
+                + b" rows \n"
+            )
+        else:
+            assert False, step
+
+    ctes, ctes_qargs = _merging_user_and_original_user_ctes(octx)
+    return [
+        MergeQuery(
+            query=(
+                f"{ctes} INSERT INTO merge_account_log ("
+                " uid, user_id, operation_uid, operation_order, phase, step, step_result, reason, created_at"
+                ") SELECT"
+                " ?, original_user.id, ?, ?, 'merging', 'delete_user_client_screens', 'delete',"
+                " json_insert("
+                "  '{}'"
+                "  , '$.context.original_rows', (SELECT COUNT(*) FROM user_client_screens WHERE user_id = original_user.id)"
+                "  , '$.context.merging_rows', (SELECT COUNT(*) FROM user_client_screens WHERE user_id = merging_user.id)"
+                " ), ? "
+                "FROM merging_user, original_user "
+                "WHERE"
+                " EXISTS (SELECT 1 FROM user_client_screens WHERE user_id = original_user.id)"
+                " OR EXISTS (SELECT 1 FROM user_client_screens WHERE user_id = merging_user.id)"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+                octx.operation_uid,
+                OperationOrder.delete_user_client_screens.value,
+                octx.merge_at,
+            ],
+            handler=partial(handler, "log"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes} DELETE FROM user_client_screens WHERE user_id = (SELECT original_user.id FROM original_user)"
+            ),
+            qargs=ctes_qargs,
+            handler=partial(handler, "delete_original"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes} DELETE FROM user_client_screens WHERE user_id = (SELECT merging_user.id FROM merging_user)"
+            ),
+            qargs=ctes_qargs,
+            handler=partial(handler, "delete_merging"),
         ),
     ]
 

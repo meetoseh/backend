@@ -8,6 +8,8 @@ from auth import auth_any
 from itgs import Itgs
 import time
 
+from users.lib.streak import purge_user_streak_cache
+
 
 router = APIRouter()
 
@@ -72,5 +74,7 @@ async def set_user_goal(
                 extra_info=f"no rows affected setting user goal: {auth_result.result.sub}, {args.days_per_week}, {now}"
             )
             return ERROR_FAILED_TO_STORE
+        else:
+            await purge_user_streak_cache(itgs, sub=auth_result.result.sub)
 
         return Response(status_code=204)

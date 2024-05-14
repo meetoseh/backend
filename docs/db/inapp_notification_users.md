@@ -1,5 +1,15 @@
 # inapp_notification_users
 
+## DEPRECATED
+
+This table is _no longer used_. It is kept for historical records and to maintain
+support for older versions of the app.
+
+`inapp_notifications`, and the corresponding stack-based client navigation paradigm,
+have been replaced with `client_flows`.
+
+## HISTORICAL
+
 Each record indicates that the given user saw the corresponding inapp notification.
 
 ## Fields

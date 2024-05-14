@@ -55,11 +55,23 @@ ERROR_INAPP_NOTIFICATION_NOT_FOUND = Response(
         },
         **STANDARD_ERRORS_BY_CODE,
     },
+    deprecated=True,
 )
 async def start_inapp_notification(
     args: StartInappNotificationRequest, authorization: Optional[str] = Header(None)
 ):
-    """Stores that the authorized user has been presented with the corresponding
+    """
+    ## DEPRECATED
+
+    This endpoint SHOULD NOT be used. It is intended to maintain support
+    for older versions of the app.
+
+    `inapp_notifications`, and the corresponding stack-based client navigation paradigm,
+    have been replaced with `client_flows`.
+
+    ## HISTORICAL
+
+    Stores that the authorized user has been presented with the corresponding
     in-app notification. This is used to avoid presenting the same notification
     excessively to the user. This is not guarranteed to return a new session uid
     on every call.

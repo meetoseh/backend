@@ -51,11 +51,23 @@ class GetInappNotificationShowAtResponse(BaseModel):
     "/should_show",
     response_model=GetInappNotificationShowAtResponse,
     responses=STANDARD_ERRORS_BY_CODE,
+    deprecated=True,
 )
 async def get_inapp_notification_show_at(
     args: GetInappNotificationShowAtRequest, authorization: Optional[str] = Header(None)
 ):
-    """Determines if the frontend should show the given in-app notification
+    """
+    ## DEPRECATED
+
+    This endpoint SHOULD NOT be used. It is intended to maintain support
+    for older versions of the app.
+
+    `inapp_notifications`, and the corresponding stack-based client navigation paradigm,
+    have been replaced with `client_flows`.
+
+    ## HISTORICAL
+
+    Determines if the frontend should show the given in-app notification
     to the user at the appropriate time. This endpoint is exclusively meant to
     avoid hammering the user with the same notification, and doesn't consider
     any other context - for example, if the user already has a phone number,

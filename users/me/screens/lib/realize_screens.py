@@ -9,9 +9,12 @@ from users.me.screens.lib.standard_parameters import (
     create_standard_parameters,
     get_requested_standard_parameters,
 )
-from users.me.screens.models.peeked_screen import PeekedScreen, PeekedScreenItem
+from users.me.screens.models.peeked_screen import (
+    PeekScreenResponse,
+    PeekedScreen,
+    PeekedScreenItem,
+)
 from users.me.screens.auth import create_jwt as create_screen_jwt
-from users.me.screens.routes.peek import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource, check_visitor_sanity
 from visitors.routes.associate_visitor_with_user import push_visitor_user_association
 

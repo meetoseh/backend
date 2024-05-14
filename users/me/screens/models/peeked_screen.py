@@ -24,3 +24,8 @@ class PeekedScreen(BaseModel):
             "Note that any JWTs in this list will be refreshed on every peek"
         )
     )
+
+
+class PeekScreenResponse(BaseModel):
+    visitor: str = Field(description="The new visitor UID to use")
+    screen: PeekedScreen = Field(description="The screen to show or skip")

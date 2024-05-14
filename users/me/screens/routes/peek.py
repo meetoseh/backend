@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
 from typing import Annotated, Optional
 from lib.client_flows.executor import execute_peek
 from users.me.screens.lib.realize_screens import realize_screens
-from users.me.screens.models.peeked_screen import PeekedScreen
 from models import STANDARD_ERRORS_BY_CODE
+from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
 from itgs import Itgs
 import auth
@@ -13,14 +12,9 @@ import auth
 router = APIRouter()
 
 
-class PeekScreenResponse(BaseModel):
-    visitor: str = Field(description="The new visitor UID to use")
-    screen: PeekedScreen = Field(description="The screen to show or skip")
-
-
 @router.post(
     "/peek",
-    response_model=PeekedScreen,
+    response_model=PeekScreenResponse,
     responses=STANDARD_ERRORS_BY_CODE,
 )
 async def peek_screen(

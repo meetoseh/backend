@@ -14,7 +14,7 @@ import auth as std_auth
 import users.me.screens.auth
 
 from users.me.screens.lib.realize_screens import realize_screens
-from users.me.screens.routes.peek import PeekScreenResponse
+from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
 
 

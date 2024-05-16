@@ -34,6 +34,7 @@ class PopScreenClientFlowTriggerRequest(BaseModel):
 class PopScreenRequest(BaseModel):
     screen_jwt: str = Field(description="The JWT which lets you pop the screen")
     trigger: Optional[PopScreenClientFlowTriggerRequest] = Field(
+        None,
         description=(
             "If the client wants to trigger a client flow after popping but "
             "before peeking, the client flow to trigger.\n\n"
@@ -41,7 +42,7 @@ class PopScreenRequest(BaseModel):
             "will never receive direct feedback on if the trigger occurred at "
             "all or as specified. Even if its accepted, it may not be the only "
             "trigger that occurs."
-        )
+        ),
     )
 
 

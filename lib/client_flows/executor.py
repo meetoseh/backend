@@ -150,7 +150,7 @@ async def try_and_store_simulation_result(
             )
             for i, screen in enumerate(mutation.screens):
                 if i != 0:
-                    sql.write(", (?, ?, ?, ?, ?, ?, ?)")
+                    sql.write(", (?, ?, ?, ?, ?, ?, ?, ?)")
                 qargs.extend(
                     [
                         screen.uid,
@@ -593,9 +593,10 @@ def get_prefetch_screens_from_state(
     for idx in range(len(state.mutations) - 1, -1, -1):
         mut = state.mutations[idx]
         if mut.type == "skip":
-            raise NotImplementedError(
-                "expected that if there were skips, we'd have queue initialized"
-            )
+            # when initializing a pop in the happy path we don't initialize the
+            # queue but it starts with a skip mutation so we need to hit the
+            # db to get the screens to prefetch
+            return None
 
         if mut.type == "empty_queue":
             raise NotImplementedError(
@@ -928,7 +929,7 @@ async def execute_pop(
             expecting_bad_screens = True
             continue
 
-        assert prepared_pop.state in ("success", "desync")
+        assert prepared_pop.type in ("success", "desync"), prepared_pop
 
         for _ in range(5):
             if prepared_pop.type == "desync":

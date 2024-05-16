@@ -89,7 +89,7 @@ class ScreenSchemaRealizer:
                 return (schema_type, schema_format) not in UNSAFE_SCREEN_SCHEMA_TYPES
 
     async def convert_validated_to_realized(
-        self, itgs: Itgs, for_user_sub: str, input: Any
+        self, itgs: Itgs, /, *, for_user_sub: str, input: Any
     ) -> Any:
         """Converts input which has been validated against the schema already and
         for which the appropriate trust level has been determined (i.e., either

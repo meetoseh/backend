@@ -30,12 +30,12 @@ async def realize_screens(
 ) -> PeekScreenResponse:
     now = time.time()
     visitor = check_visitor_sanity(visitor)
-    requested_standard_parameters: Set[List[str]] = set()
+    requested_standard_parameters: Set[tuple] = set()
     for path in get_requested_standard_parameters(result.front.flow_screen.screen):
-        requested_standard_parameters.add(path)
+        requested_standard_parameters.add(tuple(path))
     for itm in result.prefetch:
         for path in get_requested_standard_parameters(itm.flow_screen.screen):
-            requested_standard_parameters.add(path)
+            requested_standard_parameters.add(tuple(path))
 
     standard_parameters = await create_standard_parameters(
         itgs, user_sub=user_sub, requested=requested_standard_parameters, now=now

@@ -360,6 +360,7 @@ async def check_flow_screens(
                 client_schema,
                 server_schema,
                 input_path,
+                fixed=flow_screen.screen.fixed,
             )
             produced_example = produced_schema.get("example")
             if produced_example is None:
@@ -395,6 +396,7 @@ async def check_flow_screens(
                 f"screens[{idx}].screen.variable[{variable_parameter_idx}] target for {input_path}",
                 screen.raw_schema,
                 output_path,
+                fixed=flow_screen.screen.fixed,
             )
             target_type = target_schema.get("type")
 
@@ -404,7 +406,7 @@ async def check_flow_screens(
                     raise PreconditionFailedException(
                         f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
                         "to be a string, number, integer, or boolean",
-                        f"not a {produced_type}",
+                        f"a(n) {produced_type}",
                     )
                 if target_type != "string":
                     raise PreconditionFailedException(
@@ -469,7 +471,7 @@ async def check_flow_screens(
 
 
 def _get_flow_screen_param_schema(
-    src: str, client_schema: dict, server_schema: dict, param: List[str]
+    src: str, client_schema: dict, server_schema: dict, param: List[str], *, fixed: dict
 ) -> dict:
     if len(param) < 1:
         raise PreconditionFailedException(
@@ -486,9 +488,13 @@ def _get_flow_screen_param_schema(
             )
         return res
     elif param[0] == "client":
-        return _get_param_schema_from_schema(src, client_schema, param[1:], level=1)
+        return _get_param_schema_from_schema(
+            src, client_schema, param[1:], level=1, fixed=fixed
+        )
     elif param[0] == "server":
-        return _get_param_schema_from_schema(src, server_schema, param[1:], level=1)
+        return _get_param_schema_from_schema(
+            src, server_schema, param[1:], level=1, fixed=fixed
+        )
     else:
         raise PreconditionFailedException(
             src,
@@ -498,11 +504,28 @@ def _get_flow_screen_param_schema(
 
 
 def _get_param_schema_from_schema(
-    src: str, schema: dict, param: List[str], *, level: int = 0
+    src: str, schema: dict, param: List[str], *, fixed: dict, level: int = 0
 ) -> dict:
     current = schema
+    current_fixed: Optional[dict] = fixed
     stack = param.copy()
-    while len(stack) > 1:
+
+    while stack:
+        if current_fixed is None:
+            next_fixed = None
+        else:
+            next_fixed = current_fixed.get(stack[0])
+            if next_fixed is None:
+                next_fixed = None
+            elif isinstance(next_fixed, dict):
+                next_fixed = next_fixed
+            else:
+                raise PreconditionFailedException(
+                    src,
+                    f"to reference an insertion spot (at level {level})",
+                    f"{param} (fixed not a dict for insertion @ {param[:level]})",
+                )
+
         if not isinstance(current, dict):
             raise PreconditionFailedException(
                 src,
@@ -515,38 +538,126 @@ def _get_param_schema_from_schema(
                 f"to reference a valid parameter (at level {level})",
                 f"{param} (not an object @ {param[:level]})",
             )
-        if current.get("nullable", False) is not False:
-            raise PreconditionFailedException(
-                src,
-                f"to reference a valid parameter (at level {level})",
-                f"{param} (nullable @ {param[:level]})",
-            )
-        required = current.get("required")
-        if required is None:
-            raise PreconditionFailedException(
-                src,
-                f"to reference a valid parameter (at level {level})",
-                f"{param} (no required @ {param[:level]})",
-            )
-        if not isinstance(required, list):
-            raise PreconditionFailedException(
-                src,
-                f"to reference a valid parameter (at level {level})",
-                f"{param} (required not a list @ {param[:level]})",
-            )
-        if stack[0] not in required:
-            raise PreconditionFailedException(
-                src,
-                f"to reference a valid parameter (at level {level})",
-                f"{param} (required {stack[0]} missing @ {param[:level]})",
-            )
+        if next_fixed is None and len(stack) > 1:
+            if current.get("nullable", False) is not False:
+                raise PreconditionFailedException(
+                    src,
+                    f"to reference a valid parameter (at level {level})",
+                    f"{param} (nullable @ {param[:level]} and not set in fixed)",
+                )
+            required = current.get("required")
+            if required is None:
+                raise PreconditionFailedException(
+                    src,
+                    f"to reference a valid parameter (at level {level})",
+                    f"{param} (no required @ {param[:level]})",
+                )
+            if not isinstance(required, list):
+                raise PreconditionFailedException(
+                    src,
+                    f"to reference a valid parameter (at level {level})",
+                    f"{param} (required not a list @ {param[:level]})",
+                )
+            if stack[0] not in required:
+                raise PreconditionFailedException(
+                    src,
+                    f"to reference a valid parameter (at level {level})",
+                    f"{param} (required {stack[0]} missing @ {param[:level]})",
+                )
 
         properties = current.get("properties")
         if properties is None:
+            enum_discriminator = current.get("x-enum-discriminator")
+            if enum_discriminator is not None:
+                if not isinstance(enum_discriminator, str):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (enum-discriminator not a string @ {param[:level]})",
+                    )
+                oneof = current.get("oneOf")
+                if not isinstance(oneof, list):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (oneOf not a list, despite x-enum-discriminator @ {param[:level]})",
+                    )
+                if current_fixed is None:
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (no fixed for enum discrimination @ {param[:level]})",
+                    )
+
+                discrim_value = current_fixed.get(enum_discriminator)
+                if not isinstance(discrim_value, str):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (enum discriminator not a string @ {param[:level]})",
+                    )
+
+                matching_oneof = None
+                for oneof_idx, oneof_schema in enumerate(oneof):
+                    if not isinstance(oneof_schema, dict):
+                        raise PreconditionFailedException(
+                            src,
+                            f"to reference a valid parameter (at level {level})",
+                            f"{param} (oneOf[{oneof_idx}] not an object @ {param[:level]})",
+                        )
+
+                    if oneof_schema.get("type") != "object":
+                        raise PreconditionFailedException(
+                            src,
+                            f"to reference a valid parameter (at level {level})",
+                            f"{param} (oneOf[{oneof_idx}] not an object @ {param[:level]})",
+                        )
+
+                    oneof_props = oneof_schema.get("properties")
+                    if not isinstance(oneof_props, dict):
+                        raise PreconditionFailedException(
+                            src,
+                            f"to reference a valid parameter (at level {level})",
+                            f"{param} (oneOf[{oneof_idx}] properties not a dict @ {param[:level]})",
+                        )
+
+                    oneof_discrim_schema = oneof_props.get(enum_discriminator)
+                    if not isinstance(oneof_discrim_schema, dict):
+                        raise PreconditionFailedException(
+                            src,
+                            f"to reference a valid parameter (at level {level})",
+                            f"{param} (oneOf[{oneof_idx}] discriminator not a dict @ {param[:level]})",
+                        )
+                    oneof_discrim_schema_enum = oneof_discrim_schema.get("enum")
+                    if not isinstance(oneof_discrim_schema_enum, list):
+                        raise PreconditionFailedException(
+                            src,
+                            f"to reference a valid parameter (at level {level})",
+                            f"{param} (oneOf[{oneof_idx}] discriminator enum not a list @ {param[:level]})",
+                        )
+                    if len(oneof_discrim_schema_enum) != 1:
+                        raise PreconditionFailedException(
+                            src,
+                            f"to reference a valid parameter (at level {level})",
+                            f"{param} (oneOf[{oneof_idx}] discriminator enum not a singleton list @ {param[:level]})",
+                        )
+                    if discrim_value in oneof_discrim_schema_enum:
+                        matching_oneof = oneof_schema
+                        break
+                else:
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (no oneOf schema matched for fixed discriminator {discrim_value} @ {param[:level]})",
+                    )
+
+                current = matching_oneof
+                continue
+
             raise PreconditionFailedException(
                 src,
                 f"to reference a valid parameter (at level {level})",
-                f"{param} (no properties @ {param[:level]})",
+                f"{param} (no properties or x-enum-discriminator @ {param[:level]})",
             )
 
         if not isinstance(properties, dict):
@@ -571,6 +682,7 @@ def _get_param_schema_from_schema(
             )
 
         level += 1
+        current_fixed = next_fixed
         stack = stack[1:]
 
     return current

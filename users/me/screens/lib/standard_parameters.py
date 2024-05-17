@@ -73,6 +73,21 @@ _supported = {
         "example": 3,
     },
     ("stats", "prev_best_streak", "days"): {"type": "string", "example": "3 days"},
+    ("constants", "fast_anim_ms"): {
+        "type": "integer",
+        "format": "int32",
+        "example": 350,
+    },
+    ("constants", "normal_anim_ms"): {
+        "type": "integer",
+        "format": "int32",
+        "example": 500,
+    },
+    ("constants", "slow_anim_ms"): {
+        "type": "integer",
+        "format": "int32",
+        "example": 750,
+    },
 }
 
 
@@ -90,7 +105,7 @@ async def create_standard_parameters(
     /,
     *,
     user_sub: str,
-    requested: Set[List[str]],  # Set[Tuple[str, ...]] once that's allowed,
+    requested: Set[tuple],  # Set[Tuple[str, ...]] once that's allowed,
     now: float,
 ) -> dict:
     """Given a set of requested standard parameters, returns a dict which can be
@@ -115,13 +130,22 @@ async def create_standard_parameters(
         standard[stats][journeys][raw]: their total journeys as a stringified number, e.g., '3'
         standard[stats][prev_best_streak][raw]: their previous best streak as a stringified number, e.g., '3'
         standard[stats][prev_best_streak][days]: their previous best streak in form e.g. '1 day' or '2 days'
+        standard[constants][fast_anim_ms]: the duration of a fast animation in milliseconds (e.g., 350)
+        standard[constants][normal_anim_ms]: the duration of a normal animation in milliseconds (e.g., 500)
+        standard[constants][slow_anim_ms]: the duration of a slow animation in milliseconds (e.g., 750)
 
     Args:
         itgs (Itgs): the integrations to (re)use
         user_sub (str): the user to get the standard parameters for
         requested (Set[List[str]]): the standard parameters to get
     """
-    result = dict()
+    result: dict = {
+        "constants": {
+            "fast_anim_ms": 350,
+            "normal_anim_ms": 500,
+            "slow_anim_ms": 750,
+        }
+    }
 
     if ("name",) in requested:
         conn = await itgs.conn()

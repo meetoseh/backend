@@ -98,6 +98,13 @@ See also: [client flows](../concepts/client_flows/README.md)
     from the input parameter. Used as a hint to the admin area that this is going to be
     used for the pop trigger on the screen.
 
+  For object instances (those where `{"type": "object"}`), where `"oneOf"` is included,
+  we support and require an `x-enum-discriminator` extension property. This is a string
+  which will match a required, non-nullable, string property in each `oneOf` object, which
+  will have `enum` set to a single unique string. For example, if the `x-enum-discriminator`
+  is `type` (a common choice), then the oneof options will all have `type` set to specific,
+  unique string.
+
 - `flags (integer not null)`: a bitfield for configuring this screen. The flags are,
   from least significant to most significant bit:
 

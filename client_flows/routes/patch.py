@@ -32,7 +32,10 @@ from error_middleware import handle_warning
 from itgs import Itgs
 from lib.client_flows.client_flow_screen import ClientFlowScreen
 from lib.client_flows.flow_cache import purge_client_flow_cache
-from lib.client_flows.helper import iter_flow_screen_required_parameters
+from lib.client_flows.helper import (
+    check_oas_30_schema,
+    iter_flow_screen_required_parameters,
+)
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_schema import UNSAFE_SCREEN_SCHEMA_TYPES
 from models import StandardErrorResponse
@@ -324,43 +327,14 @@ async def check_flow_screens(
                 )
 
     try:
-        OAS30Validator.check_schema(client_schema)
-    except:
-        raise PreconditionFailedException("client_schema", "valid", "invalid")
+        check_oas_30_schema(client_schema, require_example=True)
+    except Exception as e:
+        raise PreconditionFailedException("client_schema", "valid", f"invalid: {e}")
 
     try:
-        OAS30Validator.check_schema(server_schema)
-    except:
-        raise PreconditionFailedException("server_schema", "valid", "invalid")
-
-    client_schema_obj = cast(Validator, OAS30Validator(client_schema))
-    server_schema_obj = cast(Validator, OAS30Validator(server_schema))
-
-    if client_schema.get("example") is None:
-        raise PreconditionFailedException(
-            "client_schema", "to have an example", "missing example"
-        )
-    if (
-        client_schema_example_err := jsonschema.exceptions.best_match(
-            client_schema_obj.iter_errors(client_schema["example"])
-        )
-    ) is not None:
-        raise PreconditionFailedException(
-            "client_schema", "to have a valid example", str(client_schema_example_err)
-        )
-
-    if server_schema.get("example") is None:
-        raise PreconditionFailedException(
-            "server_schema", "to have an example", "missing example"
-        )
-    if (
-        server_schema_example_err := jsonschema.exceptions.best_match(
-            server_schema_obj.iter_errors(server_schema["example"])
-        )
-    ) is not None:
-        raise PreconditionFailedException(
-            "server_schema", "to have a valid example", str(server_schema_example_err)
-        )
+        check_oas_30_schema(server_schema, require_example=True)
+    except Exception as e:
+        raise PreconditionFailedException("server_schema", "valid", f"invalid: {e}")
 
     screens_by_slug: Dict[str, ClientScreen] = dict()
     for idx, flow_screen in enumerate(screens):

@@ -4,11 +4,12 @@ import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from typing import Annotated, Any, List, Optional, Literal, Union
+from typing import Annotated, Any, Dict, List, Optional, Literal, Union
 from lib.client_flows.client_flow_screen import ClientFlowScreen
 from lib.client_flows.helper import (
     check_oas_30_schema,
     deep_extract,
+    extract_schema_default_value,
     iter_flow_screen_required_parameters,
     pretty_path,
     produce_screen_input_parameters,
@@ -207,8 +208,38 @@ async def test_screen(
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
+        discriminators: Dict[tuple, int] = dict()
+        for enum_path, allowed_values in screen.realizer.iter_enum_discriminators():
+            try:
+                value = extract_schema_default_value(
+                    schema=screen.raw_schema,
+                    fixed=args.flow_screen.screen.fixed,
+                    path=enum_path,
+                )
+            except KeyError as e:
+                return Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} could not be determined: {e}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                )
+
+            if value not in allowed_values:
+                return Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} didn't match allowed values: {allowed_values}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                )
+
+            discriminators[tuple(enum_path[:-1])] = allowed_values.index(value)
+
         for path, value in iter_flattened_object(args.flow_screen.screen.fixed):
-            output_schema = _get_output_schema(screen, path, -1)
+            output_schema = _get_output_schema(screen, path, -1, discriminators)
             if output_schema.type == "failure":
                 return output_schema.error_response
 
@@ -239,7 +270,7 @@ async def test_screen(
                 return input_schema.error_response
 
             output_schema = _get_output_schema(
-                screen, output_path, variable_parameter_idx
+                screen, output_path, variable_parameter_idx, discriminators
             )
             if output_schema.type == "failure":
                 return output_schema.error_response
@@ -262,6 +293,36 @@ async def test_screen(
                 )
             except KeyError:
                 pass
+
+        for enum_path, allowed_values in screen.realizer.iter_enum_discriminators():
+            try:
+                value = deep_extract(args.flow_screen.screen.fixed, enum_path)
+            except KeyError:
+                # Not specifying is ok; if it is required, we'll catch it when we go to
+                # check the example. However, they can't specify it via a variable
+                # because that makes the admin area way too complex
+
+                for variable_input in args.flow_screen.screen.variable:
+                    if variable_input.output_path == enum_path:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} must be fixed, not variable",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
+                continue
+
+            if value not in allowed_values:
+                return Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} didn't match allowed values: {allowed_values}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                )
 
         # TODO -> loop through the screens schema itself to make sure it will
         # receive all required parameters from either fixed or variable.
@@ -586,7 +647,10 @@ def _get_input_schema(
 
 
 def _get_output_schema(
-    screen: ClientScreen, path: List[str], variable_parameter_idx: int
+    screen: ClientScreen,
+    path: List[str],
+    variable_parameter_idx: int,
+    discriminators: Dict[tuple, int],
 ) -> FindSchemaResult:
     """Determines what variable is required for the given screen
     at the given path, if any
@@ -596,9 +660,12 @@ def _get_output_schema(
         path (List[str]): The path to the variable in the screens schema to fetch
         variable_parameter_idx (int): The index of the variable parameter in the flow screen,
             for error formatting, or -1 for fixed
+        discriminators (dict[tuple[str, ...], int]): for each path in the screen schema which
+            is an x-enum-discriminator oneOf object, the index of the oneOf object that should
+            be used.
     """
     current = screen.raw_schema
-    made_it_to: List[str] = ["screen"]
+    made_it_to: List[str] = []
     remaining = path.copy()
 
     def error_source():
@@ -609,6 +676,31 @@ def _get_output_schema(
     while remaining:
         current_type = current.get("type")
         if current_type == "object":
+            if "x-enum-discriminator" in current:
+                discriminated_to_index = discriminators.get(tuple(made_it_to))
+                if discriminated_to_index is None:
+                    return FindSchemaNotFound(
+                        type="failure",
+                        error_response=Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"{error_source()} targets {pretty_path(path)}, which is an enum discriminator at {pretty_path(made_it_to)}, but was not discriminated in fixed",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        ),
+                    )
+
+                oneof = current.get("oneOf")
+                assert isinstance(
+                    oneof, list
+                ), f"discriminator without oneof at {pretty_path(made_it_to)}"
+                assert (
+                    0 <= discriminated_to_index < len(oneof)
+                ), f"discriminator out of range at {pretty_path(made_it_to)}"
+                current = oneof[discriminated_to_index]
+                continue
+
             properties = current.get("properties", dict())
             assert isinstance(properties, dict)
 

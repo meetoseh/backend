@@ -9,6 +9,8 @@ from typing import Any, Callable, List, Optional, Set, Tuple, cast
 from error_middleware import handle_warning
 import image_files.auth
 import content_files.auth
+from lib.client_flows.helper import pretty_path
+from resources.patch.not_set import NotSetEnum
 from response_utils import response_to_bytes
 import transcripts.auth
 import journeys.auth
@@ -20,6 +22,7 @@ from courses.lib.get_external_course_from_row import (
     create_standard_external_course_query,
     get_external_course_from_row,
 )
+from dataclasses import dataclass
 
 
 UNSAFE_SCREEN_SCHEMA_TYPES: Set[Tuple[str, str]] = {
@@ -49,6 +52,14 @@ KNOWN_COPY_STRING_FORMATS: Set[str] = {
     "regex",
     "flow_slug",
 }
+
+
+@dataclass(frozen=True)
+class _RealizeState:
+    path: List[str]
+    given: Any
+    schema: dict
+    setter: Callable[[Any], None]
 
 
 class ScreenSchemaRealizer:
@@ -88,6 +99,85 @@ class ScreenSchemaRealizer:
 
                 return (schema_type, schema_format) not in UNSAFE_SCREEN_SCHEMA_TYPES
 
+    def iter_enum_discriminators(self):
+        """Yields (path, values) where path is the path to the discriminator and
+        values is the set of possible values for that discriminator
+
+        For example, if this schema is
+
+        ```json
+        {
+            "type": "object",
+            "x-enum-discriminator": "type",
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["option-a"],
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "required": ["type"],
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "enum": ["option-b"],
+                        }
+                    }
+                }
+            ]
+        }
+        ```
+
+        this will yield `("type", frozenset(("option-a", "option-b")))`
+        """
+        if self.raw_schema.get("type") != "object":
+            return
+
+        stack: List[Tuple[List[str], dict]] = [([], self.raw_schema)]
+        while stack:
+            path, schema = stack.pop()
+
+            discriminator = schema.get("x-enum-discriminator")
+            if discriminator is not None:
+                options_set = set()
+                options_ordered = list()
+                for option in schema.get("oneOf", []):
+                    assert isinstance(option, dict), f"bad oneOf @ {path}"
+                    properties = option.get("properties", dict())
+                    assert isinstance(properties, dict), f"bad properties @ {path}"
+                    prop = properties.get(discriminator)
+                    assert isinstance(prop, dict), f"bad discriminator @ {path}"
+                    enum = prop.get("enum")
+                    assert isinstance(enum, list), f"bad enum @ {path} (not a list)"
+                    assert len(enum) == 1, f"bad enum @ {path} (too many elements)"
+                    option_value = enum[0]
+                    assert isinstance(
+                        option_value, str
+                    ), f"bad value @ {path + ['enum', 0]} (not a string)"
+                    assert (
+                        option_value not in options_set
+                    ), f"duplicate value @ {path + ['enum', 0]}"
+                    options_set.add(option_value)
+                    options_ordered.append(option_value)
+
+                yield (path + [discriminator], options_ordered)
+                # we don't support nesting of discriminators
+                continue
+
+            properties = schema.get("properties", dict())
+            assert isinstance(properties, dict), f"bad properties @ {path}"
+            for key, sub_schema in properties.items():
+                assert isinstance(sub_schema, dict), f"bad sub_schema @ {path}"
+                if sub_schema.get("type") != "object":
+                    continue
+                stack.append((path + [key], sub_schema))
+
     async def convert_validated_to_realized(
         self, itgs: Itgs, /, *, for_user_sub: str, input: Any
     ) -> Any:
@@ -105,147 +195,276 @@ class ScreenSchemaRealizer:
             nonlocal result
             result = v
 
-        stack: List[Tuple[List[str], Any, dict, Callable[[Any], None]]] = [
-            (["$"], input, self.raw_schema, set_result)
+        stack: List[_RealizeState] = [
+            _RealizeState(
+                path=[], given=input, schema=self.raw_schema, setter=set_result
+            )
         ]
         while stack:
-            path, given, schema, setter = stack.pop()
+            state = stack.pop()
 
-            schema_type = schema.get("type")
+            if state.given is NotSetEnum.NOT_SET:
+                assert (
+                    "default" in state.schema
+                ), f"no default @ {pretty_path(state.path)}, despite not set in input"
+                stack.append(
+                    _RealizeState(
+                        path=state.path,
+                        given=state.schema["default"],
+                        schema=state.schema,
+                        setter=state.setter,
+                    )
+                )
+                continue
 
-            if schema_type == "object":
-                fmt = schema.get("format")
-                assert fmt is None, f"unknown object format {fmt} @ {path}"
+            schema_type = state.schema.get("type")
 
-                assert isinstance(given, dict), f"expected dict, got {given} @ {path}"
+            if state.schema.get("nullable", False) is True and state.given is None:
+                state.setter(None)
+                continue
+
+            if schema_type == "object" and "oneOf" in state.schema:
+                discriminator_field = state.schema.get("x-enum-discriminator")
+                assert isinstance(
+                    discriminator_field, str
+                ), f"bad discriminator @ {pretty_path(state.path)}: {discriminator_field=}"
+                assert isinstance(
+                    state.given, dict
+                ), f"expected dict, got {state.given} @ {pretty_path(state.path)}"
+                discriminator_value = state.given.get(discriminator_field)
+                if discriminator_value is None:
+                    top_default = state.schema.get("default")
+                    assert isinstance(
+                        top_default, dict
+                    ), f"bad default @ {pretty_path(state.path)}: {top_default=}"
+                    discriminator_value = top_default.get(discriminator_field)
+                    assert isinstance(
+                        discriminator_value, str
+                    ), f"bad default discriminator @ {pretty_path(state.path)}: {discriminator_value=}"
+                else:
+                    assert isinstance(
+                        discriminator_value, str
+                    ), f"bad discriminator @ {pretty_path(state.path)}: {discriminator_value=}"
+
+                oneof = state.schema["oneOf"]
+                assert isinstance(
+                    oneof, list
+                ), f"bad oneOf @ {pretty_path(state.path)}: {oneof=}"
+                for option in oneof:
+                    assert isinstance(
+                        option, dict
+                    ), f"bad option @ {pretty_path(state.path)}: {option=}"
+                    properties = option.get("properties")
+                    assert isinstance(
+                        properties, dict
+                    ), f"bad properties @ {pretty_path(state.path)}: {properties=}"
+                    discriminator = properties.get(discriminator_field)
+                    assert isinstance(
+                        discriminator, dict
+                    ), f"bad discriminator @ {pretty_path(state.path)}: {discriminator=}"
+                    enum = discriminator.get("enum")
+                    assert isinstance(
+                        enum, list
+                    ), f"bad enum @ {pretty_path(state.path)}: {enum=}"
+                    assert (
+                        len(enum) == 1
+                    ), f"bad enum @ {pretty_path(state.path)}: {enum=}"
+                    option_value = enum[0]
+                    assert isinstance(
+                        option_value, str
+                    ), f"bad option value @ {pretty_path(state.path)}: {option_value=}"
+                    if option_value == discriminator_value:
+                        stack.append(
+                            _RealizeState(
+                                path=state.path,
+                                given=state.given,
+                                schema=option,
+                                setter=state.setter,
+                            )
+                        )
+                        break
+                else:
+                    raise ValueError(
+                        f"bad discriminator value @ {pretty_path(state.path)}: {discriminator_value=}"
+                    )
+            elif schema_type == "object":
+                fmt = state.schema.get("format")
+                assert (
+                    fmt is None
+                ), f"unknown object format {fmt} @ {pretty_path(state.path)}"
+                assert isinstance(
+                    state.given, dict
+                ), f"expected dict, got {state.given} @ {pretty_path(state.path)}"
 
                 val = dict()
-                setter(val)
+                state.setter(val)
 
-                properties = schema.get("properties")
+                properties = state.schema.get("properties")
                 if properties is None:
                     continue
 
                 assert isinstance(
                     properties, dict
-                ), f"expected dict, got {properties} @ {path} properties"
+                ), f"expected dict, got {properties} @ {pretty_path(state.path + ['properties'])}"
 
                 for key, sub_schema in properties.items():
-                    sub_path = path + [key]
-                    sub_given = given.get(key)
-                    if sub_given is None:
-                        continue
-
+                    sub_path = state.path + [key]
+                    sub_given = state.given.get(key, NotSetEnum.NOT_SET)
                     stack.append(
-                        (sub_path, sub_given, sub_schema, partial(val.__setitem__, key))
+                        _RealizeState(
+                            path=sub_path,
+                            given=sub_given,
+                            schema=sub_schema,
+                            setter=partial(val.__setitem__, key),
+                        )
                     )
             elif schema_type == "array":
-                fmt = schema.get("format")
-                assert fmt is None, f"unknown array format {fmt} @ {path}"
+                fmt = state.schema.get("format")
+                assert (
+                    fmt is None
+                ), f"unknown array format {fmt} @ {pretty_path(state.path)}"
 
-                assert isinstance(given, list), f"expected list, got {given} @ {path}"
+                assert isinstance(
+                    state.given, list
+                ), f"expected list, got {state.given} @ {pretty_path(state.path)}"
 
-                val = [None] * len(given)
-                setter(val)
+                val = [None] * len(state.given)
+                state.setter(val)
 
-                items = schema.get("items")
+                items = state.schema.get("items")
                 if items is None:
                     continue
 
                 assert isinstance(
                     items, dict
-                ), f"expected dict, got {items} @ {path} items"
+                ), f"expected dict, got {items} @ {pretty_path(state.path)} items"
 
-                for i, sub_given in enumerate(given):
-                    sub_path = path + [str(i)]
+                for i, sub_given in enumerate(state.given):
+                    sub_path = state.path + [str(i)]
                     stack.append(
-                        (sub_path, sub_given, items, partial(val.__setitem__, i))
+                        _RealizeState(
+                            path=sub_path,
+                            given=sub_given,
+                            schema=items,
+                            setter=partial(val.__setitem__, i),
+                        )
                     )
             elif schema_type == "string":
-                fmt = schema.get("format")
+                fmt = state.schema.get("format")
 
                 if fmt == "image_uid":
-                    assert isinstance(given, str), f"expected str, got {given} @ {path}"
-                    x_thumbhash = schema.get("x-thumbhash", {"width": 1, "height": 1})
+                    assert isinstance(
+                        state.given, str
+                    ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
+                    x_thumbhash = state.schema.get(
+                        "x-thumbhash", {"width": 1, "height": 1}
+                    )
                     assert isinstance(
                         x_thumbhash, dict
-                    ), f"bad x-thumbhash @ {path} for format {fmt}"
+                    ), f"bad x-thumbhash @ {pretty_path(state.path)} for format {fmt}"
                     thumbhash_width = x_thumbhash.get("width")
                     assert isinstance(
                         thumbhash_width, int
-                    ), f"bad x-thumbhash @ {path} for format {fmt}"
+                    ), f"bad x-thumbhash @ {pretty_path(state.path)} for format {fmt}"
                     assert (
                         thumbhash_width > 0
-                    ), f"bad x-thumbhash @ {path} for format {fmt}"
+                    ), f"bad x-thumbhash @ {pretty_path(state.path)} for format {fmt}"
                     thumbhash_height = x_thumbhash.get("height")
                     assert isinstance(
                         thumbhash_height, int
-                    ), f"bad x-thumbhash @ {path} for format {fmt}"
+                    ), f"bad x-thumbhash @ {pretty_path(state.path)} for format {fmt}"
                     assert (
                         thumbhash_height > 0
-                    ), f"bad x-thumbhash @ {path} for format {fmt}"
+                    ), f"bad x-thumbhash @ {pretty_path(state.path)} for format {fmt}"
 
-                    setter(
+                    state.setter(
                         await convert_image_uid(
-                            itgs, given, thumbhash_width, thumbhash_height
+                            itgs, state.given, thumbhash_width, thumbhash_height
                         )
                     )
                 elif fmt == "content_uid":
-                    assert isinstance(given, str), f"expected str, got {given} @ {path}"
-                    setter(await convert_content_uid(itgs, given))
+                    assert isinstance(
+                        state.given, str
+                    ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
+                    state.setter(await convert_content_uid(itgs, state.given))
                 elif fmt == "journey_uid":
-                    assert isinstance(given, str), f"expected str, got {given} @ {path}"
-                    setter(await convert_journey_uid(itgs, given, for_user_sub))
+                    assert isinstance(
+                        state.given, str
+                    ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
+                    state.setter(
+                        await convert_journey_uid(itgs, state.given, for_user_sub)
+                    )
                 elif fmt == "course_uid":
-                    assert isinstance(given, str), f"expected str, got {given} @ {path}"
-                    setter(await convert_course_uid(itgs, given, for_user_sub))
+                    assert isinstance(
+                        state.given, str
+                    ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
+                    state.setter(
+                        await convert_course_uid(itgs, state.given, for_user_sub)
+                    )
                 else:
                     assert (
                         fmt is None or fmt in KNOWN_COPY_STRING_FORMATS
-                    ), f"unknown string format {fmt} @ {path}"
-                    assert isinstance(given, str), f"expected str, got {given} @ {path}"
-                    setter(given)
+                    ), f"unknown string format {fmt} @ {pretty_path(state.path)}"
+                    assert isinstance(
+                        state.given, str
+                    ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
+                    state.setter(state.given)
             elif schema_type == "integer":
-                fmt = schema.get("format")
+                assert isinstance(
+                    state.given, int
+                ), f"expected int, got {state.given} @ {pretty_path(state.path)}"
+
+                fmt = state.schema.get("format")
                 if fmt == "int32":
                     assert (
-                        -(2**31) <= given <= 2**31 - 1
-                    ), f"expected int32, got {given} @ {path}"
+                        -(2**31) <= state.given <= 2**31 - 1
+                    ), f"expected int32, got {state.given} @ {pretty_path(state.path)}"
                 elif fmt == "int64":
                     assert (
-                        -(2**63) <= given <= 2**63 - 1
-                    ), f"expected int64, got {given} @ {path}"
+                        -(2**63) <= state.given <= 2**63 - 1
+                    ), f"expected int64, got {state.given} @ {pretty_path(state.path)}"
                 else:
-                    assert fmt is None, f"unknown integer format {fmt} @ {path}"
+                    assert (
+                        fmt is None
+                    ), f"unknown integer format {fmt} @ {pretty_path(state.path)}"
 
-                assert isinstance(given, int), f"expected int, got {given} @ {path}"
-                setter(given)
+                state.setter(state.given)
             elif schema_type == "number":
-                fmt = schema.get("format")
+                fmt = state.schema.get("format")
                 assert fmt in (
                     "float",
                     "double",
                     None,
-                ), f"unknown number format {fmt} @ {path}"
+                ), f"unknown number format {fmt} @ {pretty_path(state.path)}"
 
                 assert isinstance(
-                    given, (int, float)
-                ), f"expected number, got {given} @ {path}"
-                setter(given)
+                    state.given, (int, float)
+                ), f"expected number, got {state.given} @ {pretty_path(state.path)}"
+                state.setter(state.given)
             elif schema_type == "boolean":
-                fmt = schema.get("format")
-                assert fmt is None, f"unknown boolean format {fmt} @ {path}"
+                fmt = state.schema.get("format")
+                assert (
+                    fmt is None
+                ), f"unknown boolean format {fmt} @ {pretty_path(state.path)}"
 
-                assert isinstance(given, bool), f"expected bool, got {given} @ {path}"
-                setter(given)
+                assert isinstance(
+                    state.given, bool
+                ), f"expected bool, got {state.given} @ {pretty_path(state.path)}"
+                state.setter(state.given)
             elif schema_type == "null":
-                fmt = schema.get("format")
-                assert fmt is None, f"unknown null format {fmt} @ {path}"
+                fmt = state.schema.get("format")
+                assert (
+                    fmt is None
+                ), f"unknown null format {fmt} @ {pretty_path(state.path)}"
 
-                assert given is None, f"expected None, got {given} @ {path}"
-                setter(None)
+                assert (
+                    state.given is None
+                ), f"expected None, got {state.given} @ {pretty_path(state.path)}"
+                state.setter(None)
             else:
-                raise ValueError(f"unknown schema type {schema_type} @ {path}")
+                raise ValueError(
+                    f"unknown schema type {schema_type} @ {pretty_path(state.path)}"
+                )
 
         return result
 

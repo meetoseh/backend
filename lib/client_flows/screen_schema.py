@@ -4,6 +4,7 @@ parameters before realization
 """
 
 from functools import partial
+import gzip
 import json
 from typing import Any, Callable, List, Optional, Set, Tuple, cast
 from error_middleware import handle_warning
@@ -628,7 +629,9 @@ async def try_get_thumbhash_from_playlist_cache(
     if raw_playlist_response is None:
         return None
 
-    playlist_response = PlaylistResponse.model_validate_json(raw_playlist_response)
+    playlist_response = PlaylistResponse.model_validate_json(
+        gzip.decompress(raw_playlist_response)
+    )
 
     target_width_over_height = thumbhash_width / thumbhash_height
     target_height_over_width = thumbhash_height / thumbhash_width

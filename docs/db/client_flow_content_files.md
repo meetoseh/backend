@@ -12,7 +12,7 @@ slug uniquely identifies both any preprocessing and the final targets.
 
 - `id (integer primary key)`: Internal row identifier
 - `uid (text unique not null)`: Primary stable external identifier. Uses the
-  [uid prefix](../uid_prefixes.md) `cfi`
+  [uid prefix](../uid_prefixes.md) `cfcf`
 - `list_slug (text not null)`: The slug of the list that this content belongs to
 - `content_file_id (integer not null)`: The id of the processed content file. Unique
   within the list.

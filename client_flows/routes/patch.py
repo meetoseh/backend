@@ -14,6 +14,7 @@ from typing import (
     List,
     Optional,
     Literal,
+    Union,
     cast,
 )
 from auth import auth_admin
@@ -504,17 +505,46 @@ def _get_flow_screen_param_schema(
 
 
 def _get_param_schema_from_schema(
-    src: str, schema: dict, param: List[str], *, fixed: dict, level: int = 0
+    src: str,
+    schema: dict,
+    param: Union[List[Union[str, int]], List[str], List[int]],
+    *,
+    fixed: dict,
+    level: int = 0,
 ) -> dict:
     current = schema
-    current_fixed: Optional[dict] = fixed
+    current_fixed: Optional[Union[dict, list]] = fixed
     stack = param.copy()
 
     while stack:
         if current_fixed is None:
             next_fixed = None
         else:
-            next_fixed = current_fixed.get(stack[0])
+            if isinstance(stack[0], str):
+                if not isinstance(current_fixed, dict):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (fixed not a dict @ {param[:level]})",
+                    )
+                next_fixed = current_fixed.get(stack[0])
+            elif isinstance(stack[0], int):
+                if not isinstance(current_fixed, list):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (fixed not a list @ {param[:level]})",
+                    )
+                if stack[0] < 0 or stack[0] >= len(current_fixed):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (index out of range @ {param[:level]})",
+                    )
+                next_fixed = current_fixed[stack[0]]
+            else:
+                raise ValueError(f"unexpected stack element type: {type(stack[0])}")
+
             if next_fixed is None:
                 next_fixed = None
             elif isinstance(next_fixed, dict):
@@ -532,19 +562,39 @@ def _get_param_schema_from_schema(
                 f"to reference a valid parameter (at level {level})",
                 f"{param} (not a dict @ {param[:level]})",
             )
+        if (
+            next_fixed is None
+            and len(stack) > 1
+            and current.get("nullable", False) is not False
+        ):
+            raise PreconditionFailedException(
+                src,
+                f"to reference a valid parameter (at level {level})",
+                f"{param} (nullable @ {param[:level]} and not set in fixed)",
+            )
+
+        if current.get("type") == "array":
+            items = current.get("items")
+            if not isinstance(items, dict):
+                raise PreconditionFailedException(
+                    src,
+                    f"to reference a valid parameter (at level {level})",
+                    f"{param} (items not a dict in array @ {param[:level]})",
+                )
+            current = items
+            level += 1
+            current_fixed = next_fixed
+            stack = stack[1:]
+            continue
+
         if current.get("type") != "object":
             raise PreconditionFailedException(
                 src,
                 f"to reference a valid parameter (at level {level})",
                 f"{param} (not an object @ {param[:level]})",
             )
+
         if next_fixed is None and len(stack) > 1:
-            if current.get("nullable", False) is not False:
-                raise PreconditionFailedException(
-                    src,
-                    f"to reference a valid parameter (at level {level})",
-                    f"{param} (nullable @ {param[:level]} and not set in fixed)",
-                )
             required = current.get("required")
             if required is None:
                 raise PreconditionFailedException(

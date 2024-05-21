@@ -15,7 +15,7 @@ from lib.client_flows.helper import (
     produce_screen_input_parameters,
 )
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
-from lib.client_flows.screen_schema import UNSAFE_SCREEN_SCHEMA_TYPES
+from lib.client_flows.screen_schema import UNSAFE_SCREEN_SCHEMA_TYPES, SpecialIndex
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
 from auth import auth_admin
@@ -23,6 +23,7 @@ from openapi_schema_validator import OAS30Validator
 from jsonschema.exceptions import best_match
 from dataclasses import dataclass
 
+from user_safe_error import UserSafeError
 from users.me.screens.lib.standard_parameters import (
     create_standard_parameters,
     get_requested_standard_parameters,
@@ -209,34 +210,45 @@ async def test_screen(
             )
 
         discriminators: Dict[tuple, int] = dict()
-        for enum_path, allowed_values in screen.realizer.iter_enum_discriminators():
-            try:
-                value = extract_schema_default_value(
-                    schema=screen.raw_schema,
-                    fixed=args.flow_screen.screen.fixed,
-                    path=enum_path,
-                )
-            except KeyError as e:
-                return Response(
-                    status_code=409,
-                    content=StandardErrorResponse[ERROR_409_TYPES](
-                        type="screen_input_parameters_wont_match",
-                        message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} could not be determined: {e}",
-                    ).model_dump_json(),
-                    headers={"Content-Type": "application/json; charset=utf-8"},
-                )
+        try:
+            for (
+                enum_path_with_special_indices,
+                allowed_values,
+            ) in screen.realizer.iter_enum_discriminators():
+                for enum_path in fix_special_enum_path_indices(
+                    enum_path_with_special_indices,
+                    screen.raw_schema,
+                    args.flow_screen.screen.fixed,
+                ):
+                    try:
+                        value = extract_schema_default_value(
+                            schema=screen.raw_schema,
+                            fixed=args.flow_screen.screen.fixed,
+                            path=enum_path,
+                        )
+                    except KeyError as e:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} could not be determined: {e}",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
 
-            if value not in allowed_values:
-                return Response(
-                    status_code=409,
-                    content=StandardErrorResponse[ERROR_409_TYPES](
-                        type="screen_input_parameters_wont_match",
-                        message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} didn't match allowed values: {allowed_values}",
-                    ).model_dump_json(),
-                    headers={"Content-Type": "application/json; charset=utf-8"},
-                )
+                    if value not in allowed_values:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} didn't match allowed values: {allowed_values}",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
 
-            discriminators[tuple(enum_path[:-1])] = allowed_values.index(value)
+                    discriminators[tuple(enum_path[:-1])] = allowed_values.index(value)
+        except UserSafeError as e:
+            return e.response
 
         for path, value in iter_flattened_object(args.flow_screen.screen.fixed):
             output_schema = _get_output_schema(screen, path, -1, discriminators)
@@ -294,35 +306,45 @@ async def test_screen(
             except KeyError:
                 pass
 
-        for enum_path, allowed_values in screen.realizer.iter_enum_discriminators():
-            try:
-                value = deep_extract(args.flow_screen.screen.fixed, enum_path)
-            except KeyError:
-                # Not specifying is ok; if it is required, we'll catch it when we go to
-                # check the example. However, they can't specify it via a variable
-                # because that makes the admin area way too complex
+        for (
+            enum_path_with_special_indices,
+            allowed_values,
+        ) in screen.realizer.iter_enum_discriminators():
+            for enum_path in fix_special_enum_path_indices(
+                enum_path_with_special_indices,
+                screen.raw_schema,
+                args.flow_screen.screen.fixed,
+            ):
+                try:
+                    value = deep_extract(args.flow_screen.screen.fixed, enum_path)
+                except KeyError:
+                    # Not specifying is ok; if it is required, we'll catch it when we go to
+                    # check the example. However, they can't specify it via a variable
+                    # because that makes the admin area way too complex
 
-                for variable_input in args.flow_screen.screen.variable:
-                    if variable_input.output_path == enum_path:
-                        return Response(
-                            status_code=409,
-                            content=StandardErrorResponse[ERROR_409_TYPES](
-                                type="screen_input_parameters_wont_match",
-                                message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} must be fixed, not variable",
-                            ).model_dump_json(),
-                            headers={"Content-Type": "application/json; charset=utf-8"},
-                        )
-                continue
+                    for variable_input in args.flow_screen.screen.variable:
+                        if variable_input.output_path == enum_path:
+                            return Response(
+                                status_code=409,
+                                content=StandardErrorResponse[ERROR_409_TYPES](
+                                    type="screen_input_parameters_wont_match",
+                                    message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} must be fixed, not variable",
+                                ).model_dump_json(),
+                                headers={
+                                    "Content-Type": "application/json; charset=utf-8"
+                                },
+                            )
+                    continue
 
-            if value not in allowed_values:
-                return Response(
-                    status_code=409,
-                    content=StandardErrorResponse[ERROR_409_TYPES](
-                        type="screen_input_parameters_wont_match",
-                        message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} didn't match allowed values: {allowed_values}",
-                    ).model_dump_json(),
-                    headers={"Content-Type": "application/json; charset=utf-8"},
-                )
+                if value not in allowed_values:
+                    return Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"enum discriminator at {pretty_path(enum_path)} for screen {screen.slug} didn't match allowed values: {allowed_values}",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    )
 
         # TODO -> loop through the screens schema itself to make sure it will
         # receive all required parameters from either fixed or variable.
@@ -648,7 +670,7 @@ def _get_input_schema(
 
 def _get_output_schema(
     screen: ClientScreen,
-    path: List[str],
+    path: Union[List[Union[int, str]], List[int], List[str]],
     variable_parameter_idx: int,
     discriminators: Dict[tuple, int],
 ) -> FindSchemaResult:
@@ -665,7 +687,7 @@ def _get_output_schema(
             be used.
     """
     current = screen.raw_schema
-    made_it_to: List[str] = []
+    made_it_to: List[Union[str, int]] = []
     remaining = path.copy()
 
     def error_source():
@@ -677,7 +699,8 @@ def _get_output_schema(
         current_type = current.get("type")
         if current_type == "object":
             if "x-enum-discriminator" in current:
-                discriminated_to_index = discriminators.get(tuple(made_it_to))
+                discriminator_key = tuple(made_it_to)
+                discriminated_to_index = discriminators.get(discriminator_key)
                 if discriminated_to_index is None:
                     return FindSchemaNotFound(
                         type="failure",
@@ -685,7 +708,7 @@ def _get_output_schema(
                             status_code=409,
                             content=StandardErrorResponse[ERROR_409_TYPES](
                                 type="screen_input_parameters_wont_match",
-                                message=f"{error_source()} targets {pretty_path(path)}, which is an enum discriminator at {pretty_path(made_it_to)}, but was not discriminated in fixed",
+                                message=f"{error_source()} targets {pretty_path(path)}, which is an enum discriminator at {pretty_path(made_it_to)}, but was not discriminated in fixed\n\n{discriminator_key=}\n{discriminators=}",
                             ).model_dump_json(),
                             headers={"Content-Type": "application/json; charset=utf-8"},
                         ),
@@ -720,6 +743,38 @@ def _get_output_schema(
 
             current = nxt
             made_it_to.append(remaining.pop(0))
+            continue
+        elif current_type == "array":
+            items = current.get("items")
+            if items is None:
+                return FindSchemaNotFound(
+                    type="failure",
+                    error_response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"{error_source()} targets {pretty_path(path)}, which is an array at {pretty_path(made_it_to)}, but without an items schema",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+
+            part = remaining.pop(0)
+            if not isinstance(part, int):
+                return FindSchemaNotFound(
+                    type="failure",
+                    error_response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"{error_source()} targets {pretty_path(path)}, which is an array at {pretty_path(made_it_to)}, but the path part {part} is not an integer",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+
+            current = items
+            made_it_to.append(part)
             continue
 
         return FindSchemaNotFound(
@@ -854,6 +909,220 @@ def _determine_if_appropriate(
         return IsAppropriateSuccess(type="success")
 
     raise ValueError(f"Unsupported usage type: {usage_type}")
+
+
+@dataclass(frozen=True)
+class _SpecialEnumPathStackItem:
+    path_to_here: List[Union[str, int]]
+    path_from_here: List[Union[str, SpecialIndex]]
+    schema: dict
+    value: Any
+
+
+def fix_special_enum_path_indices(
+    enum_path_with_special_indices: List[Union[str, SpecialIndex]],
+    screen_schema: dict,
+    fixed: dict,
+):
+    """Yields new enum paths where the special index "array index" is replaced with one path
+    per actual index in fixed
+    """
+    stack: List[_SpecialEnumPathStackItem] = [
+        _SpecialEnumPathStackItem(
+            path_to_here=[],
+            path_from_here=enum_path_with_special_indices,
+            schema=screen_schema,
+            value=fixed,
+        )
+    ]
+    while stack:
+        item = stack.pop()
+        if len(item.path_from_here) == 1:
+            # the last part is the discriminator field, which will be an object
+            # with no properties set as it uses oneOf instead
+            last_part = item.path_from_here[0]
+            if not isinstance(last_part, str):
+                raise UserSafeError(
+                    message="Expected string in enum path for discriminator",
+                    response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} - we expect the last part is always a string",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+            yield item.path_to_here + [last_part]
+            continue
+        if not item.path_from_here:
+            raise UserSafeError(
+                message="Expected more in enum path",
+                response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"cannot determine enum discriminator for {enum_path_with_special_indices} - we expect the last part is always a string, but got nothing instead",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        part = item.path_from_here[0]
+
+        schema_type = item.schema.get("type")
+
+        if schema_type == "object":
+            if not isinstance(part, str):
+                raise UserSafeError(
+                    message="Expected string in enum path for object",
+                    response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is an object",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+            properties = item.schema.get("properties", {})
+            if part not in properties:
+                raise UserSafeError(
+                    message="Property not found in enum path",
+                    response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is not expected to have a {part} according to schema {item.schema}",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+            if not isinstance(item.value, dict):
+                raise UserSafeError(
+                    message="Expected object in fixed",
+                    response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is an object, but the corresponding value in fixed is a {type(item.value).__name__}, not a dict",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+            if part not in item.value:
+                # we swap to the default value if its not required
+                required = item.schema.get("required", [])
+                if part not in required:
+                    part_schema = properties[part]
+                    if "default" not in part_schema:
+                        raise UserSafeError(
+                            message="Property not found in fixed",
+                            response=Response(
+                                status_code=409,
+                                content=StandardErrorResponse[ERROR_409_TYPES](
+                                    type="screen_input_parameters_wont_match",
+                                    message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is missing {part}, which isnt required but has no default set (schema is bad)",
+                                ).model_dump_json(),
+                                headers={
+                                    "Content-Type": "application/json; charset=utf-8"
+                                },
+                            ),
+                        )
+                    stack.append(
+                        _SpecialEnumPathStackItem(
+                            path_to_here=item.path_to_here + [part],
+                            path_from_here=item.path_from_here[1:],
+                            schema=properties[part],
+                            value=part_schema["default"],
+                        )
+                    )
+                    continue
+
+                raise UserSafeError(
+                    message="Property not found in fixed",
+                    response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} does not have property {part} in fixed",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+
+            stack.append(
+                _SpecialEnumPathStackItem(
+                    path_to_here=item.path_to_here + [part],
+                    path_from_here=item.path_from_here[1:],
+                    schema=properties[part],
+                    value=item.value[part],
+                )
+            )
+            continue
+
+        if schema_type != "array":
+            raise UserSafeError(
+                message="Expected array or object in enum path",
+                response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is a {schema_type}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        if part is not SpecialIndex.ARRAY_INDEX:
+            raise UserSafeError(
+                message="Expected array index in enum path",
+                response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is an array, but the part is not an array index",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        if not isinstance(item.value, list):
+            raise UserSafeError(
+                message="Expected array in fixed",
+                response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is an array, but the corresponding value in fixed is a {type(item.value).__name__}, not a list",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        items = item.schema.get("items")
+        if not isinstance(items, dict):
+            raise UserSafeError(
+                message="Expected items schema in array",
+                response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is an array, but the items schema is not a dict",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        for idx, value in enumerate(item.value):
+            stack.append(
+                _SpecialEnumPathStackItem(
+                    path_to_here=item.path_to_here + [idx],
+                    path_from_here=item.path_from_here[1:],
+                    schema=items,
+                    value=value,
+                )
+            )
 
 
 def iter_flattened_object(o: Any):

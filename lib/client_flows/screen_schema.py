@@ -6,7 +6,7 @@ parameters before realization
 from functools import partial
 import gzip
 import json
-from typing import Any, Callable, List, Optional, Set, Tuple, cast
+from typing import Any, Callable, List, Optional, Set, Tuple, Union, cast
 from error_middleware import handle_warning
 import image_files.auth
 import content_files.auth
@@ -24,6 +24,7 @@ from courses.lib.get_external_course_from_row import (
     get_external_course_from_row,
 )
 from dataclasses import dataclass
+from enum import Enum, auto
 
 
 UNSAFE_SCREEN_SCHEMA_TYPES: Set[Tuple[str, str]] = {
@@ -63,23 +64,42 @@ class _RealizeState:
     setter: Callable[[Any], None]
 
 
+class SpecialIndex(Enum):
+    """Fixed values for working with non-string indices"""
+
+    ARRAY_INDEX = auto()
+    """Means that any valid array index at this part matches"""
+
+
 class ScreenSchemaRealizer:
     def __init__(self, raw_schema: dict) -> None:
         self.raw_schema = raw_schema
         """The raw OpenAPI 3.0.3 schema object"""
 
-    def is_safe(self, path: List[str]) -> Optional[bool]:
+    def is_safe(
+        self, path: Union[List[Union[str, SpecialIndex]], List[str], List[SpecialIndex]]
+    ) -> Optional[bool]:
         """Returns None if there is no parameter at the given path. Otherwise,
         returns True if its a safe format for untrusted input (i.e., not one of the
         extension formats) and False if it is not safe (e.g., it uses it within a
         JWT claim)
         """
-        assert path, "Path must not be empty"
-
         stack = list(path)
         schema = self.raw_schema
 
-        while True:
+        while stack:
+            if schema.get("type") == "array":
+                items = schema.get("items")
+                if items is None or not isinstance(items, dict):
+                    return None
+                key = stack.pop(0)
+                if key is not SpecialIndex.ARRAY_INDEX:
+                    return None
+                schema = items
+                if not isinstance(schema, dict):
+                    return None
+                continue
+
             if schema.get("type") != "object":
                 return None
             properties = schema.get("properties")
@@ -94,11 +114,10 @@ class ScreenSchemaRealizer:
             if not isinstance(schema, dict):
                 return None
 
-            if not stack:
-                schema_type = schema.get("type")
-                schema_format = schema.get("format")
+        schema_type = schema.get("type")
+        schema_format = schema.get("format")
 
-                return (schema_type, schema_format) not in UNSAFE_SCREEN_SCHEMA_TYPES
+        return (schema_type, schema_format) not in UNSAFE_SCREEN_SCHEMA_TYPES
 
     def iter_enum_discriminators(self):
         """Yields (path, values) where path is the path to the discriminator and
@@ -137,10 +156,9 @@ class ScreenSchemaRealizer:
 
         this will yield `("type", frozenset(("option-a", "option-b")))`
         """
-        if self.raw_schema.get("type") != "object":
-            return
-
-        stack: List[Tuple[List[str], dict]] = [([], self.raw_schema)]
+        stack: List[Tuple[List[Union[str, SpecialIndex]], dict]] = [
+            ([], self.raw_schema)
+        ]
         while stack:
             path, schema = stack.pop()
 
@@ -171,12 +189,20 @@ class ScreenSchemaRealizer:
                 # we don't support nesting of discriminators
                 continue
 
+            if schema.get("type") == "array":
+                items = schema.get("items")
+                assert isinstance(items, dict), f"bad items @ {path}"
+                stack.append((path + [SpecialIndex.ARRAY_INDEX], items))
+                continue
+
+            if schema.get("type") != "object":
+                # leaf node
+                continue
+
             properties = schema.get("properties", dict())
             assert isinstance(properties, dict), f"bad properties @ {path}"
             for key, sub_schema in properties.items():
                 assert isinstance(sub_schema, dict), f"bad sub_schema @ {path}"
-                if sub_schema.get("type") != "object":
-                    continue
                 stack.append((path + [key], sub_schema))
 
     async def convert_validated_to_realized(

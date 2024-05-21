@@ -336,7 +336,10 @@ def check_oas_30_schema(
                 (
                     items,
                     path + ["items"],
-                    _State(allow_enum_discriminator=False, no_default=True),
+                    _State(
+                        allow_enum_discriminator=new_state.allow_enum_discriminator,
+                        no_default=True,
+                    ),
                 )
             )
 
@@ -391,14 +394,33 @@ def pretty_path(path: Union[List[Union[str, int]], List[str], List[int]]) -> str
     return "".join(parts)
 
 
-def deep_extract(original: dict, path: List[str]) -> Any:
+def deep_extract(
+    original: Union[dict, list],
+    path: Union[List[Union[str, int]], List[str], List[int]],
+) -> Any:
     src = original
-    for item in path:
-        src = src[item]
+    for idx, item in enumerate(path):
+        if isinstance(item, str):
+            if not isinstance(src, dict):
+                raise KeyError(
+                    f"Expected dict in src at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}, got {src}"
+                )
+            src = src[item]
+        else:
+            if not isinstance(src, list):
+                raise KeyError(
+                    f"Expected list in src at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}, got {src}"
+                )
+            src = src[item]
     return src
 
 
-def extract_schema_default_value(*, schema: dict, fixed: dict, path: List[str]) -> Any:
+def extract_schema_default_value(
+    *,
+    schema: dict,
+    fixed: dict,
+    path: Union[List[Union[str, int]], List[str], List[int]],
+) -> Any:
     """
     Given that you have the given openapi 3.0.3 schema, and you have filled the
     object `fixed`, determines what the effective value is at the given path.
@@ -446,9 +468,41 @@ def extract_schema_default_value(*, schema: dict, fixed: dict, path: List[str]) 
     while idx < len(path):
         item = path[idx]
 
+        if src_schema.get("type") == "array":
+            if not isinstance(item, int):
+                raise KeyError(
+                    f"Expected int in path at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {item}"
+                )
+
+            if not isinstance(src, list):
+                raise KeyError(
+                    f"Expected list in src at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {src}"
+                )
+
+            if item < 0 or item >= len(src):
+                raise KeyError(
+                    f"Expected {item} in range in src at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {src}"
+                )
+
+            if "items" not in src_schema:
+                raise KeyError(
+                    f"Expected items in schema at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
+                )
+
+            src_schema = src_schema["items"]
+            src_schema_path = src_schema_path + ["items"]
+            src = src[item]
+            idx += 1
+            continue
+
         if src_schema.get("type") != "object":
             raise KeyError(
                 f"Expected object in schema at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {src_schema}"
+            )
+
+        if not isinstance(item, str):
+            raise KeyError(
+                f"Expected str in path at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {item}"
             )
 
         if "properties" not in src_schema:
@@ -460,7 +514,7 @@ def extract_schema_default_value(*, schema: dict, fixed: dict, path: List[str]) 
 
                 if discriminator not in src:
                     raise KeyError(
-                        f"Expected {discriminator} in {src} at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}"
+                        f"Expected discriminator {discriminator} in {src} at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}"
                     )
 
                 oneof = src_schema["oneOf"]
@@ -501,7 +555,7 @@ def extract_schema_default_value(*, schema: dict, fixed: dict, path: List[str]) 
 
         if item not in src_schema["properties"]:
             raise KeyError(
-                f"Expected {item} in {src_schema['properties']} at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
+                f"Expected standard property {item} in {src_schema['properties']} at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
             )
 
         src_schema = src_schema["properties"][item]
@@ -526,13 +580,42 @@ def extract_schema_default_value(*, schema: dict, fixed: dict, path: List[str]) 
     while idx < len(path):
         item = path[idx]
 
-        if item not in src:
+        if isinstance(item, int):
+            if not isinstance(src, list):
+                raise KeyError(
+                    f"Expected list in src at {pretty_path(src_path)} to extract {pretty_path(path)}, got {src}"
+                )
+            if item < 0 or item >= len(src):
+                raise KeyError(
+                    f"Expected {item} in range in src at {pretty_path(src_path)} to extract {pretty_path(path)}, got {src}"
+                )
+            src_path = src_path + [item]
+            src = src[item]
+            idx += 1
+            continue
+
+        if not isinstance(item, str):
             raise KeyError(
-                f"Expected {item} in {src} at {pretty_path(src_path)} to extract {pretty_path(path)}"
+                f"Expected item is int or str at {pretty_path(src_path)} to extract {pretty_path(path)}, got {item}"
             )
 
-        src = src[item]
+        if not isinstance(src, dict):
+            raise KeyError(
+                f"Expected dict in src at {pretty_path(src_path)} to extract {pretty_path(path)}, got {src}"
+            )
+
+        if not isinstance(item, str):
+            raise KeyError(
+                f"Expected str in path at {pretty_path(src_path)} to extract {pretty_path(path)}, got {item}"
+            )
+
+        if item not in src:
+            raise KeyError(
+                f"Expected {item} in default value {src} at {pretty_path(src_path)} to extract {pretty_path(path)}"
+            )
+
         src_path = src_path + [item]
+        src = src[item]
         idx += 1
 
     return src

@@ -4,7 +4,7 @@ import io
 import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 import jsonschema.exceptions
 from jsonschema.protocols import Validator
 from typing import (
@@ -36,6 +36,7 @@ from lib.client_flows.flow_cache import purge_client_flow_cache
 from lib.client_flows.helper import (
     check_oas_30_schema,
     iter_flow_screen_required_parameters,
+    pretty_path,
 )
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_schema import UNSAFE_SCREEN_SCHEMA_TYPES
@@ -77,7 +78,15 @@ class ClientFlowPreconditionModel(BaseModel):
 
 
 class ClientFlowPatchModel(BaseModel):
-    slug: str = Field(default_factory=lambda: NotSetEnum.NOT_SET)
+    slug: Annotated[
+        str,
+        StringConstraints(
+            pattern="^[a-z0-9_-]+$",
+            min_length=1,
+            max_length=255,
+            strip_whitespace=True,
+        ),
+    ] = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     name: Optional[str] = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     description: Optional[str] = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     client_schema: dict = Field(default_factory=lambda: NotSetEnum.NOT_SET)
@@ -350,23 +359,18 @@ async def check_flow_screens(
                 )
             screens_by_slug[flow_screen.screen.slug] = screen
 
-        for (
-            input_path,
-            output_path,
-            usage_type,
-            variable_parameter_idx,
-        ) in iter_flow_screen_required_parameters(flow_screen):
+        for req_param in iter_flow_screen_required_parameters(flow_screen):
             produced_schema = _get_flow_screen_param_schema(
-                f"screens[{idx}].screen.variable[{variable_parameter_idx}]",
+                f"screens[{idx}].screen.variable[{req_param.idx}]",
                 client_schema,
                 server_schema,
-                input_path,
+                req_param.input_path,
                 fixed=flow_screen.screen.fixed,
             )
             produced_example = produced_schema.get("example")
             if produced_example is None:
                 raise PreconditionFailedException(
-                    f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                    f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                     "to have an example",
                     "missing an example",
                 )
@@ -375,7 +379,7 @@ async def check_flow_screens(
                 OAS30Validator.check_schema(produced_schema)
             except:
                 raise PreconditionFailedException(
-                    f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                    f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                     "to have a valid schema",
                     "invalid schema",
                 )
@@ -388,61 +392,61 @@ async def check_flow_screens(
                 is not None
             ):
                 raise PreconditionFailedException(
-                    f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                    f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                     "to have a valid example",
                     str(produced_example_err),
                 )
 
             target_schema = _get_param_schema_from_schema(
-                f"screens[{idx}].screen.variable[{variable_parameter_idx}] target for {input_path}",
+                f"screens[{idx}].screen.variable[{req_param.idx}] target for {req_param.input_path}",
                 screen.raw_schema,
-                output_path,
+                req_param.output_path,
                 fixed=flow_screen.screen.fixed,
             )
             target_type = target_schema.get("type")
 
-            if usage_type == "string_formattable":
+            if req_param.usage_type == "string_formattable":
                 produced_type = produced_schema.get("type")
                 if produced_type not in STRING_FORMATTABLE_TYPES:
                     raise PreconditionFailedException(
-                        f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                         "to be a string, number, integer, or boolean",
                         f"a(n) {produced_type}",
                     )
                 if target_type != "string":
                     raise PreconditionFailedException(
-                        f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                         "'string'",
                         f"{target_type!r}",
                     )
 
-                if input_path[0] != "server" and (
+                if req_param.input_path[0] != "server" and (
                     (target_type, target_schema.get("format"))
                     in UNSAFE_SCREEN_SCHEMA_TYPES
                 ):
                     raise PreconditionFailedException(
-                        f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                         "to have a safe target",
                         f"unsafe type/format: {target_type!r}, {target_schema.get('format')!r}",
                     )
-            elif usage_type == "copy":
+            elif req_param.usage_type == "copy":
                 OAS30Validator.check_schema(target_schema)
                 target_schema_obj = cast(Validator, OAS30Validator(target_schema))
                 if target_err := jsonschema.exceptions.best_match(
                     target_schema_obj.iter_errors(produced_example)
                 ):
                     raise PreconditionFailedException(
-                        f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                         f"to have the produced example {produced_example!r} be valid for the target schema {target_schema!r}",
                         str(target_err),
                     )
 
-                if input_path[0] != "server" and (
+                if req_param.input_path[0] != "server" and (
                     (target_type, target_schema.get("format"))
                     in UNSAFE_SCREEN_SCHEMA_TYPES
                 ):
                     raise PreconditionFailedException(
-                        f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                         "to have a safe target",
                         f"unsafe type/format: {target_type!r}, {target_schema.get('format')!r}",
                     )
@@ -452,12 +456,44 @@ async def check_flow_screens(
                     and target_schema.get("nullable", False) is not True
                 ):
                     raise PreconditionFailedException(
-                        f"screens[{idx}].screen.variable[{variable_parameter_idx}] input {input_path}",
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                         "to have a nullable target, given that the input is nullable",
                         "not nullable",
                     )
+            elif req_param.usage_type == "extract":
+                if req_param.input_path[0] != "server":
+                    raise PreconditionFailedException(
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {pretty_path(req_param.input_path)}",
+                        "to reference a server parameter",
+                        "a non-server parameter",
+                    )
+
+                produced_schema = _get_flow_screen_param_schema(
+                    f"screens[{idx}].screen.variable[{req_param.idx}]",
+                    client_schema,
+                    server_schema,
+                    req_param.input_path,
+                    fixed=flow_screen.screen.fixed,
+                )
+                produced_type = produced_schema.get("type")
+                if produced_type != "string":
+                    raise PreconditionFailedException(
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {pretty_path(req_param.input_path)}",
+                        "'string'",
+                        f"{target_type!r}",
+                    )
+
+                produced_format = produced_schema.get("format")
+                if produced_format != "course_uid" and produced_format != "journey_uid":
+                    raise PreconditionFailedException(
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {pretty_path(req_param.input_path)} format",
+                        "'course_uid' or 'journey_uid'",
+                        f"{produced_format!r}",
+                    )
+
+                # could go crazier here but this should be enough to stop basic issues
             else:
-                raise Exception(f"unknown usage type: {usage_type}")
+                raise Exception(f"unknown usage type: {req_param.usage_type}")
 
     return ClientFlowScreensInfo(
         unchanged=[

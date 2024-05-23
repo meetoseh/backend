@@ -1,6 +1,29 @@
-from typing import Any, Generator, List, Literal, Tuple, Union, cast, TYPE_CHECKING
+import json
+from typing import (
+    Any,
+    Dict,
+    Generator,
+    List,
+    Literal,
+    Tuple,
+    Union,
+    cast,
+    TYPE_CHECKING,
+)
+
+from courses.lib.get_external_course_from_row import (
+    ExternalCourseRow,
+    create_standard_external_course_query,
+    get_external_course_from_row,
+)
+from itgs import Itgs
+from journeys.lib.read_one_external import read_one_external
+from lib.client_flows.client_flow_screen import ClientFlowScreenVariableInput
+from lib.client_flows.special_index import SpecialIndex
+from response_utils import response_to_bytes
 
 if TYPE_CHECKING:
+    from lib.client_flows.flow_cache import ClientFlow
     from lib.client_flows.client_flow_screen import ClientFlowScreen
     from lib.client_flows.screen_cache import ClientScreen
 
@@ -10,6 +33,7 @@ from lib.extract_format_parameter_field_name import extract_format_parameter_fie
 from openapi_schema_validator.validators import OAS30Validator
 import jsonschema.exceptions
 from dataclasses import dataclass
+from loguru import logger
 
 
 def check_if_flow_screen_is_safe(
@@ -37,40 +61,194 @@ def check_if_flow_screen_is_safe(
             for part in fmt.parse(variable_parameter.format):
                 if part[1] is not None and not part[1].startswith("server["):
                     return False
+        elif variable_parameter.type == "extract":
+            if variable_parameter.input_path[0] != "server":
+                return False
         else:
             return False
     return True
 
 
+@dataclass(frozen=True)
+class FlowScreenRequiredParameter:
+    input_path: List[str]
+    output_path: List[str]
+    usage_type: Literal["string_formattable", "copy", "extract"]
+    idx: int
+    variable_parameter: ClientFlowScreenVariableInput
+
+
 def iter_flow_screen_required_parameters(
     flow_screen: "ClientFlowScreen",
-) -> Generator[
-    Tuple[List[str], List[str], Literal["string_formattable", "copy"], int], None, None
-]:
+) -> Generator[FlowScreenRequiredParameter, None, None]:
     """Iterates which parameters, if any, are required to trigger a flow
     with the given flow screen. This is used for verifying that a flows
     client_schema and server_schema are sufficient to trigger the flow.
-
-    Yields items like `(["standard", "user", "name"], ["foo"], "string_formattable" or None)`
     """
     fmt = string.Formatter()
     for idx, variable_parameter in enumerate(flow_screen.screen.variable):
         if variable_parameter.type == "copy":
-            yield variable_parameter.input_path, variable_parameter.output_path, "copy", idx
+            yield FlowScreenRequiredParameter(
+                variable_parameter.input_path,
+                variable_parameter.output_path,
+                "copy",
+                idx,
+                variable_parameter,
+            )
         elif variable_parameter.type == "string_format":
             for part in fmt.parse(variable_parameter.format):
                 if part[1] is not None:
-                    yield extract_format_parameter_field_name(
-                        part[1]
-                    ), variable_parameter.output_path, "string_formattable", idx
+                    yield FlowScreenRequiredParameter(
+                        extract_format_parameter_field_name(part[1]),
+                        variable_parameter.output_path,
+                        "string_formattable",
+                        idx,
+                        variable_parameter,
+                    )
+        elif variable_parameter.type == "extract":
+            yield FlowScreenRequiredParameter(
+                variable_parameter.input_path,
+                variable_parameter.output_path,
+                "extract",
+                idx,
+                variable_parameter,
+            )
         else:
             raise ValueError(f"Unknown parameter {variable_parameter}")
 
 
+@dataclass(frozen=True)
+class TransformFlowServerParametersSuccess:
+    type: Literal["success"]
+    result: Any
+
+
+@dataclass
+class TransformFlowServerParametersSkip:
+    type: Literal["skip"]
+
+
+TransformFlowServerParametersResult = Union[
+    TransformFlowServerParametersSuccess,
+    TransformFlowServerParametersSkip,
+]
+
+
+async def transform_flow_server_parameters(
+    itgs: Itgs,
+    /,
+    *,
+    flow: "ClientFlow",
+    flow_screen: "ClientFlowScreen",
+    flow_server_parameters: Any,
+) -> TransformFlowServerParametersResult:
+    """Manages any trigger-time transformations that occur to the server parameters.
+    The result is the provided server parameters if they were not mutated, otherwise
+    a new object with the mutations applied.
+
+    These transformations are:
+    - `extract`: Suppose a flow wants to show a video interstitial containing the series
+      preview video. The flow would receive the series uid in the server parameters,
+      but can't forward that directly to the video interstitial screen which just wants
+      a content_uid.
+
+      To accomplish this, the flow screen can use the variable parameter type `extract`
+      with the input path being `["server", "series"]`, the extraction path being
+      `["uid"]` and the output path being `["video"]`. This will cause that flow
+      screen to be pushed onto the users client queue with the server parameter for
+      the flow transformed from the series uid to the content uid of the video, and
+      the variable input type `extract` is treated like copy at peek time.
+    """
+    result = None
+
+    # we don't currently have a built-in cache for courses, so in case we are repeatedly
+    # extracting from the same course (common), this avoids repeated requests
+    courses_by_uid: Dict[str, dict] = {}
+
+    for variable_parameter in flow_screen.screen.variable:
+        if variable_parameter.type == "extract":
+            if result is None:
+                result = deep_copy(flow_server_parameters)
+
+            assert (
+                variable_parameter.input_path[0] == "server"
+            ), "not an extractable target"
+
+            target_schema, target_value = deep_extract_value_and_subschema(
+                flow.server_schema_raw,
+                flow_server_parameters,
+                variable_parameter.input_path[1:],
+            )
+            target_type = target_schema.get("type")
+            if target_type == "null" or target_value is None:
+                if variable_parameter.skip_if_missing:
+                    return TransformFlowServerParametersSkip(type="skip")
+                deep_set(result, ["__extracted"] + variable_parameter.output_path, None)
+                continue
+
+            assert target_type == "string", "not an extractable target"
+            target_format = target_schema.get("format")
+            if target_format == "course_uid":
+                conn = await itgs.conn()
+                cursor = conn.cursor("none")
+                query, qargs = create_standard_external_course_query(None)
+                response = await cursor.execute(
+                    query + " WHERE courses.uid=?", qargs + [target_value]
+                )
+                if not response.results:
+                    raise ValueError(f"missing course {target_value}")
+
+                course_dumped = courses_by_uid.get(target_value)
+                if course_dumped is None:
+                    course = await get_external_course_from_row(
+                        itgs,
+                        user_sub=None,
+                        row=ExternalCourseRow(*response.results[0]),
+                        skip_jwts=True,
+                        has_entitlement=False,
+                    )
+                    course_dumped = course.model_dump()
+                    courses_by_uid[target_value] = course_dumped
+
+                extracted = deep_extract(
+                    course_dumped, variable_parameter.extracted_path
+                )
+                deep_set(
+                    result, ["__extracted"] + variable_parameter.output_path, extracted
+                )
+                logger.debug(
+                    f"{extracted=} from course uid {target_value} while transforming server parameters at {pretty_path(variable_parameter.input_path)}"
+                )
+            elif target_format == "journey_uid":
+                journey_response = await read_one_external(
+                    itgs, journey_uid=target_value, jwt=""
+                )
+                if journey_response is None:
+                    raise ValueError(f"missing journey {target_value}")
+                journey_bytes = await response_to_bytes(journey_response)
+                journey_dumped = json.loads(journey_bytes)
+                extracted = deep_extract(
+                    journey_dumped, variable_parameter.extracted_path
+                )
+                deep_set(
+                    result, ["__extracted"] + variable_parameter.output_path, extracted
+                )
+                logger.debug(
+                    f"{extracted=} from journey uid {target_value} while transforming server parameters at {pretty_path(variable_parameter.input_path)}"
+                )
+            else:
+                raise ValueError(f"unsupported format for extraction {target_format}")
+
+    return TransformFlowServerParametersSuccess(
+        type="success", result=flow_server_parameters if result is None else result
+    )
+
+
 def produce_screen_input_parameters(
+    *,
     flow_screen: "ClientFlowScreen",
     flow_client_parameters: Any,
-    flow_server_parameters: Any,
+    transformed_flow_server_parameters: Any,
     standard_parameters: Any,
 ) -> Any:
     """Determines the input parameters for the actual client screen based on the client
@@ -80,7 +258,7 @@ def produce_screen_input_parameters(
     result = deep_copy(flow_screen.screen.fixed)
 
     copy_dict = {
-        "server": flow_server_parameters,
+        "server": transformed_flow_server_parameters,
         "client": flow_client_parameters,
         "standard": standard_parameters,
     }
@@ -94,11 +272,17 @@ def produce_screen_input_parameters(
             deep_set(result, variable_parameter.output_path, val)
         elif variable_parameter.type == "string_format":
             formatted = variable_parameter.format.format(
-                server=flow_server_parameters,
+                server=transformed_flow_server_parameters,
                 client=flow_client_parameters,
                 standard=standard_parameters,
             )
             deep_set(result, variable_parameter.output_path, formatted)
+        elif variable_parameter.type == "extract":
+            # At this point the extraction has already occurred, so we can just copy
+            val = deep_extract(
+                copy_dict, ["server", "__extracted"] + variable_parameter.output_path
+            )
+            deep_set(result, variable_parameter.output_path, val)
         else:
             raise ValueError(f"Unsupported: {variable_parameter}")
 
@@ -383,15 +567,328 @@ def check_oas_30_schema(
             )
 
 
-def pretty_path(path: Union[List[Union[str, int]], List[str], List[int]]) -> str:
+def pretty_path(
+    path: Union[
+        List[Union[str, int, SpecialIndex]],
+        List[Union[str, int]],
+        List[Union[str, SpecialIndex]],
+        List[str],
+        List[int],
+        List[SpecialIndex],
+    ]
+) -> str:
     """Converts a path of the form ["server", 0, "name"] to a string like "$.server[0].name"."""
     parts = ["$"]
     for item in path:
-        if isinstance(item, int):
+        if item == SpecialIndex.ARRAY_INDEX:
+            parts.append("[*]")
+        elif isinstance(item, int):
             parts.append(f"[{item}]")
         else:
             parts.append(f".{item}")
     return "".join(parts)
+
+
+def deep_extract_value_and_subschema(
+    schema: dict, value: Any, path: Union[List[Union[str, int]], List[str], List[int]]
+) -> Tuple[dict, Any]:
+    """Extracts the schema and value at the given path from the schema and value
+    given. This works on oseh-extended openapi 3.0.3 schemas, e.g., with
+    x-enum-discriminator used whenever anyOf is used, etc.
+    """
+    idx = 0
+    subschema = schema
+    subvalue = value
+    schema_path_to_here = []
+
+    while True:
+        if idx == len(path):
+            return subschema, subvalue
+
+        assert isinstance(
+            subschema, dict
+        ), f"{subschema=} should be a dict at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+        if subschema.get("nullable", False) is True and subvalue is None:
+            return {"type": "null"}, None
+
+        part_type = subschema.get("type")
+        if part_type == "object":
+            assert isinstance(
+                subvalue, dict
+            ), f"{subvalue=} should be a dict at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+            if "x-enum-discriminator" in subschema:
+                discriminator = subschema["x-enum-discriminator"]
+                assert isinstance(
+                    discriminator, str
+                ), f"string expected at {pretty_path(schema_path_to_here + ['x-enum-discriminator'])} to extract {pretty_path(path)}"
+                assert (
+                    discriminator in subvalue
+                ), f"{discriminator=} not in {subvalue=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+                discrim_value = subvalue[discriminator]
+                assert isinstance(
+                    discrim_value, str
+                ), f"string expected at {pretty_path(schema_path_to_here + ['x-enum-discriminator'])} to extract {pretty_path(path)}"
+
+                one_of = subschema["oneOf"]
+                assert isinstance(
+                    one_of, list
+                ), f"list expected at {pretty_path(schema_path_to_here + ['oneOf'])} to extract {pretty_path(path)}"
+                for one_of_idx, one_of_schema in enumerate(one_of):
+                    assert isinstance(
+                        one_of_schema, dict
+                    ), f"dict expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx])} to extract {pretty_path(path)}"
+                    assert (
+                        one_of_schema.get("type") == "object"
+                    ), f"'object' expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'type'])} to extract {pretty_path(path)}"
+                    one_of_properties = one_of_schema.get("properties", dict())
+                    assert isinstance(
+                        one_of_properties, dict
+                    ), f"dict expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties'])} to extract {pretty_path(path)}"
+                    assert (
+                        discriminator in one_of_properties
+                    ), f"{discriminator=} not in {one_of_properties=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+                    oneof_discrim = one_of_properties[discriminator]
+                    assert isinstance(
+                        oneof_discrim, dict
+                    ), f"dict expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties', discriminator])} to extract {pretty_path(path)}"
+                    assert (
+                        oneof_discrim.get("type") == "string"
+                    ), f"string expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties', discriminator])} to extract {pretty_path(path)}"
+                    oneof_discrim_enum = oneof_discrim.get("enum")
+                    assert isinstance(
+                        oneof_discrim_enum, list
+                    ), f"list expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties', discriminator, 'enum'])} to extract {pretty_path(path)}"
+                    if discrim_value in oneof_discrim_enum:
+                        continue
+
+                    subschema = one_of_schema
+                    schema_path_to_here.extend(["oneOf", one_of_idx])
+                    break
+                else:
+                    assert (
+                        False
+                    ), f"no oneOf schema matched x-enum-discriminator {discriminator!r} {discrim_value=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+                continue
+
+            part = path[idx]
+            assert isinstance(
+                part, str
+            ), f"{part=} should be a string at {pretty_path(path[:idx + 1])} to match object schema at {pretty_path(schema_path_to_here)}"
+            props = subschema.get("properties", dict())
+            assert isinstance(
+                props, dict
+            ), f"{props=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            assert (
+                part in props
+            ), f"{part=} not in {props=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            assert isinstance(
+                subvalue, dict
+            ), f"{subvalue=} should be a dict at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}"
+
+            if part not in subvalue:
+                required = subschema.get("required", list())
+                assert isinstance(
+                    required, list
+                ), f"{required=} should be a list at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+                if part not in required:
+                    return {"type": "null"}, None
+                assert (
+                    False
+                ), f"{part=} not in {subvalue=} at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}, despite required"
+
+            subschema = props[part]
+            schema_path_to_here.extend(["properties", part])
+            subvalue = subvalue[part]
+            idx += 1
+            continue
+
+        if part_type == "array":
+            assert isinstance(
+                subvalue, list
+            ), f"{subvalue=} should be a list at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            part = path[idx]
+            assert isinstance(
+                part, int
+            ), f"{part=} should be an int at {pretty_path(path[:idx + 1])} to match array schema at {pretty_path(schema_path_to_here)}"
+            if part < 0 or part >= len(subvalue):
+                return {"type": "null"}, None
+            assert (
+                "items" in subschema
+            ), f"{subschema=} should have 'items' at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+            subschema = subschema["items"]
+            schema_path_to_here.append("items")
+            subvalue = subvalue[part]
+            idx += 1
+            continue
+
+        if part_type == "null":
+            return {"type": "null"}, None
+
+        assert (
+            False
+        ), f"unexpected schema type {part_type!r} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path[:idx + 1])} for full path {pretty_path(path)}"
+
+
+@dataclass(frozen=True)
+class ExtractFromModelJsonSchemaSuccess:
+    type: Literal["success"]
+    schema: dict
+    schema_path: List[Union[str, int]]
+    """Where `schema` can be found within the original schema via deep_extract."""
+    is_potentially_missing_or_none: bool
+    """True if the schema is potentially missing or None, meaning that it is not required to be present"""
+
+
+@dataclass(frozen=True)
+class ExtractFromModelJsonSchemaFailure:
+    type: Literal["failure"]
+    failed_path: List[Union[str, SpecialIndex]]
+    failure_reason: str
+
+
+ExtractFromModelJsonSchemaResult = Union[
+    ExtractFromModelJsonSchemaSuccess, ExtractFromModelJsonSchemaFailure
+]
+
+
+def extract_from_model_json_schema(
+    result: dict,
+    path: Union[List[Union[str, SpecialIndex]], List[str], List[SpecialIndex]],
+) -> ExtractFromModelJsonSchemaResult:
+    """Extracts the subschema at the given path from the result given as if by a pydantic
+    model_json_schema call, which produces a dict with key `$defs`, within which are
+    a bunch of schemas, and which can reference schemas in the form {"$ref": "#/$defs/SomeSchema"}.
+
+    Nested schemas are forbidden. Remote references are forbidden.
+
+    This uses asserts to handle schemas it doesn't support and a result of failure if the path
+    doesn't match a schema it does support.
+    """
+    defs = result.get("$defs", dict())
+    schema_path_to_here: List[Union[str, int]] = []
+    path_to_here: List[Union[str, SpecialIndex]] = []
+    src = result
+    idx = 0
+    nullable = False
+    while True:
+        assert isinstance(
+            src, dict
+        ), f"{src=} should be a dict at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+        if src.get("nullable", False) is True:
+            nullable = True
+
+        if "allOf" in src:
+            # pydantic uses allOf with one item to switch to a ref, not sure exactly why
+            all_of = src["allOf"]
+            assert isinstance(
+                all_of, list
+            ), f"{all_of=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            assert (
+                len(all_of) == 1
+            ), f"{all_of=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            src = all_of[0]
+            schema_path_to_here.append("allOf")
+            continue
+        if "$ref" in src:
+            ref_path = src["$ref"]
+            assert isinstance(
+                ref_path, str
+            ), f"{ref_path=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            prefix = "#/$defs/"
+            assert ref_path.startswith(
+                prefix
+            ), f"{ref_path=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            ref_name = ref_path[len(prefix) :]
+            assert (
+                ref_name in defs
+            ), f"{ref_name=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            src = defs[ref_name]
+            schema_path_to_here.append(f"->$defs[{ref_path}]")
+            continue
+        if "anyOf" in src:
+            # uses anyOf with one null option for nullable fields
+            any_of = src["anyOf"]
+            assert isinstance(
+                any_of, list
+            ), f"{any_of=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            assert all(
+                isinstance(x, dict) for x in any_of
+            ), f"{any_of=} has non-dict item at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            non_null_schema = [
+                cast(Tuple[int, dict], (idx, x))
+                for idx, x in enumerate(any_of)
+                if x.get("type") != "null"
+            ]
+            assert (
+                len(non_null_schema) == 1
+            ), f"{any_of=} not exactly 1 non-null schema at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            src = non_null_schema[0][1]
+            schema_path_to_here.extend(["anyOf", non_null_schema[0][0]])
+            if len(non_null_schema) < len(any_of):
+                nullable = True
+            continue
+
+        if idx == len(path):
+            return ExtractFromModelJsonSchemaSuccess(
+                type="success",
+                schema=src,
+                schema_path=schema_path_to_here,
+                is_potentially_missing_or_none=nullable,
+            )
+
+        part = path[idx]
+        src_type = src.get("type")
+        if src_type == "object":
+            if not isinstance(part, str):
+                return ExtractFromModelJsonSchemaFailure(
+                    type="failure",
+                    failed_path=path_to_here + [part],
+                    failure_reason=f"expected string part in path since schema type at {pretty_path(schema_path_to_here)} is 'object'",
+                )
+            props = src.get("properties", dict())
+            assert isinstance(
+                props, dict
+            ), f"{props=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            if part not in props:
+                return ExtractFromModelJsonSchemaFailure(
+                    type="failure",
+                    failed_path=path_to_here + [part],
+                    failure_reason=f"expected {part} in properties at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}",
+                )
+            src = props[part]
+            schema_path_to_here.extend(["properties", part])
+            path_to_here.append(part)
+            idx += 1
+            continue
+
+        if src_type == "array":
+            if part != SpecialIndex.ARRAY_INDEX:
+                return ExtractFromModelJsonSchemaFailure(
+                    type="failure",
+                    failed_path=path_to_here + [part],
+                    failure_reason=f"expected array index at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}",
+                )
+            assert (
+                "items" in src
+            ), f"{src=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            src = src["items"]
+            schema_path_to_here.append("items")
+            nullable = True
+            path_to_here.append(SpecialIndex.ARRAY_INDEX)
+            idx += 1
+            continue
+
+        return ExtractFromModelJsonSchemaFailure(
+            type="failure",
+            failed_path=path_to_here + [part],
+            failure_reason=f"expected 'object' or 'array' at {pretty_path(schema_path_to_here)}, got {src_type!r} to extract {pretty_path(path)}",
+        )
 
 
 def deep_extract(
@@ -625,7 +1122,11 @@ def deep_set(original: dict, path: List[str], value: Any) -> None:
     assert path, f"_deep_set empty path on {original}, value {value}, path {path}"
     src = original
     for item in path[:-1]:
-        src = src[item]
+        nxt = src.get(item)
+        if nxt is None:
+            nxt = dict()
+            src[item] = nxt
+        src = nxt
     src[path[-1]] = value
 
 

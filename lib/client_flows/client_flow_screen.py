@@ -30,8 +30,37 @@ class ClientFlowScreenVariableInputCopy(BaseModel):
     )
 
 
+class ClientFlowScreenVariableInputExtract(BaseModel):
+    type: Literal["extract"] = Field(description="Discriminatory union field")
+    input_path: List[str] = Field(
+        description=(
+            "A path to the value to extract. Must start with `server`. The target path "
+            "must match a schema object with type string whose format is either "
+            "`course_uid` or `journey_uid`. That will be converted to an ExternalCourse "
+            "or ExternalJourney, respectively, and then used as the target for the "
+            "extracted_path"
+        ),
+        min_length=2,
+    )
+    extracted_path: List[str] = Field(
+        description="The path within the extracted object to take from", min_length=1
+    )
+    output_path: List[str] = Field(
+        description="Where to store the result", min_length=1
+    )
+    skip_if_missing: bool = Field(
+        False,
+        description=(
+            "If True, we will skip the entire screen at trigger time if the extraction "
+            "path is null in the converted object. If False, we will provide null."
+        ),
+    )
+
+
 ClientFlowScreenVariableInput = Union[
-    ClientFlowScreenVariableInputStringFormat, ClientFlowScreenVariableInputCopy
+    ClientFlowScreenVariableInputStringFormat,
+    ClientFlowScreenVariableInputCopy,
+    ClientFlowScreenVariableInputExtract,
 ]
 
 

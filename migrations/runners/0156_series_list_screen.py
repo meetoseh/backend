@@ -1,0 +1,105 @@
+import json
+import secrets
+from itgs import Itgs
+from lib.client_flows.helper import check_oas_30_schema
+from lib.client_flows.screen_flags import ClientScreenFlag
+from migrations.shared.shared_screen_transition_001 import (
+    SHARED_SCREEN_TRANSITION_SCHEMA_V001,
+)
+
+
+async def up(itgs: Itgs) -> None:
+    schema = {
+        "type": "object",
+        "example": {},
+        "properties": {
+            "tooltip": {
+                "type": "object",
+                "default": None,
+                "nullable": True,
+                "example": {
+                    "header": "Series List Tooltip",
+                    "body": "This is some text you can use to add context for the screen",
+                },
+                "description": "A callout thats shown before the series cards",
+                "required": ["header", "body"],
+                "properties": {
+                    "header": {
+                        "type": "string",
+                        "example": "Series List Tooltip",
+                        "description": "Emphasized bold text at the top of the tooltip; try to keep to one line",
+                    },
+                    "body": {
+                        "type": "string",
+                        "example": "This is some text you can use to add context for the screen",
+                        "description": "De-emphasized text below the header, usually a short paragraph",
+                    },
+                },
+            },
+            "cta": {
+                "type": "object",
+                "default": None,
+                "nullable": True,
+                "example": {"text": "Return Home"},
+                "description": "Adds a call to action sticky to the bottom of the screen",
+                "required": ["text"],
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "example": "Return Home",
+                        "description": "The text to display on the button",
+                    },
+                    "trigger": {
+                        "type": "string",
+                        "format": "flow_slug",
+                        "default": None,
+                        "nullable": True,
+                        "example": "resetme",
+                        "description": "The flow to trigger when the button is pressed",
+                    },
+                },
+            },
+            "entrance": SHARED_SCREEN_TRANSITION_SCHEMA_V001,
+            "exit": SHARED_SCREEN_TRANSITION_SCHEMA_V001,
+            "series_trigger": {
+                "type": "string",
+                "format": "flow_slug",
+                "default": None,
+                "nullable": True,
+                "example": "series_details",
+                "description": (
+                    "The flow to trigger when a series is selected. On success, the flow "
+                    "is ultimately triggered with the server parameter `series` set to the "
+                    "uid of the selected series."
+                ),
+            },
+        },
+    }
+
+    check_oas_30_schema(schema, require_example=True)
+
+    conn = await itgs.conn()
+    cursor = conn.cursor()
+
+    await cursor.execute(
+        """
+INSERT INTO client_screens (
+    uid, slug, name, description, schema, flags
+)
+SELECT
+    ?, ?, ?, ?, ?, ?
+        """,
+        (
+            f"oseh_cs_{secrets.token_urlsafe(16)}",
+            "series_list",
+            "Series List",
+            "Displays the available series and allows the user to select one",
+            json.dumps(schema, sort_keys=True),
+            int(
+                ClientScreenFlag.SHOWS_IN_ADMIN
+                | ClientScreenFlag.SHOWS_ON_ANDROID
+                | ClientScreenFlag.SHOWS_ON_IOS
+                | ClientScreenFlag.SHOWS_ON_BROWSER
+            ),
+        ),
+    )

@@ -14,6 +14,7 @@ from lib.client_flows.client_flow_stats_preparer import ClientFlowStatsPreparer
 from lib.client_flows.client_screen_stats_preparer import ClientScreenStatsPreparer
 from lib.client_flows.flow_cache import ClientFlow, get_client_flow
 from lib.client_flows.flow_flags import get_flow_flag_by_platform
+from lib.client_flows.helper import transform_flow_server_parameters
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_flags import get_screen_flag_by_platform
 from lib.redis_stats_preparer import RedisStatsPreparer
@@ -242,7 +243,6 @@ async def simulate_add_screens(
 
     outer_counter = state.current.outer_counter + 1 if state.current is not None else 1
     flow_client_parameters_serd = json.dumps(flow_client_parameters)
-    flow_server_parameters_serd = json.dumps(flow_server_parameters)
 
     user_client_screens: List[ClientFlowSimulatorUserClientScreen] = []
     queue_prepend: Optional[List[ClientFlowSimulatorScreen]] = (
@@ -257,6 +257,24 @@ async def simulate_add_screens(
                 f"Cannot trigger {flow.slug} ({flow.uid}): screen {flow_screen.screen.slug} not found"
             )
 
+        transformed_flow_server_parameters_result = (
+            await transform_flow_server_parameters(
+                itgs,
+                flow=flow,
+                flow_screen=flow_screen,
+                flow_server_parameters=flow_server_parameters,
+            )
+        )
+        if transformed_flow_server_parameters_result.type == "skip":
+            logger.info(
+                f"Skipping {flow.slug} screen {idx=} (a {flow_screen.screen.slug} screen) - skip while transforming server parameters"
+            )
+            continue
+        transformed_flow_server_parameters = transformed_flow_server_parameters_result.result
+        transformed_flow_server_parameters_serd = json.dumps(
+            transformed_flow_server_parameters
+        )
+
         screen_stats.incr_queued(
             unix_date=state.unix_date, platform=source, slug=screen.slug
         )
@@ -270,13 +288,13 @@ async def simulate_add_screens(
                 client_flow_uid=flow.uid,
                 client_screen_uid=screen.uid,
                 flow_client_parameters=flow_client_parameters_serd,
-                flow_server_parameters=flow_server_parameters_serd,
+                flow_server_parameters=transformed_flow_server_parameters_serd,
                 screen=flow_screen.model_dump_json(),
                 flow_obj=flow,
                 flow_screen_obj=flow_screen,
                 screen_obj=screen,
                 flow_client_parameters_obj=flow_client_parameters,
-                flow_server_parameters_obj=flow_server_parameters,
+                flow_server_parameters_obj=transformed_flow_server_parameters,
             )
         )
 
@@ -289,7 +307,7 @@ async def simulate_add_screens(
             screen=screen,
             outer_counter=outer_counter,
             flow_client_parameters=flow_client_parameters,
-            flow_server_parameters=flow_server_parameters,
+            flow_server_parameters=transformed_flow_server_parameters,
         )
 
         if idx == 0:
@@ -446,7 +464,8 @@ async def simulate_trigger(
             this method will mutate
         flow (ClientFlow): the flow to trigger
         flow_client_parameters (dict): the client parameters to use
-        flow_server_parameters (dict): the server parameters to use
+        flow_server_parameters (dict): the server parameters to use, prior to final
+            transformation
         source (ClientFlowSource): the source of the trigger (for statistics)
         trusted (bool): for statistics only; true if the flow slug was selected by trusted
             server code, false if it was chosen from client input.

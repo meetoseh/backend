@@ -73,6 +73,12 @@ See also: [client flows](../concepts/clients_flows/README.md)
           "type": "copy",
           "input_path": ["string"],
           "output_path": ["string"]
+        },
+        {
+          "type": "extract",
+          "input_path": ["string"],
+          "extracted_path": ["string"],
+          "output_path": ["string"]
         }
       ]
     },
@@ -87,6 +93,22 @@ See also: [client flows](../concepts/clients_flows/README.md)
     string (using curly brackets with dot separators, e.g., `"Hello {user.name}"`)
   - if it's `copy`, then we copy the input parameter at the given input path to the
     body parameter at the output path
+  - if it's `extract`, then the input parameter at the given input path must be a server string
+    with format `course_uid` or `journey_uid`. At trigger time (as opposed to
+    peek time), we will convert that uid into an ExternalCourse or
+    ExternalJourney object, respectively, deep extract from that object using
+    `extracted_path`, then store that under the _server parameter_ `['__extracted'] + output_path`
+    within the `user_client_screens` record.
+
+    When peeking this screen, we treat extract variable parameters like copy
+    parameters, adjusting the input path to match were we stored the extracted
+    value.
+
+    This is primarily used for e.g. extracting the series details video from a
+    course uid for a video interstitial. The extraction step occurs during the
+    trigger, not when the screen is actually peeked, as the flow (which contains
+    the server parameters, which tell us how to extract) is not available when
+    peeking the screen.
 
   When triggering a flow via the standard finish screen endpoint, the output
   path in the substitution cannot match a custom format (i.e., you cannot accept

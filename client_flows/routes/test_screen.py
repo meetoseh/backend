@@ -3,16 +3,24 @@ import secrets
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
+from jsonschema import Validator
 from pydantic import BaseModel, Field
-from typing import Annotated, Any, Dict, List, Optional, Literal, Union
+from typing import Annotated, Any, Dict, List, Optional, Literal, Union, cast
+from courses.models.external_course import ExternalCourse
+from journeys.models.external_journey import ExternalJourney
 from lib.client_flows.client_flow_screen import ClientFlowScreen
+from lib.client_flows.flow_cache import ClientFlow, get_client_flow
+from lib.client_flows.flow_flags import ClientFlowFlag
 from lib.client_flows.helper import (
+    FlowScreenRequiredParameter,
     check_oas_30_schema,
     deep_extract,
+    extract_from_model_json_schema,
     extract_schema_default_value,
     iter_flow_screen_required_parameters,
     pretty_path,
     produce_screen_input_parameters,
+    transform_flow_server_parameters,
 )
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_schema import UNSAFE_SCREEN_SCHEMA_TYPES, SpecialIndex
@@ -76,6 +84,7 @@ ERROR_409_TYPES = Literal[
     "screen_input_parameters_wont_match",
     "screen_input_parameters_redundant",
     "screen_input_parameters_didnt_match",
+    "skip",
 ]
 
 
@@ -127,6 +136,11 @@ could not be triggered with these client and server parameters.
 -   `screen_input_parameters_didnt_match`: When using the provided `client_parameters` and 
     `server_parameters` and the flow screens settings, the resulting screen input parameters
     didn't match the screens schema.
+
+-   `skip`: screen would be skipped due to trigger-time variable inputs, e.g., extract with
+    `skip_if_missing=True`. This isn't necessarily an issue with the screen, but generally 
+    you should be able to come up with parameters that won't result in a skip before saving
+    a screen.
                 """
             ),
         },
@@ -172,9 +186,10 @@ async def test_screen(
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
-        err = best_match(
-            OAS30Validator(args.flow.client_schema).iter_errors(args.client_parameters)
+        client_schema_validator = cast(
+            Validator, OAS30Validator(args.flow.client_schema)
         )
+        err = best_match(client_schema_validator.iter_errors(args.client_parameters))
         if err is not None:
             return Response(
                 status_code=409,
@@ -185,9 +200,10 @@ async def test_screen(
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
-        err = best_match(
-            OAS30Validator(args.flow.server_schema).iter_errors(args.server_parameters)
+        server_schema_validator = cast(
+            Validator, OAS30Validator(args.flow.server_schema)
         )
+        err = best_match(server_schema_validator.iter_errors(args.server_parameters))
         if err is not None:
             return Response(
                 status_code=409,
@@ -266,40 +282,119 @@ async def test_screen(
                     headers={"Content-Type": "application/json; charset=utf-8"},
                 )
 
-        for (
-            input_path,
-            output_path,
-            usage_type,
-            variable_parameter_idx,
-        ) in iter_flow_screen_required_parameters(args.flow_screen):
+            if output_schema.schema.get("type") == "string":
+                output_fmt = output_schema.schema.get("format")
+                if output_fmt == "image_uid":
+                    conn = await itgs.conn()
+                    cursor = conn.cursor()
+                    response = await cursor.execute(
+                        "SELECT 1 FROM image_files WHERE uid=?", (value,)
+                    )
+                    if not response.results:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"fixed parameter {pretty_path(path)} for screen {screen.slug} is a string with format image_uid, but no image with that uid exists",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
+                elif output_fmt == "content_uid":
+                    conn = await itgs.conn()
+                    cursor = conn.cursor()
+                    response = await cursor.execute(
+                        "SELECT 1 FROM content_files WHERE uid=?", (value,)
+                    )
+                    if not response.results:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"fixed parameter {pretty_path(path)} for screen {screen.slug} is a string with format content_uid, but no content with that uid exists",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
+                elif output_fmt == "journey_uid":
+                    conn = await itgs.conn()
+                    cursor = conn.cursor()
+                    response = await cursor.execute(
+                        "SELECT 1 FROM journeys WHERE uid=?", (value,)
+                    )
+                    if not response.results:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"fixed parameter {pretty_path(path)} for screen {screen.slug} is a string with format journey_uid, but no journey with that uid exists",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
+                elif output_fmt == "course_uid":
+                    conn = await itgs.conn()
+                    cursor = conn.cursor()
+                    response = await cursor.execute(
+                        "SELECT 1 FROM courses WHERE uid=?", (value,)
+                    )
+                    if not response.results:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"fixed parameter {pretty_path(path)} for screen {screen.slug} is a string with format course_uid, but no course with that uid exists",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
+                elif output_fmt == "flow_slug":
+                    flow = await get_client_flow(itgs, slug=value)
+                    if flow is None:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"fixed parameter {pretty_path(path)} for screen {screen.slug} is a string with format flow_slug, but no flow with that slug ({value}) exists",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
+
+                    if value not in args.flow_screen.allowed_triggers:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"fixed parameter {pretty_path(path)} for screen {screen.slug} is a string with format flow_slug, but that flow ({value}) is not allowed to be triggered from this screen",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
+
+        for req_param in iter_flow_screen_required_parameters(args.flow_screen):
             input_schema = _get_input_schema(
                 args.flow.client_schema,
                 args.flow.server_schema,
-                input_path,
-                variable_parameter_idx,
+                req_param.input_path,
+                req_param.idx,
             )
             if input_schema.type == "failure":
                 return input_schema.error_response
 
             output_schema = _get_output_schema(
-                screen, output_path, variable_parameter_idx, discriminators
+                screen, req_param.output_path, req_param.idx, discriminators
             )
             if output_schema.type == "failure":
                 return output_schema.error_response
 
             match_result = _determine_if_appropriate(
-                input_schema, output_schema, variable_parameter_idx, usage_type
+                input_schema, output_schema, req_param
             )
             if match_result.type == "failure":
                 return match_result.error_response
 
             try:
-                deep_extract(args.flow_screen.screen.fixed, output_path)
+                deep_extract(args.flow_screen.screen.fixed, req_param.output_path)
                 return Response(
                     status_code=409,
                     content=StandardErrorResponse[ERROR_409_TYPES](
                         type="screen_input_parameters_redundant",
-                        message=f"variable[{variable_parameter_idx}] overwrites fixed value at {pretty_path(output_path)}: remove one, as these are redundant",
+                        message=f"variable[{req_param.idx}] overwrites fixed value at {pretty_path(req_param.output_path)}: remove one, as these are redundant",
                     ).model_dump_json(),
                     headers={"Content-Type": "application/json; charset=utf-8"},
                 )
@@ -360,11 +455,39 @@ async def test_screen(
             now=time.time(),
         )
 
+        transformed_server_parameters_result = await transform_flow_server_parameters(
+            itgs,
+            flow=ClientFlow(
+                uid="oseh_cf_test",
+                slug="__test__",
+                client_schema=client_schema_validator,
+                client_schema_raw=args.flow.client_schema,
+                server_schema=server_schema_validator,
+                server_schema_raw=args.flow.server_schema,
+                replaces=False,
+                screens=[args.flow_screen],
+                flags=ClientFlowFlag.ANDROID_TRIGGERABLE
+                | ClientFlowFlag.IOS_TRIGGERABLE
+                | ClientFlowFlag.BROWSER_TRIGGERABLE,
+            ),
+            flow_screen=args.flow_screen,
+            flow_server_parameters=args.server_parameters,
+        )
+
+        if transformed_server_parameters_result.type == "skip":
+            return Response(
+                status_code=409,
+                content=StandardErrorResponse[ERROR_409_TYPES](
+                    type="skip",
+                    message="sc",
+                ).model_dump_json(),
+            )
+
         screen_input_parameters = produce_screen_input_parameters(
-            args.flow_screen,
-            args.client_parameters,
-            args.server_parameters,
-            standard_parameters,
+            flow_screen=args.flow_screen,
+            flow_client_parameters=args.client_parameters,
+            transformed_flow_server_parameters=transformed_server_parameters_result.result,
+            standard_parameters=standard_parameters,
         )
 
         err = best_match(screen.schema.iter_errors(screen_input_parameters))
@@ -830,8 +953,7 @@ class IsAppropriateFailure:
 def _determine_if_appropriate(
     input_schema: FindSchemaSuccess,
     output_schema: FindSchemaSuccess,
-    variable_parameter_idx: int,
-    usage_type: Literal["copy", "string_formattable"],
+    req_param: FlowScreenRequiredParameter,
 ):
     """Determines if its appropriate to take an object described by the input_schema
     and put it into the output_schema.
@@ -839,9 +961,7 @@ def _determine_if_appropriate(
     Args:
         input_schema (FindSchemaSuccess): The schema of the input
         output_schema (FindSchemaSuccess): The schema of the output
-        variable_parameter_idx (int): The index of the variable parameter in the flow screen,
-            for error formatting
-        usage_type (Literal["copy", "string_formattable"]): The type of usage for the variable parameter
+        req_param (FlowScreenRequiredParameter): The required parameter to check
     """
     if not input_schema.safe and not output_schema.safe:
         return IsAppropriateFailure(
@@ -850,13 +970,13 @@ def _determine_if_appropriate(
                 status_code=409,
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="screen_is_unsafe",
-                    message=f"variable[{variable_parameter_idx}] uses an unsafe input, but the target requires a safe input",
+                    message=f"variable[{req_param.idx}] uses an unsafe input, but the target requires a safe input",
                 ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             ),
         )
 
-    if usage_type == "string_formattable":
+    if req_param.usage_type == "string_formattable":
         output_type = output_schema.schema.get("type")
         if output_type != "string":
             return IsAppropriateFailure(
@@ -865,14 +985,14 @@ def _determine_if_appropriate(
                     status_code=409,
                     content=StandardErrorResponse[ERROR_409_TYPES](
                         type="screen_input_parameters_wont_match",
-                        message=f"variable[{variable_parameter_idx}] produces a string, but the target is a {output_type}",
+                        message=f"variable[{req_param.idx}] produces a string, but the target is a {output_type}",
                     ).model_dump_json(),
                     headers={"Content-Type": "application/json; charset=utf-8"},
                 ),
             )
         return IsAppropriateSuccess(type="success")
 
-    if usage_type == "copy":
+    if req_param.usage_type == "copy":
         if (
             input_schema.schema.get("nullable", False) is True
             and output_schema.schema.get("nullable", False) is not True
@@ -883,7 +1003,7 @@ def _determine_if_appropriate(
                     status_code=409,
                     content=StandardErrorResponse[ERROR_409_TYPES](
                         type="screen_input_parameters_wont_match",
-                        message=f"variable[{variable_parameter_idx}] copies to target, but the input is nullable and the target is not",
+                        message=f"variable[{req_param.idx}] copies to target, but the input is nullable and the target is not",
                     ).model_dump_json(),
                     headers={"Content-Type": "application/json; charset=utf-8"},
                 ),
@@ -900,7 +1020,7 @@ def _determine_if_appropriate(
                     status_code=409,
                     content=StandardErrorResponse[ERROR_409_TYPES](
                         type="screen_input_parameters_wont_match",
-                        message=f"variable[{variable_parameter_idx}] copies to target, but the example of the input doesnt match the output schema: {err}",
+                        message=f"variable[{req_param.idx}] copies to target, but the example of the input doesnt match the output schema: {err}",
                     ).model_dump_json(),
                     headers={"Content-Type": "application/json; charset=utf-8"},
                 ),
@@ -908,7 +1028,103 @@ def _determine_if_appropriate(
 
         return IsAppropriateSuccess(type="success")
 
-    raise ValueError(f"Unsupported usage type: {usage_type}")
+    if req_param.usage_type == "extract":
+        if not input_schema.safe:
+            return IsAppropriateFailure(
+                type="failure",
+                error_response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_is_unsafe",
+                        message=f"variable[{req_param.idx}] extracts from an unsafe input {pretty_path(req_param.input_path)}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        if input_schema.schema.get("type") != "string":
+            return IsAppropriateFailure(
+                type="failure",
+                error_response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"variable[{req_param.idx}] extracts from non-extractable input {pretty_path(req_param.input_path)}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        input_format = input_schema.schema.get("format")
+        if input_format == "course_uid":
+            extracting_schema = ExternalCourse.model_json_schema()
+        elif input_format == "journey_uid":
+            extracting_schema = ExternalJourney.model_json_schema()
+        else:
+            return IsAppropriateFailure(
+                type="failure",
+                error_response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"variable[{req_param.idx}] extracts from non-extractable input {pretty_path(req_param.input_path)}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        var_param = req_param.variable_parameter
+        assert var_param.type == "extract"
+        extract_target = extract_from_model_json_schema(
+            extracting_schema, var_param.extracted_path
+        )
+        if extract_target.type != "success":
+            return IsAppropriateFailure(
+                type="failure",
+                error_response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"variable[{req_param.idx}] extracts from {pretty_path(req_param.input_path)}, but the extraction path {pretty_path(var_param.extracted_path)} is not valid:\n\n${extract_target.failure_reason}\n@{extract_target.failed_path}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        # we don't usually get examples, so this is the best we can check
+        if extract_target.schema.get("type") != output_schema.schema.get("type"):
+            return IsAppropriateFailure(
+                type="failure",
+                error_response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"variable[{req_param.idx}] extracts from {pretty_path(req_param.input_path)}, but the extraction path {pretty_path(var_param.extracted_path)} produces a {extract_target.schema.get('type')!r}, not a {output_schema.schema.get('type')!r}",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        if (
+            extract_target.is_potentially_missing_or_none
+            and output_schema.schema.get("nullable", False) is not True
+            and not var_param.skip_if_missing
+        ):
+            return IsAppropriateFailure(
+                type="failure",
+                error_response=Response(
+                    status_code=409,
+                    content=StandardErrorResponse[ERROR_409_TYPES](
+                        type="screen_input_parameters_wont_match",
+                        message=f"variable[{req_param.idx}] extracts from {pretty_path(req_param.input_path)}, but the extraction path {pretty_path(var_param.extracted_path)} is nullable and the target is not",
+                    ).model_dump_json(),
+                    headers={"Content-Type": "application/json; charset=utf-8"},
+                ),
+            )
+
+        return IsAppropriateSuccess(type="success")
+
+    raise ValueError(f"Unsupported usage type: {req_param.usage_type}")
 
 
 @dataclass(frozen=True)

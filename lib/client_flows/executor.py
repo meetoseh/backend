@@ -5,6 +5,7 @@ output back to the database. Also contains helpers for performing entire operati
 
 import json
 import secrets
+from types import NoneType
 from typing import List, Literal, Optional, Tuple, Union, cast
 from error_middleware import handle_warning
 from itgs import Itgs
@@ -24,6 +25,7 @@ from lib.client_flows.simulator import (
 import io
 import time
 from dataclasses import dataclass
+from loguru import logger
 
 from visitors.lib.get_or_create_visitor import VisitorSource
 
@@ -882,7 +884,7 @@ async def execute_pop(
     user_sub: str,
     platform: VisitorSource,
     expected_front_uid: str,
-    trigger: Optional[UntrustedTrigger],
+    trigger: Union[UntrustedTrigger, TrustedTrigger, NoneType],
 ) -> ClientScreenQueuePeekInfo:
     """Pops the front of the users queue, executes the given trigger, and then peeks
     the front of the queue.
@@ -895,10 +897,11 @@ async def execute_pop(
         user_sub (str): the user to pop the front of their client screen queue
         platform (VisitorSource): the platform the user is viewing the client screen queue with
         expected_front_uid (str): the uid of the screen we expect to be at the front of the queue
-        trigger (Optional[PopClientScreenRequestedTrigger]): the trigger to execute after popping.
+        trigger (UntrustedTrigger, TrustedTrigger, None): the trigger to execute after popping.
             This trigger will only be executed if it's in the allowed list for the users current
             screen, it exists, its allowed to be triggered by the given platform, the parameters
-            match, etc.
+            match, etc. Note that providing a trusted trigger allows specifying server parameters
+            but does not otherwise change the behavior of the trigger.
 
     Returns:
         ClientScreenQueuePeekInfo: the information required for the client to display the front
@@ -952,17 +955,44 @@ async def execute_pop(
                     slug=prepared_pop.state.original.screen.slug,
                 )
                 if trigger is not None:
-                    await fetch_and_simulate_trigger(
-                        itgs,
-                        client_info=client_info,
-                        state=prepared_pop.state,
-                        flow_slug=trigger.flow_slug,
-                        flow_client_parameters=trigger.client_parameters,
-                        flow_server_parameters={},
-                        source=platform,
-                        trusted=False,
-                        is_pop_trigger=True,
-                    )
+                    if (
+                        trigger.flow_slug != "skip"
+                        and trigger.flow_slug
+                        not in prepared_pop.state.original.flow_screen.allowed_triggers
+                    ):
+                        logger.warning(
+                            f"{user_sub} attempted to trigger {trigger.flow_slug} on {platform} when popping "
+                            f"the screen {prepared_pop.state.original.screen.slug}, but we only expected "
+                            f"triggers: {prepared_pop.state.original.flow_screen.allowed_triggers}. Replacing "
+                            "with forbidden."
+                        )
+                        await fetch_and_simulate_trigger(
+                            itgs,
+                            client_info=client_info,
+                            state=prepared_pop.state,
+                            flow_slug="forbidden",
+                            flow_client_parameters={},
+                            flow_server_parameters={},
+                            source="server",
+                            trusted=True,
+                            is_pop_trigger=False,
+                        )
+                    else:
+                        await fetch_and_simulate_trigger(
+                            itgs,
+                            client_info=client_info,
+                            state=prepared_pop.state,
+                            flow_slug=trigger.flow_slug,
+                            flow_client_parameters=trigger.client_parameters,
+                            flow_server_parameters=(
+                                {}
+                                if not isinstance(trigger, TrustedTrigger)
+                                else trigger.server_parameters
+                            ),
+                            source=platform,
+                            trusted=False,
+                            is_pop_trigger=True,
+                        )
 
             await simulate_until_stable(
                 itgs,

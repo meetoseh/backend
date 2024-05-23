@@ -11,6 +11,7 @@ from error_middleware import handle_warning
 import image_files.auth
 import content_files.auth
 from lib.client_flows.helper import pretty_path
+from lib.client_flows.special_index import SpecialIndex
 from resources.patch.not_set import NotSetEnum
 from response_utils import response_to_bytes
 import transcripts.auth
@@ -24,7 +25,6 @@ from courses.lib.get_external_course_from_row import (
     get_external_course_from_row,
 )
 from dataclasses import dataclass
-from enum import Enum, auto
 
 
 UNSAFE_SCREEN_SCHEMA_TYPES: Set[Tuple[str, str]] = {
@@ -62,13 +62,6 @@ class _RealizeState:
     given: Any
     schema: dict
     setter: Callable[[Any], None]
-
-
-class SpecialIndex(Enum):
-    """Fixed values for working with non-string indices"""
-
-    ARRAY_INDEX = auto()
-    """Means that any valid array index at this part matches"""
 
 
 class ScreenSchemaRealizer:
@@ -852,7 +845,7 @@ async def convert_course_uid(itgs: Itgs, course_uid: str, user_sub: str) -> Any:
 
     query, qargs = create_standard_external_course_query(user_sub)
     response = await cursor.execute(
-        query + " WHERE uid=?",
+        query + " WHERE courses.uid=?",
         qargs + [course_uid],
     )
     if not response.results:

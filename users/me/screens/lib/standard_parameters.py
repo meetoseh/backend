@@ -39,6 +39,8 @@ def get_requested_standard_parameters(
                     continue
 
                 yield from _all_parts(input_path[1:])
+        elif param.type == "extract":
+            ...  # never uses standard parameters
         else:
             raise ValueError(f"Unknown parameter {param}")
 

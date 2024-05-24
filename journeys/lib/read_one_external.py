@@ -286,10 +286,12 @@ def convert_to_cacheable(journey: ExternalJourney, f: io.BytesIO) -> None:
     f.write(json.dumps(journey.description.text).encode("utf-8"))
     f.write(b'},"duration_seconds":')
     f.write(str(journey.duration_seconds).encode("ascii"))
+    f.write(b',"interactive_prompt_uid":"')
+    f.write(journey.interactive_prompt_uid.encode("ascii"))
     if journey.sample is None:
-        f.write(b',"sample":null')
+        f.write(b'","sample":null')
     else:
-        f.write(b',"sample":{"uid":"')
+        f.write(b'","sample":{"uid":"')
         f.write(journey.sample.uid.encode("ascii"))
         f.write(b'","jwt":"')
         finish_mark()
@@ -373,7 +375,8 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
             blurred_image_files.uid,
             darkened_image_files.uid,
             samples.uid,
-            transcripts.uid
+            transcripts.uid,
+            interactive_prompts.uid
         FROM journeys
         JOIN image_files ON image_files.id = journeys.background_image_file_id
         JOIN image_files AS blurred_image_files ON blurred_image_files.id = journeys.blurred_background_image_file_id
@@ -381,6 +384,7 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         JOIN content_files ON content_files.id = journeys.audio_content_file_id
         JOIN journey_subcategories ON journey_subcategories.id = journeys.journey_subcategory_id
         JOIN instructors ON instructors.id = journeys.instructor_id
+        JOIN interactive_prompts ON interactive_prompts.id = journeys.interactive_prompt_id
         LEFT OUTER JOIN content_files AS samples ON samples.id = journeys.sample_content_file_id
         LEFT OUTER JOIN transcripts ON transcripts.id = (
             SELECT content_file_transcripts.transcript_id 
@@ -414,6 +418,7 @@ async def read_from_db(itgs: Itgs, journey_uid: str) -> Optional[ExternalJourney
         darkened_background_image=ImageFileRef(uid=row[8], jwt=""),
         sample=ContentFileRef(uid=row[9], jwt="") if row[9] is not None else None,
         transcript=TranscriptRef(uid=row[10], jwt="") if row[10] is not None else None,
+        interactive_prompt_uid=row[11],
     )
 
 

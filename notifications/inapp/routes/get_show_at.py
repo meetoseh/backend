@@ -81,6 +81,16 @@ async def get_inapp_notification_show_at(
         if auth_result.result is None:
             return auth_result.error_response
 
+        if args.inapp_notification_uid == "oseh_ian_UWqxuftHMXtUnzn9kxnTOA":
+            # hide upgrade screen for promotion 05/26/2024
+            return Response(
+                content=GetInappNotificationShowAtResponse(
+                    show_now=False, next_show_at=None
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=200,
+            )
+
         conn = await itgs.conn()
         cursor = conn.cursor("none")
 

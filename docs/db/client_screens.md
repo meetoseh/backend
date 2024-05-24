@@ -94,6 +94,9 @@ See also: [client flows](../concepts/client_flows/README.md)
   - `course_uid`: the input parameter must be a string, the output parameter is an
     ExternalCourse. No extension properties.
 
+  - `interactive_prompt_uid`: the input parameter must be a string, the output parameter
+    is an ExternalInteractivePrompt. No extension properties.
+
   - `flow_slug`: does not need to be a trusted input. The output parameter is copied
     from the input parameter. Used as a hint to the admin area that this is going to be
     used for the pop trigger on the screen.

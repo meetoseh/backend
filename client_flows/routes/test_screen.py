@@ -344,6 +344,21 @@ async def test_screen(
                             ).model_dump_json(),
                             headers={"Content-Type": "application/json; charset=utf-8"},
                         )
+                elif output_fmt == "interactive_prompt_uid":
+                    conn = await itgs.conn()
+                    cursor = conn.cursor()
+                    response = await cursor.execute(
+                        "SELECT 1 FROM interactive_prompts WHERE uid=?", (value,)
+                    )
+                    if not response.results:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"fixed parameter {pretty_path(path)} for screen {screen.slug} is a string with format interactive_prompt_uid, but no interactive prompt with that uid exists",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
                 elif output_fmt == "flow_slug":
                     flow = await get_client_flow(itgs, slug=value)
                     if flow is None:
@@ -373,6 +388,10 @@ async def test_screen(
                 req_param.input_path,
                 req_param.idx,
                 allow_auto_extract=req_param.usage_type == "string_formattable",
+                allow_missing=(
+                    req_param.variable_parameter.type == "extract"
+                    and req_param.variable_parameter.skip_if_missing
+                ),
             )
             if input_schema.type == "failure":
                 return input_schema.error_response
@@ -480,7 +499,7 @@ async def test_screen(
                 status_code=409,
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="skip",
-                    message="sc",
+                    message="screen would be skipped at trigger time; test with different parameters",
                 ).model_dump_json(),
             )
 
@@ -600,6 +619,7 @@ def _get_input_schema(
     input_path: List[str],
     variable_parameter_idx: int,
     allow_auto_extract: bool,
+    allow_missing: bool,
 ) -> FindSchemaResult:
     """Determines what type of variable is returned at the given path, as an
     openapi 3.0.3 schema object with an example. Assumes we've already
@@ -614,6 +634,10 @@ def _get_input_schema(
         allow_auto_extract (bool): If automatic extraction is allowed for this variable,
             i.e., converting course_uid to the corresponding course as an object. Typically,
             this is only true for string format (for convenience)
+        allow_missing (bool): If true, we will not verify that the input_path will be extractable
+            from the target, only that if it can be extracted it will match the returned schema.
+            For example, for {"foo": {"bar": null}}, $.foo.bar is extractable but null, however
+            for {} $.foo.bar is not extractable
     """
     if not input_path:
         return FindSchemaNotFound(
@@ -737,7 +761,7 @@ def _get_input_schema(
                 continue
 
         nullable = current.get("nullable", False)
-        if nullable is not False:
+        if nullable is not False and not allow_missing:
             if len(remaining) > 1:
                 return FindSchemaNotFound(
                     type="failure",
@@ -795,7 +819,7 @@ def _get_input_schema(
             required = current.get("required", [])
 
             assert isinstance(required, list)
-            if remaining[0] not in required:
+            if remaining[0] not in required and not allow_missing:
                 return FindSchemaNotFound(
                     type="failure",
                     error_response=Response(

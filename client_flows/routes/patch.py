@@ -483,7 +483,7 @@ async def check_flow_screens(
                     )
 
                 produced_format = produced_schema.get("format")
-                if produced_format != "course_uid" and produced_format != "journey_uid":
+                if produced_format not in ("course_uid", "journey_uid"):
                     raise PreconditionFailedException(
                         f"screens[{idx}].screen.variable[{req_param.idx}] input {pretty_path(req_param.input_path)} format",
                         "'course_uid' or 'journey_uid'",

@@ -37,6 +37,15 @@ class ExternalJourney(BaseModel):
 
     jwt: str = Field(description="The JWT which provides access to the journey")
 
+    interactive_prompt_uid: str = Field(
+        description=(
+            "The UID of the interactive prompt associated with this journey. This "
+            "is not often directly useful for the client, but it can be used to improve "
+            "caching and is very helpful for client flow triggers as an extraction "
+            "target"
+        )
+    )
+
     duration_seconds: float = Field(
         description="The duration of the journey, in seconds"
     )

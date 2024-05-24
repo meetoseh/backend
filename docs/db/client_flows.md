@@ -96,12 +96,12 @@ See also: [client flows](../concepts/clients_flows/README.md)
     and the extraction occurs at trigger time (see `extract`)
   - if it's `copy`, then we copy the input parameter at the given input path to the
     body parameter at the output path
-  - if it's `extract`, then the input parameter at the given input path must be a server string
-    with format `course_uid` or `journey_uid`. At trigger time (as opposed to
-    peek time), we will convert that uid into an ExternalCourse or
-    ExternalJourney object, respectively, deep extract from that object using
-    `extracted_path`, then store that under the _server parameter_ `['__extracted'] + output_path`
-    within the `user_client_screens` record.
+  - if it's `extract`, then the input parameter at the given input path must be
+    a server string with a custom format specified in `client_screens` (e.g.,
+    `journey_uid`). At trigger time (as opposed to peek time), we will convert
+    that uid into the corresponding object, deep extract from that object using
+    `extracted_path`, then store that under the _server parameter_
+    `['__extracted'] + output_path` within the `user_client_screens` record.
 
     When peeking this screen, we treat extract variable parameters like copy
     parameters, adjusting the input path to match were we stored the extracted

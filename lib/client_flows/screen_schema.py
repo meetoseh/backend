@@ -6,6 +6,7 @@ parameters before realization
 from functools import partial
 import gzip
 import json
+import secrets
 from typing import Any, Callable, List, Optional, Set, Tuple, Union, cast
 from error_middleware import handle_warning
 import image_files.auth
@@ -16,6 +17,7 @@ from resources.patch.not_set import NotSetEnum
 from response_utils import response_to_bytes
 import transcripts.auth
 import journeys.auth
+import interactive_prompts.auth
 from image_files.routes.playlist import PlaylistResponse
 from itgs import Itgs
 import journeys.lib.read_one_external
@@ -24,6 +26,7 @@ from courses.lib.get_external_course_from_row import (
     create_standard_external_course_query,
     get_external_course_from_row,
 )
+import interactive_prompts.lib.read_one_external
 from dataclasses import dataclass
 
 
@@ -32,6 +35,7 @@ UNSAFE_SCREEN_SCHEMA_TYPES: Set[Tuple[str, str]] = {
     ("string", "content_uid"),
     ("string", "journey_uid"),
     ("string", "course_uid"),
+    ("string", "interactive_prompt_uid"),
 }
 KNOWN_COPY_STRING_FORMATS: Set[str] = {
     "date",
@@ -420,6 +424,15 @@ class ScreenSchemaRealizer:
                     ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
                     state.setter(
                         await convert_course_uid(itgs, state.given, for_user_sub)
+                    )
+                elif fmt == "interactive_prompt_uid":
+                    assert isinstance(
+                        state.given, str
+                    ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
+                    state.setter(
+                        await convert_interactive_prompt_uid(
+                            itgs, state.given, for_user_sub
+                        )
                     )
                 else:
                     assert (
@@ -857,3 +870,92 @@ async def convert_course_uid(itgs: Itgs, course_uid: str, user_sub: str) -> Any:
         row=ExternalCourseRow(*response.results[0]),
     )
     return parsed.model_dump()
+
+
+async def convert_interactive_prompt_uid(
+    itgs: Itgs, interactive_prompt_uid: str, user_sub: str
+) -> Any:
+    """Converts the interactive prompt UID to the expected format for the client"""
+    new_session_uid = f"oseh_ips_{secrets.token_urlsafe(16)}"
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+    response = await cursor.executeunified3(
+        (
+            (
+                """
+SELECT
+    interactive_prompt_sessions.uid
+FROM interactive_prompts, users, interactive_prompt_sessions
+WHERE
+    interactive_prompts.uid = ?
+    AND users.sub = ?
+    AND interactive_prompt_sessions.user_id = users.id
+    AND interactive_prompt_sessions.interactive_prompt_id = interactive_prompts.id
+    AND NOT EXISTS (
+        SELECT 1 FROM interactive_prompt_events
+        WHERE
+            interactive_prompt_events.interactive_prompt_session_id = interactive_prompt_sessions.id
+    )
+ORDER BY interactive_prompt_sessions.id DESC
+LIMIT 1
+                """,
+                (interactive_prompt_uid, user_sub),
+            ),
+            (
+                """
+INSERT INTO interactive_prompt_sessions (
+    interactive_prompt_id, user_id, uid
+)
+SELECT
+    interactive_prompts.id, users.id, ?
+FROM interactive_prompts, users
+WHERE
+    users.sub = ?
+    AND interactive_prompts.deleted_at IS NULL
+    AND interactive_prompts.uid = ?
+    AND NOT EXISTS (
+SELECT
+    1
+FROM interactive_prompts AS ip, users AS u, interactive_prompt_sessions AS ips
+WHERE
+    ip.uid = ? AND u.sub = ? AND ips.user_id = users.id
+    AND ips.interactive_prompt_id = ip.id
+    AND NOT EXISTS (
+        SELECT 1 FROM interactive_prompt_events AS ipe
+        WHERE ipe.interactive_prompt_session_id = ips.id
+    )
+    )
+                """,
+                (
+                    new_session_uid,
+                    user_sub,
+                    interactive_prompt_uid,
+                    interactive_prompt_uid,
+                    user_sub,
+                ),
+            ),
+        )
+    )
+
+    if response[0].results:
+        session_uid = cast(str, response[0].results[0][0])
+    else:
+        assert response[1].rows_affected == 1, response
+        session_uid = new_session_uid
+
+    prompt_jwt = await interactive_prompts.auth.create_jwt(
+        itgs, interactive_prompt_uid=interactive_prompt_uid
+    )
+    result_as_response = (
+        await interactive_prompts.lib.read_one_external.read_one_external(
+            itgs,
+            interactive_prompt_uid=interactive_prompt_uid,
+            interactive_prompt_jwt=prompt_jwt,
+            interactive_prompt_session_uid=session_uid,
+        )
+    )
+    assert (
+        result_as_response is not None
+    ), f"no interactive prompt found for {interactive_prompt_uid=}"
+    result_bytes = await response_to_bytes(result_as_response)
+    return json.loads(result_bytes)

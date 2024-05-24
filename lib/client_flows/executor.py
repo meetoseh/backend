@@ -5,7 +5,6 @@ output back to the database. Also contains helpers for performing entire operati
 
 import json
 import secrets
-from types import NoneType
 from typing import List, Literal, Optional, Tuple, Union, cast
 from error_middleware import handle_warning
 from itgs import Itgs
@@ -884,7 +883,7 @@ async def execute_pop(
     user_sub: str,
     platform: VisitorSource,
     expected_front_uid: str,
-    trigger: Union[UntrustedTrigger, TrustedTrigger, NoneType],
+    trigger: Optional[Union[UntrustedTrigger, TrustedTrigger]],
 ) -> ClientScreenQueuePeekInfo:
     """Pops the front of the users queue, executes the given trigger, and then peeks
     the front of the queue.

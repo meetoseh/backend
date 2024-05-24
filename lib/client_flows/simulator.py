@@ -14,7 +14,7 @@ from lib.client_flows.client_flow_stats_preparer import ClientFlowStatsPreparer
 from lib.client_flows.client_screen_stats_preparer import ClientScreenStatsPreparer
 from lib.client_flows.flow_cache import ClientFlow, get_client_flow
 from lib.client_flows.flow_flags import get_flow_flag_by_platform
-from lib.client_flows.helper import transform_flow_server_parameters
+from lib.client_flows.helper import handle_trigger_time_transformations
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_flags import get_screen_flag_by_platform
 from lib.redis_stats_preparer import RedisStatsPreparer
@@ -250,29 +250,26 @@ async def simulate_add_screens(
     )
 
     screen_stats = ClientScreenStatsPreparer(state.stats)
-    for idx, flow_screen in enumerate(flow.screens):
-        screen = await get_client_screen(itgs, slug=flow_screen.screen.slug)
+    for idx, raw_flow_screen in enumerate(flow.screens):
+        screen = await get_client_screen(itgs, slug=raw_flow_screen.screen.slug)
         if screen is None:
             raise ValueError(
-                f"Cannot trigger {flow.slug} ({flow.uid}): screen {flow_screen.screen.slug} not found"
+                f"Cannot trigger {flow.slug} ({flow.uid}): screen {raw_flow_screen.screen.slug} not found"
             )
 
-        transformed_flow_server_parameters_result = (
-            await transform_flow_server_parameters(
-                itgs,
-                flow=flow,
-                flow_screen=flow_screen,
-                flow_server_parameters=flow_server_parameters,
-            )
+        transformation = await handle_trigger_time_transformations(
+            itgs,
+            flow=flow,
+            flow_screen=raw_flow_screen,
+            flow_server_parameters=flow_server_parameters,
         )
-        if transformed_flow_server_parameters_result.type == "skip":
+        if transformation.type == "skip":
             logger.info(
-                f"Skipping {flow.slug} screen {idx=} (a {flow_screen.screen.slug} screen) - skip while transforming server parameters"
+                f"Skipping {flow.slug} screen {idx=} (a {raw_flow_screen.screen.slug} screen) - skip while transforming server parameters"
             )
             continue
-        transformed_flow_server_parameters = transformed_flow_server_parameters_result.result
         transformed_flow_server_parameters_serd = json.dumps(
-            transformed_flow_server_parameters
+            transformation.transformed_server_parameters
         )
 
         screen_stats.incr_queued(
@@ -289,12 +286,12 @@ async def simulate_add_screens(
                 client_screen_uid=screen.uid,
                 flow_client_parameters=flow_client_parameters_serd,
                 flow_server_parameters=transformed_flow_server_parameters_serd,
-                screen=flow_screen.model_dump_json(),
+                screen=transformation.transformed_flow_screen.model_dump_json(),
                 flow_obj=flow,
-                flow_screen_obj=flow_screen,
+                flow_screen_obj=transformation.transformed_flow_screen,
                 screen_obj=screen,
                 flow_client_parameters_obj=flow_client_parameters,
-                flow_server_parameters_obj=transformed_flow_server_parameters,
+                flow_server_parameters_obj=transformation.transformed_server_parameters,
             )
         )
 
@@ -303,11 +300,11 @@ async def simulate_add_screens(
 
         simulator_screen = ClientFlowSimulatorScreen(
             user_client_screen_uid=user_client_screen_uid,
-            flow_screen=flow_screen,
+            flow_screen=transformation.transformed_flow_screen,
             screen=screen,
             outer_counter=outer_counter,
             flow_client_parameters=flow_client_parameters,
-            flow_server_parameters=transformed_flow_server_parameters,
+            flow_server_parameters=transformation.transformed_server_parameters,
         )
 
         if idx == 0:

@@ -20,7 +20,7 @@ from lib.client_flows.helper import (
     iter_flow_screen_required_parameters,
     pretty_path,
     produce_screen_input_parameters,
-    transform_flow_server_parameters,
+    handle_trigger_time_transformations,
 )
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_schema import UNSAFE_SCREEN_SCHEMA_TYPES, SpecialIndex
@@ -372,6 +372,7 @@ async def test_screen(
                 args.flow.server_schema,
                 req_param.input_path,
                 req_param.idx,
+                allow_auto_extract=req_param.usage_type == "string_formattable",
             )
             if input_schema.type == "failure":
                 return input_schema.error_response
@@ -455,7 +456,7 @@ async def test_screen(
             now=time.time(),
         )
 
-        transformed_server_parameters_result = await transform_flow_server_parameters(
+        transformation = await handle_trigger_time_transformations(
             itgs,
             flow=ClientFlow(
                 uid="oseh_cf_test",
@@ -474,7 +475,7 @@ async def test_screen(
             flow_server_parameters=args.server_parameters,
         )
 
-        if transformed_server_parameters_result.type == "skip":
+        if transformation.type == "skip":
             return Response(
                 status_code=409,
                 content=StandardErrorResponse[ERROR_409_TYPES](
@@ -484,9 +485,9 @@ async def test_screen(
             )
 
         screen_input_parameters = produce_screen_input_parameters(
-            flow_screen=args.flow_screen,
+            flow_screen=transformation.transformed_flow_screen,
             flow_client_parameters=args.client_parameters,
-            transformed_flow_server_parameters=transformed_server_parameters_result.result,
+            transformed_flow_server_parameters=transformation.transformed_server_parameters,
             standard_parameters=standard_parameters,
         )
 
@@ -560,7 +561,9 @@ WHERE
                 f"oseh_ucs_{secrets.token_urlsafe(16)}",
                 json.dumps(args.client_parameters, sort_keys=True),
                 json.dumps(args.server_parameters, sort_keys=True),
-                json.dumps(args.flow_screen.model_dump(), sort_keys=True),
+                json.dumps(
+                    transformation.transformed_flow_screen.model_dump(), sort_keys=True
+                ),
                 time.time(),
                 auth_result.result.sub,
                 screen.slug,
@@ -596,6 +599,7 @@ def _get_input_schema(
     server_schema: dict,
     input_path: List[str],
     variable_parameter_idx: int,
+    allow_auto_extract: bool,
 ) -> FindSchemaResult:
     """Determines what type of variable is returned at the given path, as an
     openapi 3.0.3 schema object with an example. Assumes we've already
@@ -607,6 +611,9 @@ def _get_input_schema(
         input_path (List[str]): The path to the variable in the schema.
         variable_parameter_idx (int): The index of the variable parameter in the flow screen,
             for error formatting
+        allow_auto_extract (bool): If automatic extraction is allowed for this variable,
+            i.e., converting course_uid to the corresponding course as an object. Typically,
+            this is only true for string format (for convenience)
     """
     if not input_path:
         return FindSchemaNotFound(
@@ -664,7 +671,71 @@ def _get_input_schema(
     made_it_to = input_path[:1]
     remaining = input_path[1:]
     current = top_schema
+    schema_path: List[Union[str, int]] = [input_path[0]]
+    defs = None
     while remaining:
+        if defs is not None:
+            # we're in a standard json schema, not our custom format anymore
+            ref = current.get("$ref")
+            if ref is not None:
+                prefix = "#/$defs/"
+                assert isinstance(ref, str) and ref.startswith(
+                    prefix
+                ), f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is a bad reference at {pretty_path(schema_path)} ({ref})"
+                ref_key = ref[len(prefix) :]
+                assert (
+                    ref_key in defs
+                ), f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is a bad reference at {pretty_path(schema_path)} ({ref_key} not found in defs, using {ref})"
+                current = defs[ref_key]
+                schema_path.append(ref)
+                continue
+
+            # allOf is sometimes used to switch to a ref (pydantic likes to do this)
+            all_of = current.get("allOf")
+            if all_of is not None:
+                assert isinstance(
+                    all_of, list
+                ), f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is a bad allOf at {pretty_path(schema_path)}"
+                assert (
+                    len(all_of) == 1
+                ), f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is a bad allOf at {pretty_path(schema_path)} (should have exactly one element)"
+                current = all_of[0]
+                schema_path.extend(["allOf", 0])
+                continue
+
+            # anyOf is used instead of nullable
+            any_of = current.get("anyOf")
+            if any_of is not None:
+                assert isinstance(
+                    any_of, list
+                ), f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is a bad anyOf at {pretty_path(schema_path)}"
+                assert all(
+                    isinstance(x, dict) for x in any_of
+                ), f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is a bad anyOf at {pretty_path(schema_path)}"
+                non_null_any_of = [
+                    (idx, x) for idx, x in enumerate(any_of) if x.get("type") != "null"
+                ]
+                assert (
+                    len(non_null_any_of) == 1
+                ), f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is a bad anyOf at {pretty_path(schema_path)} (should have exactly one non-null element)"
+
+                if len(remaining) > 1 and len(non_null_any_of) < len(any_of):
+                    return FindSchemaNotFound(
+                        type="failure",
+                        error_response=Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is nullable at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)})",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        ),
+                    )
+
+                current = non_null_any_of[0][1]
+                schema_path.extend(["anyOf", non_null_any_of[0][0]])
+                continue
+
         nullable = current.get("nullable", False)
         if nullable is not False:
             if len(remaining) > 1:
@@ -674,13 +745,52 @@ def _get_input_schema(
                         status_code=409,
                         content=StandardErrorResponse[ERROR_409_TYPES](
                             type="screen_input_parameters_wont_match",
-                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is nullable at {pretty_path(made_it_to)}",
+                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is nullable at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)})",
                         ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),
                 )
 
         current_type = current.get("type")
+        if current_type == "string":
+            current_format = current.get("format")
+            if current_format == "course_uid":
+                if not safe or not allow_auto_extract:
+                    return FindSchemaNotFound(
+                        type="failure",
+                        error_response=Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which references ExternalCourse at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)}), but is not automatically extracted",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        ),
+                    )
+
+                current = ExternalCourse.model_json_schema()
+                defs = current.get("$defs", dict())
+                schema_path.append("#ExternalCourse")
+                continue
+            elif current_format == "journey_uid":
+                if not safe or not allow_auto_extract:
+                    return FindSchemaNotFound(
+                        type="failure",
+                        error_response=Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which references ExternalJourney at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)}), but is not automatically extracted",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        ),
+                    )
+
+                current = ExternalJourney.model_json_schema()
+                defs = current.get("$defs", dict())
+                schema_path.append("#ExternalJourney")
+                continue
+
         if current_type == "object":
             required = current.get("required", [])
 
@@ -692,7 +802,7 @@ def _get_input_schema(
                         status_code=409,
                         content=StandardErrorResponse[ERROR_409_TYPES](
                             type="screen_input_parameters_wont_match",
-                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is not required at {pretty_path(made_it_to)}. You may require it and make it nullable if its the last part of the path",
+                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is not required at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)}). You may require it and make it nullable if its the last part of the path",
                         ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),
@@ -701,7 +811,8 @@ def _get_input_schema(
             properties = current.get("properties", dict())
             assert isinstance(properties, dict)
 
-            nxt = properties.get(remaining[0])
+            nxt_key = remaining[0]
+            nxt = properties.get(nxt_key)
             if nxt is None:
                 return FindSchemaNotFound(
                     type="failure",
@@ -709,7 +820,7 @@ def _get_input_schema(
                         status_code=409,
                         content=StandardErrorResponse[ERROR_409_TYPES](
                             type="screen_input_parameters_wont_match",
-                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is not in properties at {pretty_path(made_it_to)}",
+                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is not in properties at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)})",
                         ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),
@@ -717,11 +828,13 @@ def _get_input_schema(
 
             current = nxt
             made_it_to.append(remaining.pop(0))
+            schema_path.extend(["properties", nxt_key])
             continue
 
         if current_type == "array":
+            nxt_key = remaining[0]
             try:
-                key_as_int = int(remaining[0])
+                key_as_int = int(nxt_key)
             except ValueError:
                 return FindSchemaNotFound(
                     type="failure",
@@ -729,7 +842,7 @@ def _get_input_schema(
                         status_code=409,
                         content=StandardErrorResponse[ERROR_409_TYPES](
                             type="screen_input_parameters_wont_match",
-                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is an array at {pretty_path(made_it_to)}",
+                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is an array at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)}), but {nxt_key} is not an integer",
                         ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),
@@ -743,7 +856,7 @@ def _get_input_schema(
                         status_code=409,
                         content=StandardErrorResponse[ERROR_409_TYPES](
                             type="screen_input_parameters_wont_match",
-                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is an array at {pretty_path(made_it_to)}, but without an items schema",
+                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is an array at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)}), but without an items schema",
                         ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),
@@ -759,7 +872,8 @@ def _get_input_schema(
                             type="screen_input_parameters_wont_match",
                             message=(
                                 f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, "
-                                f"which is an array at {pretty_path(made_it_to)}, but with too few items (requires {min_items}, "
+                                f"which is an array at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)}), "
+                                f"but with too few items (requires {min_items}, "
                                 f"but needs to require at least {key_as_int + 1})"
                             ),
                         ).model_dump_json(),
@@ -769,6 +883,7 @@ def _get_input_schema(
 
             current = items
             made_it_to.append(remaining.pop(0))
+            schema_path.append("items")
             continue
 
         return FindSchemaNotFound(
@@ -778,7 +893,8 @@ def _get_input_schema(
                 content=StandardErrorResponse[ERROR_409_TYPES](
                     type="screen_input_parameters_wont_match",
                     message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, "
-                    f"which is not an object or array (is a {current_type}) at {pretty_path(made_it_to)}",
+                    f"which is not an object or array (is a {current_type}) at {pretty_path(made_it_to)} ("
+                    f"schema path: {pretty_path(schema_path)})",
                 ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
             ),

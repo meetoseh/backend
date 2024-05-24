@@ -20,6 +20,10 @@ class TestFlowRequest(BaseModel):
     server_parameters: dict = Field(
         description="The server parameters to trigger the flow with"
     )
+    user_sub: Optional[str] = Field(
+        None,
+        description="Who to trigger the flow for, None for the authorized user. Ignored if dry_run",
+    )
     dry_run: bool = Field(
         False,
         description="If True, the flow is not actually triggered, but the parameters are still validated",
@@ -95,7 +99,7 @@ async def test_client_flow(
 
         await execute_peek(
             itgs,
-            user_sub=auth_result.result.sub,
+            user_sub=args.user_sub or auth_result.result.sub,
             platform="server",
             trigger=TrustedTrigger(
                 flow_slug=flow.slug,

@@ -29,6 +29,7 @@ from client_flows.lib.parse_flow_screens import (
     etag_flow_screens,
 )
 from client_flows.routes.read import ClientFlow
+from courses.models.external_course import ExternalCourse
 from error_middleware import handle_warning
 from itgs import Itgs
 from lib.client_flows.client_flow_screen import ClientFlowScreen
@@ -367,14 +368,6 @@ async def check_flow_screens(
                 req_param.input_path,
                 fixed=flow_screen.screen.fixed,
             )
-            produced_example = produced_schema.get("example")
-            if produced_example is None:
-                raise PreconditionFailedException(
-                    f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
-                    "to have an example",
-                    "missing an example",
-                )
-
             try:
                 OAS30Validator.check_schema(produced_schema)
             except:
@@ -385,23 +378,29 @@ async def check_flow_screens(
                 )
 
             produced_schema_obj = cast(Validator, OAS30Validator(produced_schema))
-            if (
-                produced_example_err := jsonschema.exceptions.best_match(
-                    produced_schema_obj.iter_errors(produced_example)
-                )
-                is not None
-            ):
-                raise PreconditionFailedException(
-                    f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
-                    "to have a valid example",
-                    str(produced_example_err),
-                )
+
+            produced_example = produced_schema.get("example")
+            if produced_example is not None:
+                # we can't necessarily enforce an example here because it might
+                # be a reference to one of our models
+                if (
+                    produced_example_err := jsonschema.exceptions.best_match(
+                        produced_schema_obj.iter_errors(produced_example)
+                    )
+                    is not None
+                ):
+                    raise PreconditionFailedException(
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
+                        "to have a valid example",
+                        str(produced_example_err),
+                    )
 
             target_schema = _get_param_schema_from_schema(
                 f"screens[{idx}].screen.variable[{req_param.idx}] target for {req_param.input_path}",
                 screen.raw_schema,
                 req_param.output_path,
                 fixed=flow_screen.screen.fixed,
+                allow_auto_extract=False,
             )
             target_type = target_schema.get("type")
 
@@ -526,11 +525,16 @@ def _get_flow_screen_param_schema(
         return res
     elif param[0] == "client":
         return _get_param_schema_from_schema(
-            src, client_schema, param[1:], level=1, fixed=fixed
+            src,
+            client_schema,
+            param[1:],
+            level=1,
+            fixed=fixed,
+            allow_auto_extract=False,
         )
     elif param[0] == "server":
         return _get_param_schema_from_schema(
-            src, server_schema, param[1:], level=1, fixed=fixed
+            src, server_schema, param[1:], level=1, fixed=fixed, allow_auto_extract=True
         )
     else:
         raise PreconditionFailedException(
@@ -547,10 +551,12 @@ def _get_param_schema_from_schema(
     *,
     fixed: dict,
     level: int = 0,
+    allow_auto_extract: bool,
 ) -> dict:
     current = schema
     current_fixed: Optional[Union[dict, list]] = fixed
     stack = param.copy()
+    defs = None
 
     while stack:
         if current_fixed is None:
@@ -598,6 +604,88 @@ def _get_param_schema_from_schema(
                 f"to reference a valid parameter (at level {level})",
                 f"{param} (not a dict @ {param[:level]})",
             )
+
+        if defs is not None:
+            # we're in a standard json schema, not our custom format anymore
+            ref = current.get("$ref")
+            if ref is not None:
+                prefix = "#/$defs/"
+                if not isinstance(ref, str) or not ref.startswith(prefix):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (bad ref type or prefix in schema @ {param[:level]})",
+                    )
+
+                ref_key = ref[len(prefix) :]
+                if ref_key not in defs:
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (bad ref key in schema @ {param[:level]})",
+                    )
+                current = defs[ref_key]
+                continue
+
+            # allOf is sometimes used to switch to a ref (pydantic likes to do this)
+            all_of = current.get("allOf")
+            if all_of is not None:
+                if not isinstance(all_of, list):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (bad allOf type in schema @ {param[:level]})",
+                    )
+                if len(all_of) != 1:
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (bad allOf length in schema @ {param[:level]})",
+                    )
+
+                current = all_of[0]
+                continue
+
+            # anyOf is used instead of nullable
+            any_of = current.get("anyOf")
+            if any_of is not None:
+                if not isinstance(any_of, list):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (bad anyOf type in schema @ {param[:level]})",
+                    )
+                if not all(isinstance(x, dict) for x in any_of):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (bad anyOf; non-dict child in schema @ {param[:level]})",
+                    )
+
+                non_null_any_of = [
+                    (idx, x) for idx, x in enumerate(any_of) if x.get("type") != "null"
+                ]
+                if len(non_null_any_of) != 1:
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (unsupported anyOf; not exactly one non-null child in schema @ {param[:level]})",
+                    )
+
+                if (
+                    next_fixed is None
+                    and len(stack) > 1
+                    and len(non_null_any_of) < len(any_of)
+                ):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (nullable @ {param[:level]} and not set in fixed)",
+                    )
+
+                current = non_null_any_of[0][1]
+                continue
+
         if (
             next_fixed is None
             and len(stack) > 1
@@ -608,6 +696,17 @@ def _get_param_schema_from_schema(
                 f"to reference a valid parameter (at level {level})",
                 f"{param} (nullable @ {param[:level]} and not set in fixed)",
             )
+
+        if allow_auto_extract and current.get("type") == "string":
+            current_format = current.get("format")
+            if current_format == "course_uid":
+                current = ExternalCourse.model_json_schema()
+                defs = current.get("$defs")
+                continue
+            elif current_format == "journey_uid":
+                current = ExternalCourse.model_json_schema()
+                defs = current.get("$defs")
+                continue
 
         if current.get("type") == "array":
             items = current.get("items")

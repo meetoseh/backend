@@ -5,6 +5,7 @@ from typing import (
     Generator,
     List,
     Literal,
+    Optional,
     Tuple,
     Union,
     cast,
@@ -18,7 +19,9 @@ from courses.lib.get_external_course_from_row import (
 )
 from itgs import Itgs
 from journeys.lib.read_one_external import read_one_external
-from lib.client_flows.client_flow_screen import ClientFlowScreenVariableInput
+from lib.client_flows.client_flow_screen import (
+    ClientFlowScreenVariableInput,
+)
 from lib.client_flows.special_index import SpecialIndex
 from response_utils import response_to_bytes
 
@@ -120,7 +123,8 @@ def iter_flow_screen_required_parameters(
 @dataclass(frozen=True)
 class TransformFlowServerParametersSuccess:
     type: Literal["success"]
-    result: Any
+    transformed_server_parameters: Any
+    transformed_flow_screen: "ClientFlowScreen"
 
 
 @dataclass
@@ -134,7 +138,7 @@ TransformFlowServerParametersResult = Union[
 ]
 
 
-async def transform_flow_server_parameters(
+async def handle_trigger_time_transformations(
     itgs: Itgs,
     /,
     *,
@@ -142,9 +146,10 @@ async def transform_flow_server_parameters(
     flow_screen: "ClientFlowScreen",
     flow_server_parameters: Any,
 ) -> TransformFlowServerParametersResult:
-    """Manages any trigger-time transformations that occur to the server parameters.
-    The result is the provided server parameters if they were not mutated, otherwise
-    a new object with the mutations applied.
+    """Manages any trigger-time transformations that occur to the given flow screen.
+    This can transform both the flow server parameters that are sent (realizing values
+    that require extraction) and the actual variable parameters for the flow screen
+    (to reference the extracted values instead of the original server parameters).
 
     These transformations are:
     - `extract`: Suppose a flow wants to show a video interstitial containing the series
@@ -159,16 +164,21 @@ async def transform_flow_server_parameters(
       the flow transformed from the series uid to the content uid of the video, and
       the variable input type `extract` is treated like copy at peek time.
     """
-    result = None
+    fmt = string.Formatter()
+
+    new_server_parameters = None
+    new_variable_parameters = cast(Optional[List[ClientFlowScreenVariableInput]], None)
 
     # we don't currently have a built-in cache for courses, so in case we are repeatedly
     # extracting from the same course (common), this avoids repeated requests
     courses_by_uid: Dict[str, dict] = {}
 
-    for variable_parameter in flow_screen.screen.variable:
+    for variable_parameter_idx, variable_parameter in enumerate(
+        flow_screen.screen.variable
+    ):
         if variable_parameter.type == "extract":
-            if result is None:
-                result = deep_copy(flow_server_parameters)
+            if new_server_parameters is None:
+                new_server_parameters = deep_copy(flow_server_parameters)
 
             assert (
                 variable_parameter.input_path[0] == "server"
@@ -183,65 +193,223 @@ async def transform_flow_server_parameters(
             if target_type == "null" or target_value is None:
                 if variable_parameter.skip_if_missing:
                     return TransformFlowServerParametersSkip(type="skip")
-                deep_set(result, ["__extracted"] + variable_parameter.output_path, None)
+                deep_set(
+                    new_server_parameters,
+                    ["__extracted"] + variable_parameter.output_path,
+                    None,
+                )
                 continue
 
             assert target_type == "string", "not an extractable target"
             target_format = target_schema.get("format")
-            if target_format == "course_uid":
-                conn = await itgs.conn()
-                cursor = conn.cursor("none")
-                query, qargs = create_standard_external_course_query(None)
-                response = await cursor.execute(
-                    query + " WHERE courses.uid=?", qargs + [target_value]
-                )
-                if not response.results:
-                    raise ValueError(f"missing course {target_value}")
+            assert isinstance(
+                target_format, str
+            ), "not an extractable target (are you missing format?)"
+            await _handle_extraction(
+                itgs,
+                target_value=target_value,
+                target_format=target_format,
+                courses_by_uid=courses_by_uid,
+                extracted_path=variable_parameter.extracted_path,
+                server_parameter_path=["__extracted"] + variable_parameter.output_path,
+                new_server_parameters=new_server_parameters,
+            )
+        elif variable_parameter.type == "string_format":
+            new_format_parts = []
+            replaced_part = False
+            for part_idx, part in enumerate(fmt.parse(variable_parameter.format)):
+                new_format_parts.append(part)
 
-                course_dumped = courses_by_uid.get(target_value)
-                if course_dumped is None:
-                    course = await get_external_course_from_row(
-                        itgs,
-                        user_sub=None,
-                        row=ExternalCourseRow(*response.results[0]),
-                        skip_jwts=True,
-                        has_entitlement=False,
+                if part[1] is None:
+                    continue
+                full_path = extract_format_parameter_field_name(part[1])
+                if full_path[0] != "server":
+                    continue
+                split_path = split_input_path_and_extract_path(
+                    flow.server_schema_raw,
+                    flow_server_parameters,
+                    full_path[1:],
+                )
+                if split_path.type == "not_a_split":
+                    if split_path.target_schema.get("type") == "null":
+                        # if we did nothing this might result in 'NoneType' object is not subscriptable
+                        replaced_part = True
+                        new_format_parts[part_idx] = (
+                            part[0],
+                            "server[__extracted][__none]",
+                            part[2],
+                            part[3],
+                        )
+                        if new_server_parameters is None:
+                            new_server_parameters = deep_copy(flow_server_parameters)
+                        deep_set(new_server_parameters, ["__extracted", "__none"], None)
+                    continue
+
+                target_format = split_path.target_schema.get("format")
+                assert isinstance(
+                    target_format, str
+                ), "not an extractable target (are you missing format?)"
+
+                replaced_part = True
+                if new_server_parameters is None:
+                    new_server_parameters = deep_copy(flow_server_parameters)
+                server_parameter_path = (
+                    ["__extracted"] + variable_parameter.output_path + [f"_{part_idx}"]
+                )
+                new_format_parts[part_idx] = (
+                    part[0].replace("{", "{{").replace("}", "}}"),
+                    "{server" + "".join(f"[{x}]" for x in server_parameter_path) + "}",
+                    part[2],
+                    part[3],
+                )
+
+                await _handle_extraction(
+                    itgs,
+                    target_value=split_path.target_value,
+                    target_format=target_format,
+                    courses_by_uid=courses_by_uid,
+                    extracted_path=split_path.extracted_path,
+                    server_parameter_path=server_parameter_path,
+                    new_server_parameters=new_server_parameters,
+                )
+
+            if replaced_part:
+                rebuilt_format_string = "".join(
+                    part[0]
+                    + (part[1] if part[1] else "")
+                    + (f":{part[2]}" if part[2] else "")
+                    + (f"!{part[3]}" if part[3] else "")
+                    for part in new_format_parts
+                )
+                logger.debug(
+                    f"replaced string format {variable_parameter.format!r} with {rebuilt_format_string!r} using parts {new_format_parts} while transforming server parameters"
+                )
+                if new_variable_parameters is None:
+                    new_variable_parameters = flow_screen.screen.variable.copy()
+                new_variable_parameters[variable_parameter_idx] = (
+                    variable_parameter.model_copy(
+                        update={"format": rebuilt_format_string}
                     )
-                    course_dumped = course.model_dump()
-                    courses_by_uid[target_value] = course_dumped
+                )
 
-                extracted = deep_extract(
-                    course_dumped, variable_parameter.extracted_path
+    new_flow_screen = flow_screen
+    if new_variable_parameters is not None:
+        new_flow_screen = new_flow_screen.model_copy(
+            update={
+                "screen": new_flow_screen.screen.model_copy(
+                    update={"variable": new_variable_parameters}
                 )
-                deep_set(
-                    result, ["__extracted"] + variable_parameter.output_path, extracted
-                )
-                logger.debug(
-                    f"{extracted=} from course uid {target_value} while transforming server parameters at {pretty_path(variable_parameter.input_path)}"
-                )
-            elif target_format == "journey_uid":
-                journey_response = await read_one_external(
-                    itgs, journey_uid=target_value, jwt=""
-                )
-                if journey_response is None:
-                    raise ValueError(f"missing journey {target_value}")
-                journey_bytes = await response_to_bytes(journey_response)
-                journey_dumped = json.loads(journey_bytes)
-                extracted = deep_extract(
-                    journey_dumped, variable_parameter.extracted_path
-                )
-                deep_set(
-                    result, ["__extracted"] + variable_parameter.output_path, extracted
-                )
-                logger.debug(
-                    f"{extracted=} from journey uid {target_value} while transforming server parameters at {pretty_path(variable_parameter.input_path)}"
-                )
-            else:
-                raise ValueError(f"unsupported format for extraction {target_format}")
+            }
+        )
 
     return TransformFlowServerParametersSuccess(
-        type="success", result=flow_server_parameters if result is None else result
+        type="success",
+        transformed_server_parameters=(
+            flow_server_parameters
+            if new_server_parameters is None
+            else new_server_parameters
+        ),
+        transformed_flow_screen=new_flow_screen,
     )
+
+
+async def _handle_course_extraction(
+    itgs: Itgs,
+    /,
+    *,
+    target_value: str,
+    courses_by_uid: Dict[str, dict],
+    extracted_path: Union[List[Union[str, int]], List[str], List[int]],
+    server_parameter_path: Union[List[Union[str, int]], List[str], List[int]],
+    new_server_parameters: Dict[str, Any],
+) -> None:
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+    query, qargs = create_standard_external_course_query(None)
+    response = await cursor.execute(
+        query + " WHERE courses.uid=?", qargs + [target_value]
+    )
+    if not response.results:
+        raise ValueError(f"missing course {target_value}")
+
+    course_dumped = courses_by_uid.get(target_value)
+    if course_dumped is None:
+        course = await get_external_course_from_row(
+            itgs,
+            user_sub=None,
+            row=ExternalCourseRow(*response.results[0]),
+            skip_jwts=True,
+            has_entitlement=False,
+        )
+        course_dumped = course.model_dump()
+        courses_by_uid[target_value] = course_dumped
+
+    extracted = deep_extract(course_dumped, extracted_path)
+    deep_set(
+        new_server_parameters,
+        server_parameter_path,
+        extracted,
+    )
+    logger.debug(
+        f"extracted {pretty_path(extracted_path)} from course uid {target_value} and stored {extracted=} at {pretty_path(server_parameter_path)} while transforming server parameters"
+    )
+
+
+async def _handle_journey_extraction(
+    itgs: Itgs,
+    /,
+    *,
+    target_value: str,
+    extracted_path: Union[List[Union[str, int]], List[str], List[int]],
+    server_parameter_path: Union[List[Union[str, int]], List[str], List[int]],
+    new_server_parameters: Dict[str, Any],
+):
+    journey_response = await read_one_external(itgs, journey_uid=target_value, jwt="")
+    if journey_response is None:
+        raise ValueError(f"missing journey {target_value}")
+    journey_bytes = await response_to_bytes(journey_response)
+    journey_dumped = json.loads(journey_bytes)
+    extracted = deep_extract(journey_dumped, extracted_path)
+    deep_set(
+        new_server_parameters,
+        server_parameter_path,
+        extracted,
+    )
+    logger.debug(
+        f"extracted {pretty_path(extracted_path)} from journey uid {target_value} and stored {extracted=} at {pretty_path(server_parameter_path)} while transforming server parameters"
+    )
+
+
+async def _handle_extraction(
+    itgs: Itgs,
+    /,
+    *,
+    target_value: str,
+    target_format: str,
+    courses_by_uid: Dict[str, dict],
+    extracted_path: Union[List[Union[str, int]], List[str], List[int]],
+    server_parameter_path: Union[List[Union[str, int]], List[str], List[int]],
+    new_server_parameters: Dict[str, Any],
+):
+    if target_format == "course_uid":
+        await _handle_course_extraction(
+            itgs,
+            target_value=target_value,
+            courses_by_uid=courses_by_uid,
+            extracted_path=extracted_path,
+            server_parameter_path=server_parameter_path,
+            new_server_parameters=new_server_parameters,
+        )
+    elif target_format == "journey_uid":
+        await _handle_journey_extraction(
+            itgs,
+            target_value=target_value,
+            extracted_path=extracted_path,
+            server_parameter_path=server_parameter_path,
+            new_server_parameters=new_server_parameters,
+        )
+    else:
+        raise ValueError(f"unsupported format for extraction {target_format}")
 
 
 def produce_screen_input_parameters(
@@ -575,10 +743,13 @@ def pretty_path(
         List[str],
         List[int],
         List[SpecialIndex],
-    ]
+    ],
+    /,
+    *,
+    no_start: bool = False,
 ) -> str:
     """Converts a path of the form ["server", 0, "name"] to a string like "$.server[0].name"."""
-    parts = ["$"]
+    parts = ["$"] if not no_start else []
     for item in path:
         if item == SpecialIndex.ARRAY_INDEX:
             parts.append("[*]")
@@ -728,6 +899,201 @@ def deep_extract_value_and_subschema(
 
         if part_type == "null":
             return {"type": "null"}, None
+
+        assert (
+            False
+        ), f"unexpected schema type {part_type!r} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path[:idx + 1])} for full path {pretty_path(path)}"
+
+
+@dataclass(frozen=True)
+class SplitInputPathResultSuccess:
+    type: Literal["success"]
+    """It is a split; we've verified up to but not including the extracted path"""
+    input_path: List[Union[str, int]]
+    extracted_path: List[Union[str, int]]
+    target_schema: dict
+    target_value: Any
+
+
+@dataclass(frozen=True)
+class SplitInputPathResultNotASplit:
+    type: Literal["not_a_split"]
+    """It is not a split; we've found what its targeting without extraction"""
+    target_schema: dict
+    target_value: Any
+
+
+SplitInputPathResult = Union[SplitInputPathResultSuccess, SplitInputPathResultNotASplit]
+
+
+def split_input_path_and_extract_path(
+    schema: dict, value: Any, path: Union[List[Union[str, int]], List[str], List[int]]
+) -> SplitInputPathResult:
+    """Intended as a simpler interface for value extraction that providing an
+    input path and extracted path or just an input path: a single path is
+    provided and we discover that its an extraction because it tries to index
+    into a string with a custom format.
+
+    This will find out that either the path requires extraction, doesn't require
+    extraction, or is bad and can't be fixed with extraction (results in an AssertionError).
+    """
+    idx = 0
+    subschema = schema
+    subvalue = value
+    schema_path_to_here = []
+
+    while True:
+        if idx == len(path):
+            return SplitInputPathResultNotASplit(
+                type="not_a_split",
+                target_schema=subschema,
+                target_value=subvalue,
+            )
+
+        assert isinstance(
+            subschema, dict
+        ), f"{subschema=} should be a dict at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+        if subschema.get("nullable", False) is True and subvalue is None:
+            return SplitInputPathResultNotASplit(
+                type="not_a_split", target_schema={"type": "null"}, target_value=None
+            )
+
+        part_type = subschema.get("type")
+        if part_type == "object":
+            assert isinstance(
+                subvalue, dict
+            ), f"{subvalue=} should be a dict at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+            if "x-enum-discriminator" in subschema:
+                discriminator = subschema["x-enum-discriminator"]
+                assert isinstance(
+                    discriminator, str
+                ), f"string expected at {pretty_path(schema_path_to_here + ['x-enum-discriminator'])} to extract {pretty_path(path)}"
+                assert (
+                    discriminator in subvalue
+                ), f"{discriminator=} not in {subvalue=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+                discrim_value = subvalue[discriminator]
+                assert isinstance(
+                    discrim_value, str
+                ), f"string expected at {pretty_path(schema_path_to_here + ['x-enum-discriminator'])} to extract {pretty_path(path)}"
+
+                one_of = subschema["oneOf"]
+                assert isinstance(
+                    one_of, list
+                ), f"list expected at {pretty_path(schema_path_to_here + ['oneOf'])} to extract {pretty_path(path)}"
+                for one_of_idx, one_of_schema in enumerate(one_of):
+                    assert isinstance(
+                        one_of_schema, dict
+                    ), f"dict expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx])} to extract {pretty_path(path)}"
+                    assert (
+                        one_of_schema.get("type") == "object"
+                    ), f"'object' expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'type'])} to extract {pretty_path(path)}"
+                    one_of_properties = one_of_schema.get("properties", dict())
+                    assert isinstance(
+                        one_of_properties, dict
+                    ), f"dict expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties'])} to extract {pretty_path(path)}"
+                    assert (
+                        discriminator in one_of_properties
+                    ), f"{discriminator=} not in {one_of_properties=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+                    oneof_discrim = one_of_properties[discriminator]
+                    assert isinstance(
+                        oneof_discrim, dict
+                    ), f"dict expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties', discriminator])} to extract {pretty_path(path)}"
+                    assert (
+                        oneof_discrim.get("type") == "string"
+                    ), f"string expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties', discriminator])} to extract {pretty_path(path)}"
+                    oneof_discrim_enum = oneof_discrim.get("enum")
+                    assert isinstance(
+                        oneof_discrim_enum, list
+                    ), f"list expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties', discriminator, 'enum'])} to extract {pretty_path(path)}"
+                    if discrim_value in oneof_discrim_enum:
+                        continue
+
+                    subschema = one_of_schema
+                    schema_path_to_here.extend(["oneOf", one_of_idx])
+                    break
+                else:
+                    assert (
+                        False
+                    ), f"no oneOf schema matched x-enum-discriminator {discriminator!r} {discrim_value=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+                continue
+
+            part = path[idx]
+            assert isinstance(
+                part, str
+            ), f"{part=} should be a string at {pretty_path(path[:idx + 1])} to match object schema at {pretty_path(schema_path_to_here)}"
+            props = subschema.get("properties", dict())
+            assert isinstance(
+                props, dict
+            ), f"{props=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            assert (
+                part in props
+            ), f"{part=} not in {props=} at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            assert isinstance(
+                subvalue, dict
+            ), f"{subvalue=} should be a dict at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}"
+
+            if part not in subvalue:
+                required = subschema.get("required", list())
+                assert isinstance(
+                    required, list
+                ), f"{required=} should be a list at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+                if part not in required:
+                    return SplitInputPathResultNotASplit(
+                        type="not_a_split",
+                        target_schema={"type": "null"},
+                        target_value=None,
+                    )
+                assert (
+                    False
+                ), f"{part=} not in {subvalue=} at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}, despite required"
+
+            subschema = props[part]
+            schema_path_to_here.extend(["properties", part])
+            subvalue = subvalue[part]
+            idx += 1
+            continue
+
+        if part_type == "array":
+            assert isinstance(
+                subvalue, list
+            ), f"{subvalue=} should be a list at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+            part = path[idx]
+            assert isinstance(
+                part, int
+            ), f"{part=} should be an int at {pretty_path(path[:idx + 1])} to match array schema at {pretty_path(schema_path_to_here)}"
+            if part < 0 or part >= len(subvalue):
+                return SplitInputPathResultNotASplit(
+                    type="not_a_split",
+                    target_schema={"type": "null"},
+                    target_value=None,
+                )
+            assert (
+                "items" in subschema
+            ), f"{subschema=} should have 'items' at {pretty_path(schema_path_to_here)} to extract {pretty_path(path)}"
+
+            subschema = subschema["items"]
+            schema_path_to_here.append("items")
+            subvalue = subvalue[part]
+            idx += 1
+            continue
+
+        if part_type == "null":
+            return SplitInputPathResultNotASplit(
+                type="not_a_split", target_schema={"type": "null"}, target_value=None
+            )
+
+        if part_type == "string" and subschema.get("format") is not None:
+            return SplitInputPathResultSuccess(
+                type="success",
+                input_path=cast(List[Union[str, int]], path[:idx]),
+                extracted_path=cast(List[Union[str, int]], path[idx:]),
+                target_schema=subschema,
+                target_value=subvalue,
+            )
 
         assert (
             False
@@ -1118,16 +1484,52 @@ def extract_schema_default_value(
     return src
 
 
-def deep_set(original: dict, path: List[str], value: Any) -> None:
+def deep_set(
+    original: Union[dict, list],
+    path: Union[List[Union[str, int]], List[str], List[int]],
+    value: Any,
+) -> None:
     assert path, f"_deep_set empty path on {original}, value {value}, path {path}"
     src = original
     for item in path[:-1]:
-        nxt = src.get(item)
-        if nxt is None:
-            nxt = dict()
-            src[item] = nxt
-        src = nxt
-    src[path[-1]] = value
+        if isinstance(item, str):
+            assert isinstance(
+                src, dict
+            ), f"Expected dict in src at {pretty_path(path)} to set {value}, got {src}"
+            nxt = src.get(item)
+            if nxt is None:
+                nxt = dict()
+                src[item] = nxt
+            src = nxt
+        elif isinstance(item, int):
+            assert isinstance(
+                src, list
+            ), f"Expected list in src at {pretty_path(path)} to set {value}, got {src}"
+            if item < 0 or item >= len(src):
+                raise IndexError(
+                    f"Expected {item} in range in src at {pretty_path(path)} to set {value}, got {src}"
+                )
+            src = src[item]
+        else:
+            raise ValueError(f"Expected str or int in path, got {item!r}")
+
+    last_key = path[-1]
+    if isinstance(last_key, str):
+        assert isinstance(
+            src, dict
+        ), f"Expected dict in src at {pretty_path(path)} to set {value}, got {src}"
+        src[last_key] = value
+    elif isinstance(last_key, int):
+        assert isinstance(
+            src, list
+        ), f"Expected list in src at {pretty_path(path)} to set {value}, got {src}"
+        if last_key < 0 or last_key >= len(src):
+            raise IndexError(
+                f"Expected {last_key} in range in src at {pretty_path(path)} to set {value}, got {src}"
+            )
+        src[last_key] = value
+    else:
+        raise ValueError(f"Expected str or int in path, got {last_key!r}")
 
 
 def deep_copy(original: Any) -> Any:

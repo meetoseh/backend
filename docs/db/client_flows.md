@@ -90,7 +90,10 @@ See also: [client flows](../concepts/clients_flows/README.md)
   for each substitution in `variable`:
 
   - if it's `string_format`, the input parameters are determined from the format
-    string (using curly brackets with dot separators, e.g., `"Hello {user.name}"`)
+    string (using curly brackets with dot separators, e.g., `"Hello {user[name]}"`).
+    If one of the parameters indexes a string parameter with a custom format that
+    is converted according to `client_screens` format extensions, then this is detected
+    and the extraction occurs at trigger time (see `extract`)
   - if it's `copy`, then we copy the input parameter at the given input path to the
     body parameter at the output path
   - if it's `extract`, then the input parameter at the given input path must be a server string

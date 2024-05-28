@@ -1293,6 +1293,17 @@ def fix_special_enum_path_indices(
     ]
     while stack:
         item = stack.pop()
+        if item.value is None and item.schema.get("default") is not None:
+            stack.append(
+                _SpecialEnumPathStackItem(
+                    path_to_here=item.path_to_here,
+                    path_from_here=item.path_from_here,
+                    schema=item.schema,
+                    value=item.schema["default"],
+                )
+            )
+            continue
+
         if len(item.path_from_here) == 1:
             # the last part is the discriminator field, which will be an object
             # with no properties set as it uses oneOf instead
@@ -1354,19 +1365,9 @@ def fix_special_enum_path_indices(
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),
                 )
-            if not isinstance(item.value, dict):
-                raise UserSafeError(
-                    message="Expected object in fixed",
-                    response=Response(
-                        status_code=409,
-                        content=StandardErrorResponse[ERROR_409_TYPES](
-                            type="screen_input_parameters_wont_match",
-                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is an object, but the corresponding value in fixed is a {type(item.value).__name__}, not a dict",
-                        ).model_dump_json(),
-                        headers={"Content-Type": "application/json; charset=utf-8"},
-                    ),
-                )
-            if part not in item.value:
+            if item.value is None or (
+                isinstance(item.value, dict) and part not in item.value
+            ):
                 # we swap to the default value if its not required
                 required = item.schema.get("required", [])
                 if part not in required:
@@ -1402,6 +1403,19 @@ def fix_special_enum_path_indices(
                         content=StandardErrorResponse[ERROR_409_TYPES](
                             type="screen_input_parameters_wont_match",
                             message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} does not have property {part} in fixed",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+
+            if not isinstance(item.value, dict):
+                raise UserSafeError(
+                    message="Expected object in fixed",
+                    response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} is an object, but the corresponding value in fixed is a {type(item.value).__name__}, not a dict",
                         ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),

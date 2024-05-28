@@ -1323,13 +1323,22 @@ def extract_schema_default_value(
     i.e., we take from fixed until there is nothing left, and then we fill in defaults from
     the schema.
     """
-    src = fixed
+    src = cast(Optional[dict], fixed)
     src_schema = schema
     src_schema_path = []
+    src_path = []
 
     idx = 0
     while idx < len(path):
         item = path[idx]
+
+        if src is None:
+            if "default" not in src_schema:
+                raise KeyError(
+                    f"Expected default in schema at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
+                )
+            src = src_schema["default"]
+            src_path = src_schema_path + ["default"]
 
         if src_schema.get("type") == "array":
             if not isinstance(item, int):
@@ -1337,24 +1346,27 @@ def extract_schema_default_value(
                     f"Expected int in path at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {item}"
                 )
 
-            if not isinstance(src, list):
-                raise KeyError(
-                    f"Expected list in src at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {src}"
-                )
-
-            if item < 0 or item >= len(src):
-                raise KeyError(
-                    f"Expected {item} in range in src at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {src}"
-                )
-
             if "items" not in src_schema:
                 raise KeyError(
                     f"Expected items in schema at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
                 )
 
+            if src is not None:
+                if not isinstance(src, list):
+                    raise KeyError(
+                        f"Expected list in src at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {src}"
+                    )
+
+                if item < 0 or item >= len(src):
+                    raise KeyError(
+                        f"Expected {item} in range in src at {pretty_path(src_schema_path)} to extract {pretty_path(path)}, got {src}"
+                    )
+
             src_schema = src_schema["items"]
             src_schema_path = src_schema_path + ["items"]
-            src = src[item]
+            if src is not None:
+                src = src[item]
+                src_path.append(item)
             idx += 1
             continue
 
@@ -1377,7 +1389,7 @@ def extract_schema_default_value(
 
                 if discriminator not in src:
                     raise KeyError(
-                        f"Expected discriminator {discriminator} in {src} at {pretty_path(path[:idx + 1])} to extract {pretty_path(path)}"
+                        f"Expected discriminator {discriminator} in {src} from {pretty_path(src_path)} to extract {pretty_path(path)}"
                     )
 
                 oneof = src_schema["oneOf"]
@@ -1409,8 +1421,7 @@ def extract_schema_default_value(
                         f"Expected {discriminator} in {src} to match oneOf at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
                     )
 
-                if item not in src:
-                    break
+                continue
             else:
                 raise KeyError(
                     f"Expected properties in schema at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
@@ -1423,62 +1434,18 @@ def extract_schema_default_value(
 
         src_schema = src_schema["properties"][item]
         src_schema_path = src_schema_path + ["properties", item]
-        if item not in src:
-            break
 
-        src = src[item]
-        idx += 1
-
-    if idx == len(path):
-        return src
-
-    if "default" not in src_schema:
-        raise KeyError(
-            f"Expected default in schema at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
-        )
-
-    idx += 1  # by going into default we've effectively consumed item
-    src = src_schema["default"]
-    src_path = src_schema_path + ["default"]
-    while idx < len(path):
-        item = path[idx]
-
-        if isinstance(item, int):
-            if not isinstance(src, list):
+        if src is None or item not in src:
+            if "default" not in src_schema:
                 raise KeyError(
-                    f"Expected list in src at {pretty_path(src_path)} to extract {pretty_path(path)}, got {src}"
+                    f"Expected default in schema at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
                 )
-            if item < 0 or item >= len(src):
-                raise KeyError(
-                    f"Expected {item} in range in src at {pretty_path(src_path)} to extract {pretty_path(path)}, got {src}"
-                )
-            src_path = src_path + [item]
+            src = src_schema["default"]
+            src_path = src_schema_path + ["default"]
+        else:
             src = src[item]
-            idx += 1
-            continue
+            src_path.append(item)
 
-        if not isinstance(item, str):
-            raise KeyError(
-                f"Expected item is int or str at {pretty_path(src_path)} to extract {pretty_path(path)}, got {item}"
-            )
-
-        if not isinstance(src, dict):
-            raise KeyError(
-                f"Expected dict in src at {pretty_path(src_path)} to extract {pretty_path(path)}, got {src}"
-            )
-
-        if not isinstance(item, str):
-            raise KeyError(
-                f"Expected str in path at {pretty_path(src_path)} to extract {pretty_path(path)}, got {item}"
-            )
-
-        if item not in src:
-            raise KeyError(
-                f"Expected {item} in default value {src} at {pretty_path(src_path)} to extract {pretty_path(path)}"
-            )
-
-        src_path = src_path + [item]
-        src = src[item]
         idx += 1
 
     return src

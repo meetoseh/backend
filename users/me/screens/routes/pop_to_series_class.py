@@ -1,3 +1,5 @@
+import secrets
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -10,12 +12,14 @@ from models import STANDARD_ERRORS_BY_CODE
 from typing import Annotated, Optional
 from itgs import Itgs
 import auth as std_auth
+from users.lib.timezones import get_user_timezone
 import users.me.screens.auth
 import courses.auth
 
 from users.me.screens.lib.realize_screens import realize_screens
 from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
+import unix_dates
 
 
 router = APIRouter()
@@ -87,6 +91,9 @@ async def pop_screen_to_series_class(
     queue instead of the intended trigger). An error is only returned if the
     provided authorization header for a user is invalid.
 
+    When successful, this endpoint counts as taking the corresponding journey
+    for the users history.
+
     Requires standard authorization for a user.
     """
     async with Itgs() as itgs:
@@ -127,22 +134,42 @@ async def pop_screen_to_series_class(
                 ),
             )
         else:
+            user_tz = await get_user_timezone(itgs, user_sub=std_auth_result.result.sub)
+
+            request_at = time.time()
+            request_unix_date = unix_dates.unix_timestamp_to_unix_date(
+                request_at, tz=user_tz
+            )
+
             conn = await itgs.conn()
-            cursor = conn.cursor("none")
+            cursor = conn.cursor()
+
             response = await cursor.execute(
-                "SELECT 1 FROM courses, journeys, course_journeys "
-                "WHERE"
-                " courses.uid = ?"
-                " AND journeys.uid = ?"
-                " AND journeys.deleted_at IS NULL"
-                " AND course_journeys.course_id = courses.id"
-                " AND course_journeys.journey_id = journeys.id",
+                """
+INSERT INTO user_journeys (
+    uid, user_id, journey_id, created_at, created_at_unix_date
+)
+SELECT
+    ?, users.id, journeys.id, ?, ?
+FROM users, journeys, courses, course_journeys
+WHERE
+    users.sub = ?
+    AND journeys.uid = ?
+    AND courses.uid = ?
+    AND course_journeys.course_id = courses.id
+    AND course_journeys.journey_id = journeys.id
+    AND journeys.deleted_at IS NULL
+                """,
                 (
-                    course_auth_result.result.course_uid,
+                    f"oseh_uj_{secrets.token_urlsafe(16)}",
+                    request_at,
+                    request_unix_date,
+                    std_auth_result.result.sub,
                     args.trigger.parameters.journey.uid,
+                    course_auth_result.result.course_uid,
                 ),
             )
-            if not response.results:
+            if response.rows_affected is None or response.rows_affected < 1:
                 screen = await execute_peek(
                     itgs,
                     user_sub=std_auth_result.result.sub,

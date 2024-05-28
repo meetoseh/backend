@@ -822,7 +822,7 @@ SELECT
             users.sub = ?
             AND user_journeys.user_id = users.id
             AND journeys.uid = ?
-            AND user_journey.journey_id = journeys.id
+            AND user_journeys.journey_id = journeys.id
         ORDER BY user_journeys.created_at DESC
         LIMIT 1
     ) AS last_taken_at,

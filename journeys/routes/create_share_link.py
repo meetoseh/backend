@@ -10,6 +10,7 @@ from journeys.lib.link_stats import (
     incr_journey_share_link_created,
     incr_journey_share_link_reused,
 )
+from journeys.models.series_flags import SeriesFlags
 from lib.redis_stats_preparer import redis_stats
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -106,8 +107,11 @@ async def create_share_link(
                     AND journeys.deleted_at IS NULL
                     AND journeys.special_category IS NULL
                     AND NOT EXISTS (
-                        SELECT 1 FROM course_journeys
-                        WHERE course_journeys.journey_id = journeys.id
+                        SELECT 1 FROM course_journeys, courses
+                        WHERE 
+                            course_journeys.journey_id = journeys.id
+                            AND courses.id = course_journeys.course_id
+                            AND (courses.flags & ?) = 0
                     )
                     AND NOT EXISTS (
                         SELECT 1 FROM journey_share_links AS jsl
@@ -127,6 +131,7 @@ async def create_share_link(
                     now,
                     auth_result.result.sub,
                     args.uid,
+                    int(SeriesFlags.JOURNEYS_IN_SERIES_CODE_SHAREABLE),
                     generated_code,
                     now - LINK_REUSE_TIME_SECONDS,
                 ),
@@ -167,10 +172,12 @@ async def create_share_link(
                             AND special_category IS NULL
                     ) AS b1,
                     EXISTS (
-                        SELECT 1 FROM journeys, course_journeys
+                        SELECT 1 FROM journeys, course_journeys, courses
                         WHERE
                             journeys.uid = ?
                             AND journeys.id = course_journeys.journey_id
+                            AND courses.id = course_journeys.course_id
+                            AND (courses.flags & ?) = 0
                     ) AS b2,
                     (
                         SELECT code FROM journeys, journey_share_links, users
@@ -186,6 +193,7 @@ async def create_share_link(
                 (
                     args.uid,
                     args.uid,
+                    int(SeriesFlags.JOURNEYS_IN_SERIES_CODE_SHAREABLE),
                     args.uid,
                     auth_result.result.sub,
                     now - LINK_REUSE_TIME_SECONDS,

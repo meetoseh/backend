@@ -360,6 +360,9 @@ async def test_screen(
                             headers={"Content-Type": "application/json; charset=utf-8"},
                         )
                 elif output_fmt == "flow_slug":
+                    if value is None:
+                        continue  # must be nullable or we would have gotten a standard error
+
                     flow = await get_client_flow(itgs, slug=value)
                     if flow is None:
                         return Response(

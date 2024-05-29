@@ -5,6 +5,7 @@ import users.me.screens.routes.trace
 
 import users.me.screens.routes.pop_to_series
 import users.me.screens.routes.pop_to_series_class
+import users.me.screens.routes.pop_to_emotion_class
 
 router = APIRouter()
 router.include_router(users.me.screens.routes.peek.router)
@@ -13,3 +14,4 @@ router.include_router(users.me.screens.routes.trace.router)
 
 router.include_router(users.me.screens.routes.pop_to_series.router)
 router.include_router(users.me.screens.routes.pop_to_series_class.router)
+router.include_router(users.me.screens.routes.pop_to_emotion_class.router)

@@ -31,6 +31,9 @@ See also: [client flows](../concepts/clients_flows/README.md)
     but didn't exist or doesn't accept triggers from that platform
   - `desync`: the client tried to pop a screen that was no longer the front of
     the queue.
+  - `error_bad_auth`: the client tried to trigger a flow with invalid auth parameters,
+    where those auth parameters were part of the trigger
+  - `upgrade_longer_classes`: the client tried to take a premium class without oseh+
 - `name (text null)`: The human readable name of the flow for the admin area
 - `description (text null)`: A description of the flow for the admin area
 - `client_schema (text not null)`: A valid openapi 3.0.3 schema object for the

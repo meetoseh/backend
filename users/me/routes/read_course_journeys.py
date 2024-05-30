@@ -28,6 +28,7 @@ from journeys.models.minimal_course_journey import MinimalCourse, MinimalCourseJ
 from resources.standard_operator import StandardOperator
 import courses.auth as courses_auth
 from resources.standard_text_operator import StandardTextOperator
+import users.lib.entitlements as entitlements
 
 
 USER_COURSE_JOURNEY_SORT_OPTIONS = [
@@ -159,7 +160,9 @@ async def read_user_course_journeys(
     To prevent using this to extend the duration of JWTs or expand their scope,
     if a `course_jwt` is used for authorization, the returned jwts will have the
     same expiration and flags as the input jwt. Otherwise, they will have around
-    a 30m expiration and the VIEW_METADATA/LIKE flag.
+    a 30m expiration and the VIEW_METADATA/LIKE flag, with TAKE_JOURNEYS iff they
+    own the corresponding course entitlement. This will never set the DOWNLOAD
+    flag; use `start_download` to create such a JWT.
     """
     using_admin_perms = admin == "1"
     using_course_jwt = course_jwt is not None
@@ -177,10 +180,7 @@ async def read_user_course_journeys(
 
         course_auth_result = None
         jwts_expire_at = int(time.time() + 1800)
-        course_access_flags = (
-            courses_auth.CourseAccessFlags.VIEW_METADATA
-            | courses_auth.CourseAccessFlags.LIKE
-        )
+        course_access_flags: Optional[courses_auth.CourseAccessFlags] = None
         if using_course_jwt:
             course_auth_result = await courses_auth.auth_any(
                 itgs, f"bearer {course_jwt}"
@@ -387,7 +387,7 @@ async def raw_read_user_course_journeys(
     *,
     user_sub: str,
     jwts_expire_at: int,
-    course_access_flags: courses_auth.CourseAccessFlags,
+    course_access_flags: Optional[courses_auth.CourseAccessFlags],
 ):
     """performs exactly the specified sort without pagination logic"""
     last_taken_at = Table("last_taken_at")
@@ -474,6 +474,8 @@ async def raw_read_user_course_journeys(
                     )
                 )
             ).as_("is_next"),
+            # entitlement
+            courses.revenue_cat_entitlement,
         )
         .join(courses)
         .on(courses.id == course_journeys.course_id)
@@ -541,11 +543,30 @@ async def raw_read_user_course_journeys(
     query = query.limit(Parameter("?"))
     qargs.append(limit)
 
+    course_access_flags_by_course_uid: Dict[str, courses_auth.CourseAccessFlags] = {}
+
     conn = await itgs.conn()
     cursor = conn.cursor("none")
     response = await cursor.execute(query.get_sql(), qargs)
     items: List[MinimalCourseJourney] = []
     for row in response.results or []:
+        row_access_flags = course_access_flags
+        row_course_uid = cast(str, row[1])
+        if row_access_flags is None:
+            row_access_flags = course_access_flags_by_course_uid.get(row_course_uid)
+        if row_access_flags is None:
+            entitlement_slug = cast(str, row[16])
+            entitlement_info = await entitlements.get_entitlement(
+                itgs, user_sub=user_sub, identifier=entitlement_slug
+            )
+            row_access_flags = (
+                courses_auth.CourseAccessFlags.VIEW_METADATA
+                | courses_auth.CourseAccessFlags.LIKE
+            )
+            if entitlement_info is not None and entitlement_info.is_active:
+                row_access_flags |= courses_auth.CourseAccessFlags.TAKE_JOURNEYS
+            course_access_flags_by_course_uid[row_course_uid] = row_access_flags
+
         items.append(
             MinimalCourseJourney(
                 association_uid=row[0],
@@ -556,7 +577,7 @@ async def raw_read_user_course_journeys(
                     jwt=await courses_auth.create_jwt(
                         itgs,
                         row[1],
-                        flags=course_access_flags,
+                        flags=row_access_flags,
                         expires_at=jwts_expire_at,
                     ),
                 ),

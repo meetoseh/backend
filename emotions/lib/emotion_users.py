@@ -138,7 +138,7 @@ async def on_choose_word(
                     AND EXISTS (
                         SELECT 1 FROM users
                         WHERE 
-                            users.id = emotion_users.user_Id
+                            users.id = emotion_users.user_id
                             AND users.sub = ?
                     )
                 """,

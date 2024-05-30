@@ -3,7 +3,9 @@ import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from journeys.lib.notifs import on_entering_lobby
 from lib.client_flows.executor import (
+    ClientScreenQueuePeekInfo,
     TrustedTrigger,
     execute_peek,
     execute_pop,
@@ -12,6 +14,7 @@ from models import STANDARD_ERRORS_BY_CODE
 from typing import Annotated, Optional
 from itgs import Itgs
 import auth as std_auth
+from users.lib.streak import purge_user_streak_cache
 from users.lib.timezones import get_user_timezone
 import users.me.screens.auth
 import courses.auth
@@ -101,6 +104,23 @@ async def pop_screen_to_series_class(
         if std_auth_result.result is None:
             return std_auth_result.error_response
 
+        user_sub = std_auth_result.result.sub
+
+        async def _realize(screen: ClientScreenQueuePeekInfo):
+            result = await realize_screens(
+                itgs,
+                user_sub=user_sub,
+                platform=platform,
+                visitor=visitor,
+                result=screen,
+            )
+
+            return Response(
+                content=result.__pydantic_serializer__.to_json(result),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=200,
+            )
+
         course_auth_result = await courses.auth.auth_any(
             itgs, f"bearer {args.trigger.parameters.series.jwt}"
         )
@@ -133,19 +153,33 @@ async def pop_screen_to_series_class(
                     server_parameters={},
                 ),
             )
-        else:
-            user_tz = await get_user_timezone(itgs, user_sub=std_auth_result.result.sub)
+            return await _realize(screen)
 
-            request_at = time.time()
-            request_unix_date = unix_dates.unix_timestamp_to_unix_date(
-                request_at, tz=user_tz
-            )
+        user_tz = await get_user_timezone(itgs, user_sub=std_auth_result.result.sub)
 
-            conn = await itgs.conn()
-            cursor = conn.cursor()
+        request_at = time.time()
+        request_unix_date = unix_dates.unix_timestamp_to_unix_date(
+            request_at, tz=user_tz
+        )
 
-            response = await cursor.execute(
-                """
+        conn = await itgs.conn()
+        cursor = conn.cursor()
+
+        response = await cursor.executeunified3(
+            (
+                (
+                    """
+SELECT 1 FROM users, user_journeys
+WHERE
+    users.sub = ?
+    AND user_journeys.user_id = users.id
+    AND user_journeys.created_at_unix_date = ?
+LIMIT 1
+                        """,
+                    (std_auth_result.result.sub, request_unix_date),
+                ),
+                (
+                    """
 INSERT INTO user_journeys (
     uid, user_id, journey_id, created_at, created_at_unix_date
 )
@@ -159,55 +193,56 @@ WHERE
     AND course_journeys.course_id = courses.id
     AND course_journeys.journey_id = journeys.id
     AND journeys.deleted_at IS NULL
-                """,
-                (
-                    f"oseh_uj_{secrets.token_urlsafe(16)}",
-                    request_at,
-                    request_unix_date,
-                    std_auth_result.result.sub,
-                    args.trigger.parameters.journey.uid,
-                    course_auth_result.result.course_uid,
+                    """,
+                    (
+                        f"oseh_uj_{secrets.token_urlsafe(16)}",
+                        request_at,
+                        request_unix_date,
+                        std_auth_result.result.sub,
+                        args.trigger.parameters.journey.uid,
+                        course_auth_result.result.course_uid,
+                    ),
                 ),
             )
-            if response.rows_affected is None or response.rows_affected < 1:
-                screen = await execute_peek(
-                    itgs,
-                    user_sub=std_auth_result.result.sub,
-                    platform=platform,
-                    trigger=TrustedTrigger(
-                        flow_slug="error_bad_auth",
-                        client_parameters={},
-                        server_parameters={},
-                    ),
-                )
-            else:
-                screen = await execute_pop(
-                    itgs,
-                    user_sub=std_auth_result.result.sub,
-                    platform=platform,
-                    expected_front_uid=screen_auth_result.result.user_client_screen_uid,
-                    trigger=(
-                        TrustedTrigger(
-                            flow_slug=args.trigger.slug,
-                            client_parameters={},
-                            server_parameters={
-                                "series": args.trigger.parameters.series.uid,
-                                "journey": args.trigger.parameters.journey.uid,
-                            },
-                        )
-                    ),
-                )
+        )
+        if response[1].rows_affected is None or response[1].rows_affected < 1:
+            screen = await execute_peek(
+                itgs,
+                user_sub=std_auth_result.result.sub,
+                platform=platform,
+                trigger=TrustedTrigger(
+                    flow_slug="error_bad_auth",
+                    client_parameters={},
+                    server_parameters={},
+                ),
+            )
+            return await _realize(screen)
 
-        result = await realize_screens(
+        if not response[0].results:
+            await purge_user_streak_cache(itgs, sub=user_sub)
+
+        await on_entering_lobby(
+            itgs,
+            user_sub=std_auth_result.result.sub,
+            journey_uid=args.trigger.parameters.journey.uid,
+            action=f"starting the `{args.trigger.slug}` flow for a journey in a series",
+        )
+
+        screen = await execute_pop(
             itgs,
             user_sub=std_auth_result.result.sub,
             platform=platform,
-            visitor=visitor,
-            result=screen,
+            expected_front_uid=screen_auth_result.result.user_client_screen_uid,
+            trigger=(
+                TrustedTrigger(
+                    flow_slug=args.trigger.slug,
+                    client_parameters={},
+                    server_parameters={
+                        "series": args.trigger.parameters.series.uid,
+                        "journey": args.trigger.parameters.journey.uid,
+                    },
+                )
+            ),
         )
 
-        return Response(
-            content=result.__pydantic_serializer__.to_json(result),
-            headers={"Content-Type": "application/json; charset=utf-8"},
-            status_code=200,
-        )
+        return await _realize(screen)

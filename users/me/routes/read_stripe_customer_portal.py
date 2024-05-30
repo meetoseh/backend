@@ -293,7 +293,11 @@ async def read_stripe_customer_portal(
                 ]
                 if len(relevant_stripe_customers) == 0:
                     logger.warning(
-                        f"Customer Portal URL {request_id} for {auth_result.result.sub} found no relevant stripe customers"
+                        f"Customer Portal URL {request_id} for {auth_result.result.sub} found no relevant stripe customers:\n- "
+                        + "\n- ".join(
+                            f"{customer.id}: {customer.subscriptions.data if customer.subscriptions else 'no subscriptions included'}"
+                            for customer in stripe_customers
+                        )
                     )
                     new_value = StripeCustomerPortalStateUnavailable(
                         type="unavailable",

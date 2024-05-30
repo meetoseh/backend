@@ -290,7 +290,7 @@ async def _read_streak_query(
 
     async def _process(response: ResultItem) -> None:
         assert response.results, response
-        result.streak = response.results[0][0] - 1 + response.results[1][0]
+        result.streak = response.results[0][0] - 1 + min(response.results[1][0], 1)
 
     return Query(
         sql="""

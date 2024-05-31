@@ -53,9 +53,12 @@ _deployed_improved_settings_at = None
     responses=STANDARD_ERRORS_BY_CODE,
 )
 async def read_wants_notif_time_prompt(authorization: Optional[str] = Header(None)):
-    """Determines if the authorized user should be prompted for what time
-    of day they should be notified. The client should not request this
-    endpoint more than once per day.
+    """Determines what channels the user can configure reminder times for
+    (e.g., they can configure SMS reminders if they have a phone attached),
+    plus which ones they both can configure but have not configured yet.
+
+    If there are any channels the user can configure but has not configured yet,
+    they "want" a notification time prompt to be shown to them.
 
     Requires standard authorization.
     """

@@ -2,7 +2,7 @@ import os
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional, Union
 from error_middleware import handle_error, handle_warning
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from starlette.concurrency import run_in_threadpool
@@ -73,22 +73,24 @@ ERROR_503_TYPES = Literal["provider_error", "internal_error"]
 
 router = APIRouter()
 
+START_VERIFY_RESPONSES_BY_CODE: Dict[Union[str, int], Dict[str, Any]] = {
+    "400": {
+        "description": "The phone number is invalid",
+        "model": StandardErrorResponse[ERROR_400_TYPES],
+    },
+    "429": {
+        "description": "Too many verification attempts have been made",
+        "model": StandardErrorResponse[ERROR_429_TYPES],
+    },
+    **STANDARD_ERRORS_BY_CODE,
+}
+
 
 @router.post(
     "/verify/start",
     status_code=201,
     response_model=StartVerifyResponse,
-    responses={
-        "400": {
-            "description": "The phone number is invalid",
-            "model": StandardErrorResponse[ERROR_400_TYPES],
-        },
-        "429": {
-            "description": "Too many verification attempts have been made",
-            "model": StandardErrorResponse[ERROR_429_TYPES],
-        },
-        **STANDARD_ERRORS_BY_CODE,
-    },
+    responses=START_VERIFY_RESPONSES_BY_CODE,
 )
 async def start_verify(
     args: StartVerifyRequest, authorization: Optional[str] = Header(None)
@@ -100,6 +102,7 @@ async def start_verify(
     async with Itgs() as itgs:
         auth_result = await auth_id(itgs, authorization)
         if auth_result.result is None:
+            assert auth_result.error_response is not None, auth_result
             return auth_result.error_response
 
         redis = await itgs.redis()

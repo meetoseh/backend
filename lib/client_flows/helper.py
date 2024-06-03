@@ -163,6 +163,10 @@ async def handle_trigger_time_transformations(
       screen to be pushed onto the users client queue with the server parameter for
       the flow transformed from the series uid to the content uid of the video, and
       the variable input type `extract` is treated like copy at peek time.
+    - `string_format`: Handles automatic extraction in the same was as `extract`.
+      Further, If `e164` is used as the format spec for one of the inputs, after
+      extraction, we will convert an E.164 phone number with a U.S country code
+      to e.g. +1 555-555-5555.
     """
     fmt = string.Formatter()
 
@@ -271,6 +275,41 @@ async def handle_trigger_time_transformations(
                     extracted_path=split_path.extracted_path,
                     server_parameter_path=server_parameter_path,
                     new_server_parameters=new_server_parameters,
+                )
+
+            for part_idx, part in enumerate(new_format_parts):
+                if part[2] != "e164":
+                    continue
+
+                full_path = extract_format_parameter_field_name(part[1])
+                if full_path[0] != "server":
+                    raise ValueError(
+                        f"unsupported format {part[2]} for non-server path {full_path}"
+                    )
+
+                replaced_part = True
+                if new_server_parameters is None:
+                    new_server_parameters = deep_copy(flow_server_parameters)
+
+                server_parameter_path = (
+                    ["__bonus_format_specs", "e164"]
+                    + variable_parameter.output_path
+                    + [f"_{part_idx}"]
+                )
+                value = deep_extract(new_server_parameters, full_path[1:])
+
+                assert isinstance(
+                    value, str
+                ), f"expected string for e164 format, got {value!r}"
+                if value.startswith("+1") and len(value) == 12:
+                    value = f"+1 {value[2:5]}-{value[5:8]}-{value[8:12]}"
+
+                deep_set(new_server_parameters, server_parameter_path, value)
+                new_format_parts[part_idx] = (
+                    part[0],
+                    "{server" + "".join(f"[{x}]" for x in server_parameter_path) + "}",
+                    None,
+                    part[3],
                 )
 
             if replaced_part:

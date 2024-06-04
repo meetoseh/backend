@@ -884,13 +884,30 @@ def check_preconditions(
         *simple("name", preconditions.name),
         *simple("description", preconditions.description),
         *simple(
-            "client_schema", json.dumps(preconditions.client_schema, sort_keys=True)
+            "client_schema",
+            (
+                json.dumps(preconditions.client_schema, sort_keys=True)
+                if preconditions.client_schema is not NotSetEnum.NOT_SET
+                else NotSetEnum.NOT_SET
+            ),
         ),
         *simple(
-            "server_schema", json.dumps(preconditions.server_schema, sort_keys=True)
+            "server_schema",
+            (
+                json.dumps(preconditions.server_schema, sort_keys=True)
+                if preconditions.server_schema is not NotSetEnum.NOT_SET
+                else NotSetEnum.NOT_SET
+            ),
         ),
         *simple("replaces", preconditions.replaces),
-        *simple("screens", encode_flow_screens(preconditions.screens)),
+        *simple(
+            "screens",
+            (
+                encode_flow_screens(preconditions.screens)
+                if preconditions.screens is not NotSetEnum.NOT_SET
+                else NotSetEnum.NOT_SET
+            ),
+        ),
         *simple("flags", preconditions.flags),
         *simple("created_at", preconditions.created_at),
         *[

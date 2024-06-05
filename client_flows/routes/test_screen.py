@@ -476,6 +476,7 @@ async def test_screen(
             user_sub=auth_result.result.sub,
             requested=requested_standard_parameters,
             now=time.time(),
+            platform="browser",
         )
 
         transformation = await handle_trigger_time_transformations(

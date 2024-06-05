@@ -73,101 +73,113 @@ async def read_merge_account_suggestions(
         logger.info(
             f"Checking for merge suggestions for user {auth_id_result.result.sub} ({auth_id_result.result.claims})"
         )
-
-        conn = await itgs.conn()
-        cursor = conn.cursor("none")
-
-        # PERF: Spent some time fiddling with this query to get it to be fast.
-        # Current query plan:
-        #
-        # --CO-ROUTINE mergable_providers
-        #   |--MULTI-INDEX OR
-        #      |--INDEX 1
-        #         |--LIST SUBQUERY 4
-        #            |--SEARCH original USING COVERING INDEX sqlite_autoindex_users_1 (sub=?)
-        #            |--SEARCH uea_original USING INDEX user_email_addresses_user_idx (user_id=?)
-        #            |--SEARCH uea_merging USING INDEX user_email_addresses_email_idx (email=?)
-        #         |--SEARCH user_identities USING INDEX user_identities_user_id_idx (user_id=?)
-        #      |--INDEX 2
-        #         |--LIST SUBQUERY 5
-        #            |--SEARCH original USING INDEX sqlite_autoindex_users_1 (sub=?)
-        #            |--SEARCH merging USING INDEX users_trimmed_name_insensitive_idx (<expr>=?)
-        #         |--SEARCH user_identities USING INDEX user_identities_user_id_idx (user_id=?)
-        #   |--SCALAR SUBQUERY 3
-        #      |--SEARCH users USING COVERING INDEX sqlite_autoindex_users_1 (sub=?)
-        #   |--USE TEMP B-TREE FOR DISTINCT
-        # --SCAN mergable_providers
-        # --CORRELATED SCALAR SUBQUERY 7
-        #   |--SEARCH original USING COVERING INDEX sqlite_autoindex_users_1 (sub=?)
-        #   |--SEARCH ui USING INDEX user_identities_user_id_idx (user_id=?)
-        #
-        response = await cursor.execute(
-            "WITH mergable_users_by_email(id) AS ("
-            "SELECT"
-            " uea_merging.user_id "
-            "FROM user_email_addresses AS uea_merging, users AS original, user_email_addresses AS uea_original "
-            "WHERE"
-            " original.sub = ?"
-            " AND uea_original.user_id = original.id"
-            " AND uea_original.email <> 'anonymous@example.com' COLLATE NOCASE"
-            " AND uea_merging.email = uea_original.email COLLATE NOCASE"
-            "), mergable_users_by_name(id) AS ("
-            "SELECT"
-            " merging.id "
-            "FROM users AS merging, users AS original "
-            "WHERE"
-            " original.sub = ?"
-            " AND original.given_name <> 'Anonymous'"
-            " AND merging.id <> original.id"
-            " AND merging.given_name IS NOT NULL"
-            " AND merging.family_name IS NOT NULL"
-            " AND original.given_name IS NOT NULL"
-            " AND original.family_name IS NOT NULL"
-            " AND TRIM(merging.given_name || ' ' || merging.family_name) = TRIM(original.given_name || ' ' || original.family_name) COLLATE NOCASE"
-            "), mergable_providers(provider) AS ("
-            "SELECT DISTINCT provider FROM user_identities "
-            "WHERE"
-            " user_id <> (SELECT id FROM users WHERE sub = ?)"
-            " AND (user_id IN mergable_users_by_email OR user_id IN mergable_users_by_name)"
-            ") "
-            "SELECT provider FROM mergable_providers "
-            "WHERE"
-            " NOT EXISTS ("
-            "  SELECT 1 FROM user_identities AS ui, users AS original"
-            "  WHERE"
-            "   original.sub = ?"
-            "   AND ui.user_id = original.id"
-            "   AND ui.provider = mergable_providers.provider"
-            " )",
-            [
-                auth_id_result.result.sub,
-                auth_id_result.result.sub,
-                auth_id_result.result.sub,
-                auth_id_result.result.sub,
-            ],
+        suggestions = await get_merge_account_suggestions(
+            itgs, user_sub=auth_id_result.result.sub
         )
-        if not response.results:
-            logger.info(
-                f"No merge suggestions for {auth_id_result.result.sub} ({auth_id_result.result.claims})"
-            )
+        if not suggestions:
+            logger.info(f"No merge suggestions for user {auth_id_result.result.sub}")
             return Response(status_code=204)
 
-        providers: List[MergeProvider] = []
-        for row in response.results:
-            if row[0] not in merge_providers:
-                await handle_warning(
-                    f"{__name__}:unknown_provider",
-                    f"Ignoring unknown provider `{row[0]}` as merge suggestion for user {auth_id_result.result.sub}",
-                )
-            providers.append(cast(MergeProvider, row[0]))
-
         logger.info(
-            f"Providing merge suggestions for {auth_id_result.result.sub}: {providers=}"
+            f"Providing merge suggestions for {auth_id_result.result.sub}: {suggestions=}"
         )
+
         return Response(
-            content=MergeAccountSuggestionsResponse(
-                channels=providers
-            ).model_dump_json(),
+            content=MergeAccountSuggestionsResponse.__pydantic_serializer__.to_json(
+                MergeAccountSuggestionsResponse(channels=suggestions)
+            ),
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+            },
             status_code=200,
-            headers={"Content-Type": "application/json; charset=utf-8"},
         )
+
+
+async def get_merge_account_suggestions(
+    itgs: Itgs, /, *, user_sub: str
+) -> List[MergeProvider]:
+    conn = await itgs.conn()
+    cursor = conn.cursor("none")
+
+    # PERF: Spent some time fiddling with this query to get it to be fast.
+    # Current query plan:
+    #
+    # --CO-ROUTINE mergable_providers
+    #   |--MULTI-INDEX OR
+    #      |--INDEX 1
+    #         |--LIST SUBQUERY 4
+    #            |--SEARCH original USING COVERING INDEX sqlite_autoindex_users_1 (sub=?)
+    #            |--SEARCH uea_original USING INDEX user_email_addresses_user_idx (user_id=?)
+    #            |--SEARCH uea_merging USING INDEX user_email_addresses_email_idx (email=?)
+    #         |--SEARCH user_identities USING INDEX user_identities_user_id_idx (user_id=?)
+    #      |--INDEX 2
+    #         |--LIST SUBQUERY 5
+    #            |--SEARCH original USING INDEX sqlite_autoindex_users_1 (sub=?)
+    #            |--SEARCH merging USING INDEX users_trimmed_name_insensitive_idx (<expr>=?)
+    #         |--SEARCH user_identities USING INDEX user_identities_user_id_idx (user_id=?)
+    #   |--SCALAR SUBQUERY 3
+    #      |--SEARCH users USING COVERING INDEX sqlite_autoindex_users_1 (sub=?)
+    #   |--USE TEMP B-TREE FOR DISTINCT
+    # --SCAN mergable_providers
+    # --CORRELATED SCALAR SUBQUERY 7
+    #   |--SEARCH original USING COVERING INDEX sqlite_autoindex_users_1 (sub=?)
+    #   |--SEARCH ui USING INDEX user_identities_user_id_idx (user_id=?)
+    #
+    response = await cursor.execute(
+        "WITH mergable_users_by_email(id) AS ("
+        "SELECT"
+        " uea_merging.user_id "
+        "FROM user_email_addresses AS uea_merging, users AS original, user_email_addresses AS uea_original "
+        "WHERE"
+        " original.sub = ?"
+        " AND uea_original.user_id = original.id"
+        " AND uea_original.email <> 'anonymous@example.com' COLLATE NOCASE"
+        " AND uea_merging.email = uea_original.email COLLATE NOCASE"
+        "), mergable_users_by_name(id) AS ("
+        "SELECT"
+        " merging.id "
+        "FROM users AS merging, users AS original "
+        "WHERE"
+        " original.sub = ?"
+        " AND original.given_name <> 'Anonymous'"
+        " AND merging.id <> original.id"
+        " AND merging.given_name IS NOT NULL"
+        " AND merging.family_name IS NOT NULL"
+        " AND original.given_name IS NOT NULL"
+        " AND original.family_name IS NOT NULL"
+        " AND TRIM(merging.given_name || ' ' || merging.family_name) = TRIM(original.given_name || ' ' || original.family_name) COLLATE NOCASE"
+        "), mergable_providers(provider) AS ("
+        "SELECT DISTINCT provider FROM user_identities "
+        "WHERE"
+        " user_id <> (SELECT id FROM users WHERE sub = ?)"
+        " AND (user_id IN mergable_users_by_email OR user_id IN mergable_users_by_name)"
+        ") "
+        "SELECT provider FROM mergable_providers "
+        "WHERE"
+        " NOT EXISTS ("
+        "  SELECT 1 FROM user_identities AS ui, users AS original"
+        "  WHERE"
+        "   original.sub = ?"
+        "   AND ui.user_id = original.id"
+        "   AND ui.provider = mergable_providers.provider"
+        " )",
+        [
+            user_sub,
+            user_sub,
+            user_sub,
+            user_sub,
+        ],
+    )
+    if not response.results:
+        return []
+
+    providers: List[MergeProvider] = []
+    for row in response.results:
+        if row[0] not in merge_providers:
+            await handle_warning(
+                f"{__name__}:unknown_provider",
+                f"Ignoring unknown provider `{row[0]}` as merge suggestion for user {user_sub}",
+            )
+        providers.append(cast(MergeProvider, row[0]))
+
+    return providers

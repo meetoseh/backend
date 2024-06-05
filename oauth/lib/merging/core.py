@@ -329,9 +329,10 @@ async def _delete_user_daily_reminders(
 
         await mctx.log.write(
             b"got the user's daily reminder settings:\n"
-            + RealDailyReminderChannelSettings.__pydantic_serializer__.to_json(
-                settings_by_channel, indent=2
-            )
+            + json.dumps(
+                dict((k, v.model_dump()) for k, v in settings_by_channel.items()),
+                indent=2,
+            ).encode("utf-8")
             + b"\n"
         )
 
@@ -454,9 +455,10 @@ async def _delete_user_daily_reminders(
 
         await mctx.log.write(
             b"got the user's actual daily reminder records:\n"
-            + DailyReminderChannelSettings.__pydantic_serializer__.to_json(
-                registrations_by_channel, indent=2
-            )
+            + json.dumps(
+                dict((k, v.model_dump() if v is not None else None) for k, v in registrations_by_channel.items()),
+                indent=2,
+            ).encode("utf-8")
             + b"\n"
         )
 

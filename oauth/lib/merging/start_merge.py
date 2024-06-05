@@ -242,6 +242,19 @@ async def attempt_start_merge(
             + "\n    ".join(
                 json.dumps(original_user.claims, indent=2).splitlines(keepends=False)
             ).encode("utf-8")
+            + b"\n"
+            b"  merge:\n"
+            b"    provider: " + merge.provider.encode("utf-8") + b"\n"
+            b"    provider_sub: " + merge.provider_sub.encode("utf-8") + b"\n"
+            b"    provider_claims:\n    "
+            + "\n    ".join(
+                json.dumps(merge.provider_claims, indent=2).splitlines(keepends=False)
+            ).encode("utf-8")
+            + b"\n"
+            b"    claims:\n    "
+            + "\n    ".join(
+                json.dumps(merge.claims, indent=2).splitlines(keepends=False)
+            ).encode("utf-8")
             + b"\n\n"
             b"Top-level computed values:\n"
             b"  merge_at=" + str(merge_at).encode("ascii") + b"\n"
@@ -612,20 +625,10 @@ async def get_merge_result(
     )
 
     current_login_options = [
-        LoginOption(
-            provider=opt["provider"],
-            email=opt["email"],
-        )
-        for opt in current_user_identities or []
-        if opt.get("email") is not None
+        opt for opt in current_user_identities or [] if opt.get("email") is not None
     ]
     still_existing_merging_login_options = [
-        LoginOption(
-            provider=opt["provider"],
-            email=opt["email"],
-        )
-        for opt in merging_user_identities or []
-        if opt.get("email") is not None
+        opt for opt in merging_user_identities or [] if opt.get("email") is not None
     ]
     moved_options: Set[Tuple[MergeProvider, str]] = (
         set(
@@ -644,32 +647,36 @@ async def get_merge_result(
         moved_options.add((merge.provider, merge.provider_sub))
 
     original_login_options = [
-        opt
+        LoginOption(
+            provider=opt["provider"],
+            email=opt["email"],
+        )
         for opt in current_login_options
-        if (opt.provider, opt.email) not in moved_options
+        if (opt["provider"], opt["sub"]) not in moved_options
     ]
     merging_login_options = [
-        opt
+        LoginOption(
+            provider=opt["provider"],
+            email=opt["email"],
+        )
         for opt in current_login_options
-        if (opt.provider, opt.email) in moved_options
+        if (opt["provider"], opt["sub"]) in moved_options
     ]
 
     await log.write(
         b"  current_login_options:\n    "
         + (
             b"\n    ".join(
-                LoginOption.__pydantic_serializer__.to_json(
-                    current_login_options, indent=2
-                ).splitlines()
+                json.dumps(current_login_options, indent=2).encode("utf-8").splitlines()
             )
         )
         + b"\n"
         b"  still_existing_merging_login_options:\n    "
         + (
             b"\n    ".join(
-                LoginOption.__pydantic_serializer__.to_json(
-                    still_existing_merging_login_options, indent=2
-                ).splitlines()
+                json.dumps(still_existing_merging_login_options, indent=2)
+                .encode("utf-8")
+                .splitlines()
             )
         )
         + b"\n"
@@ -689,6 +696,11 @@ async def get_merge_result(
                     merging_login_options, indent=2
                 ).splitlines()
             )
+        )
+        + b"\n"
+        b"  moved_options:\n    "
+        + b"\n    ".join(
+            json.dumps(list(moved_options), indent=2).encode("utf-8").splitlines()
         )
         + b"\n"
     )
@@ -819,8 +831,20 @@ async def get_merge_result(
                 ),
             ),
         ),
-        original_login_options=current_login_options,
-        merging_login_options=still_existing_merging_login_options,
+        original_login_options=[
+            LoginOption(
+                provider=opt["provider"],
+                email=opt["email"],
+            )
+            for opt in current_login_options
+        ],
+        merging_login_options=[
+            LoginOption(
+                provider=opt["provider"],
+                email=opt["email"],
+            )
+            for opt in still_existing_merging_login_options
+        ],
     )
 
 
@@ -942,12 +966,12 @@ async def get_email_conflict_info(
         response.results or []
     ):
         if row_user_sub == original_user_sub:
-            original_settings_by_channel[
-                row_channel
-            ] = RealDailyReminderChannelSettings(
-                channel=row_channel,
-                days=interpret_day_of_week_mask(row_day_of_week_mask),
-                time_range=DailyReminderTimeRange.parse_db(row_time_range),
+            original_settings_by_channel[row_channel] = (
+                RealDailyReminderChannelSettings(
+                    channel=row_channel,
+                    days=interpret_day_of_week_mask(row_day_of_week_mask),
+                    time_range=DailyReminderTimeRange.parse_db(row_time_range),
+                )
             )
         elif row_user_sub == merging_user_sub:
             merging_settings_by_channel[row_channel] = RealDailyReminderChannelSettings(
@@ -1144,12 +1168,12 @@ async def get_phone_conflict_info(
         response.results or []
     ):
         if row_user_sub == original_user_sub:
-            original_settings_by_channel[
-                row_channel
-            ] = RealDailyReminderChannelSettings(
-                channel=row_channel,
-                days=interpret_day_of_week_mask(row_day_of_week_mask),
-                time_range=DailyReminderTimeRange.parse_db(row_time_range),
+            original_settings_by_channel[row_channel] = (
+                RealDailyReminderChannelSettings(
+                    channel=row_channel,
+                    days=interpret_day_of_week_mask(row_day_of_week_mask),
+                    time_range=DailyReminderTimeRange.parse_db(row_time_range),
+                )
             )
         elif row_user_sub == merging_user_sub:
             merging_settings_by_channel[row_channel] = RealDailyReminderChannelSettings(

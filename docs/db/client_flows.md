@@ -34,6 +34,10 @@ See also: [client flows](../concepts/clients_flows/README.md)
   - `error_bad_auth`: the client tried to trigger a flow with invalid auth parameters,
     where those auth parameters were part of the trigger
   - `upgrade_longer_classes`: the client tried to take a premium class without oseh+
+  - `merge_no_change_required`: see `empty_with_merge_token`
+  - `merge_created_and_attached`: see `empty_with_merge_token`
+  - `merge_trivial`: see `empty_with_merge_token`
+  - `merge_confirmation_required`: see `empty_with_merge_token`
 - `name (text null)`: The human readable name of the flow for the admin area
 - `description (text null)`: A description of the flow for the admin area
 - `client_schema (text not null)`: A valid openapi 3.0.3 schema object for the

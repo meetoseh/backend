@@ -1,4 +1,5 @@
 """contains convenient functions for authorizing users"""
+
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional
 from fastapi.responses import Response

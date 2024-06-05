@@ -15,17 +15,17 @@ from oauth.routes.prepare import (
     get_provider_url,
     valid_redirect_uris,
     OauthPrepareResponse,
-    OauthProvider,
 )
 from auth import auth_id
 from itgs import Itgs
+from users.me.routes.read_merge_account_suggestions import MergeProvider
 
 
 router = APIRouter()
 
 
 class OauthPrepareForMergeRequest(BaseModel):
-    provider: OauthProvider = Field(
+    provider: MergeProvider = Field(
         description="Which provider to use for authentication"
     )
     redirect_uri: Annotated[
@@ -86,29 +86,12 @@ async def prepare_for_merge(
         if args.redirect_uri not in valid_redirect_uris:
             return INVALID_REDIRECT_URI_RESPONSE
 
-        state = generate_state_secret()
-        nonce = generate_nonce()
-        initial_redirect_uri = get_initial_redirect_uri_for_provider(args.provider)
-        url = get_provider_url(
-            args.provider,
-            state=state,
-            nonce=nonce,
-            initial_redirect_uri=initial_redirect_uri,
-        )
-
-        await associate_state_secret_with_info(
+        url = await prepare_user_for_merge(
             itgs,
-            secret=state,
-            info=OauthState(
-                provider=args.provider,
-                refresh_token_desired=False,
-                redirect_uri=args.redirect_uri,
-                initial_redirect_uri=initial_redirect_uri,
-                nonce=nonce,
-                merging_with_user_sub=auth_result.result.sub,
-            ),
+            user_sub=auth_result.result.sub,
+            provider=args.provider,
+            redirect_uri=args.redirect_uri,
         )
-
         return Response(
             content=OauthPrepareResponse(url=url).model_dump_json(),
             headers={
@@ -117,3 +100,34 @@ async def prepare_for_merge(
             },
             status_code=200,
         )
+
+
+async def prepare_user_for_merge(
+    itgs: Itgs, /, *, user_sub: str, provider: MergeProvider, redirect_uri: str
+) -> str:
+    if provider == "Dev":
+        return os.environ["ROOT_FRONTEND_URL"] + "/dev_login?merge=1"
+
+    state = generate_state_secret()
+    nonce = generate_nonce()
+    initial_redirect_uri = get_initial_redirect_uri_for_provider(provider)
+    url = get_provider_url(
+        provider,
+        state=state,
+        nonce=nonce,
+        initial_redirect_uri=initial_redirect_uri,
+    )
+
+    await associate_state_secret_with_info(
+        itgs,
+        secret=state,
+        info=OauthState(
+            provider=provider,
+            refresh_token_desired=False,
+            redirect_uri=redirect_uri,
+            initial_redirect_uri=initial_redirect_uri,
+            nonce=nonce,
+            merging_with_user_sub=user_sub,
+        ),
+    )
+    return url

@@ -38,7 +38,11 @@ async def realize_screens(
             requested_standard_parameters.add(tuple(path))
 
     standard_parameters = await create_standard_parameters(
-        itgs, user_sub=user_sub, requested=requested_standard_parameters, now=now
+        itgs,
+        user_sub=user_sub,
+        requested=requested_standard_parameters,
+        now=now,
+        platform=platform,
     )
 
     active = PeekedScreenItem(

@@ -1,13 +1,17 @@
+import os
 from typing import Any, Generator, List, Optional, Set, cast
 from itgs import Itgs
 import string
 
 from lib.client_flows.client_flow_screen import ClientFlowScreenScreen
 from lib.extract_format_parameter_field_name import extract_format_parameter_field_name
+from oauth.routes.prepare_for_merge import prepare_user_for_merge
 from users.lib.streak import read_user_streak
 from users.lib.time_of_day import get_time_of_day
 from users.lib.timezones import get_user_timezone
 import unix_dates
+from users.me.routes.read_merge_account_suggestions import get_merge_account_suggestions
+from visitors.lib.get_or_create_visitor import VisitorSource
 
 
 def get_requested_standard_parameters(
@@ -90,6 +94,43 @@ _supported = {
         "format": "int32",
         "example": 750,
     },
+    ("merge", "suggest"): {
+        "type": "array",
+        "example": [
+            {"provider": "Google", "url": os.environ["ROOT_FRONTEND_URL"] + "#example"}
+        ],
+        "items": {
+            "type": "object",
+            "required": ["provider", "url"],
+            "properties": {
+                "provider": {
+                    "type": "string",
+                    "enum": ["SignInWithApple", "Google", "Direct", "Dev"],
+                    "example": "Google",
+                },
+                "url": {
+                    "type": "string",
+                    "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
+                },
+            },
+        },
+    },
+    ("merge", "url", "SignInWithApple"): {
+        "type": "string",
+        "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
+    },
+    ("merge", "url", "Google"): {
+        "type": "string",
+        "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
+    },
+    ("merge", "url", "Direct"): {
+        "type": "string",
+        "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
+    },
+    ("merge", "url", "Dev"): {
+        "type": "string",
+        "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
+    },
 }
 
 
@@ -109,6 +150,7 @@ async def create_standard_parameters(
     user_sub: str,
     requested: Set[tuple],  # Set[Tuple[str, ...]] once that's allowed,
     now: float,
+    platform: VisitorSource,
 ) -> dict:
     """Given a set of requested standard parameters, returns a dict which can be
     used to realize those parameters.
@@ -135,11 +177,19 @@ async def create_standard_parameters(
         standard[constants][fast_anim_ms]: the duration of a fast animation in milliseconds (e.g., 350)
         standard[constants][normal_anim_ms]: the duration of a normal animation in milliseconds (e.g., 500)
         standard[constants][slow_anim_ms]: the duration of a slow animation in milliseconds (e.g., 750)
+        standard[merge][suggest]: a list of suggested providers to merge with. may be empty
+        standard[merge][url][SignInWithApple]: the url to redirect to for merging with Apple
+        standard[merge][url][Google]: the url to redirect to for merging with Google
+        standard[merge][url][Direct]: the url to redirect to for merging with a direct account
+        standard[merge][url][Dev]: the url to redirect to for merging with a dev account
 
     Args:
         itgs (Itgs): the integrations to (re)use
         user_sub (str): the user to get the standard parameters for
         requested (Set[List[str]]): the standard parameters to get
+        platform (VisitorSource): which platform to prepare the parameters for. For merging,
+            for example, we use a different redirect uri for native clients compared to the
+            browser
     """
     result: dict = {
         "constants": {
@@ -203,5 +253,39 @@ async def create_standard_parameters(
                 "days": f"{streak.prev_best_all_time_streak} day{streak.prev_best_all_time_streak != 1 and 's' or ''}",
             },
         }
+
+    if ("merge",) in requested:
+        result["merge"] = {}
+        redirect_uri = (
+            os.environ["ROOT_FRONTEND_URL"]
+            if platform == "browser"
+            else "oseh://login_callback"
+        )
+        if ("merge", "suggest") in requested:
+            suggested = await get_merge_account_suggestions(itgs, user_sub=user_sub)
+            result["merge"]["suggest"] = [
+                {
+                    "provider": provider,
+                    "url": await prepare_user_for_merge(
+                        itgs,
+                        user_sub=user_sub,
+                        provider=provider,
+                        redirect_uri=redirect_uri,
+                    ),
+                }
+                for provider in suggested
+            ]
+
+        if ("merge", "url") in requested:
+            result["merge"]["url"] = {}
+
+            for provider in ("SignInWithApple", "Google", "Direct", "Dev"):
+                if ("merge", "url", provider) in requested:
+                    result["merge"]["url"][provider] = await prepare_user_for_merge(
+                        itgs,
+                        user_sub=user_sub,
+                        provider=provider,
+                        redirect_uri=redirect_uri,
+                    )
 
     return result

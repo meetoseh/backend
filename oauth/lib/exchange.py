@@ -1,3 +1,4 @@
+import io
 import os
 import secrets
 import phonenumbers
@@ -17,6 +18,13 @@ from typing import (
 from error_middleware import handle_warning
 from itgs import Itgs
 import aiohttp
+from lib.client_flows.client_flow_stats_preparer import ClientFlowStatsPreparer
+from lib.client_flows.flow_cache import get_client_flow
+from lib.client_flows.simulator import (
+    ClientFlowSimulatorUserClientScreen,
+    init_simulator_from_peek,
+    simulate_add_screens,
+)
 from lib.contact_methods.contact_method_stats import (
     ContactMethodStatsPreparer,
     contact_method_stats,
@@ -1291,6 +1299,7 @@ async def _try_create_new_account_with_identity(
       might still be processing for a short while, causing the client to retry
       the request later. Also, a job is queued to process the new picture.
     - The user stats are updated to indicate a new account was created
+    - The user has the `signup` flow triggered
 
     Args:
         itgs (Itgs): the integrations to (re)use
@@ -1333,6 +1342,14 @@ async def _try_create_new_account_with_identity(
             now=now,
         ),
         *_insert_phone(
+            user_sub=user_sub,
+            identity_uid=identity_uid,
+            provider=provider,
+            interpreted_claims=interpreted_claims,
+            now=now,
+        ),
+        *await _trigger_signup(
+            itgs,
             user_sub=user_sub,
             identity_uid=identity_uid,
             provider=provider,
@@ -1765,6 +1782,171 @@ def _insert_phone(
             response_handler=partial(handler, "log"),
         ),
     ]
+
+
+async def _trigger_signup(
+    itgs: Itgs,
+    *,
+    user_sub: str,
+    identity_uid: str,
+    provider: str,
+    interpreted_claims: InterpretedClaims,
+    now: float,
+) -> List[_CreateQuery]:
+    flow_slug = "signup"  # todo: could be based on visitor information, if any can be found
+
+    flow = await get_client_flow(itgs, slug=flow_slug)
+    if flow is None:
+        logger.warning(
+            f"Skipping initial signup client flow trigger for potential new user {user_sub} with identity "
+            f"{identity_uid} from provider {provider} because the flow with slug 'signup' was not found"
+        )
+        return []
+
+    simulator_state = init_simulator_from_peek(None, queue=[])
+    ClientFlowStatsPreparer(simulator_state.stats).incr_triggered(
+        unix_date=unix_dates.unix_timestamp_to_unix_date(now, tz=tz),
+        platform="server",
+        slug=flow_slug,
+        trusted=True
+    )
+    await simulate_add_screens(
+        itgs,
+        state=simulator_state,
+        source="server",
+        flow=flow,
+        flow_client_parameters={},
+        flow_server_parameters={},
+    )
+
+    result: List[_CreateQuery] = []
+    for idx, mutation in enumerate(simulator_state.mutations):
+        if mutation.type == "prepend":
+            mutation.screens
+            result.append(
+                _prepend_screens(
+                    mutation.screens, 
+                    now=now, 
+                    user_sub=user_sub, 
+                    stats=simulator_state.stats if idx == 0 else RedisStatsPreparer(),
+                    identity_uid=identity_uid,
+                    provider=provider,
+                    interpreted_claims=interpreted_claims,
+                )
+            )
+        else:
+            logger.warning(
+                f"Unsupported mutation for initial signup client flow trigger for potential new user {user_sub} with identity "
+                f"{identity_uid} from provider {provider}: {mutation}. Skipping signup flow."
+            )
+            return []
+
+    return result
+
+
+def _prepend_screens(
+    screens: List[ClientFlowSimulatorUserClientScreen],
+    /,
+    *,
+    now: float,
+    identity_uid: str,
+    provider: str,
+    interpreted_claims: InterpretedClaims,
+    user_sub: str,
+    stats: RedisStatsPreparer,
+) -> _CreateQuery:
+    sql = io.StringIO()
+    sql.write(
+        "WITH batch("
+        "uid,"
+        "outer_counter,"
+        "inner_counter,"
+        "client_flow_uid,"
+        "client_screen_uid,"
+        "flow_client_parameters,"
+        "flow_server_parameters,"
+        "screen) AS (VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    qargs = []
+
+    for i, screen in enumerate(screens):
+        if i != 0:
+            sql.write(", (?, ?, ?, ?, ?, ?, ?, ?)")
+        qargs.extend(
+            [
+                screen.uid,
+                screen.outer_counter,
+                screen.inner_counter,
+                screen.client_flow_uid,
+                screen.client_screen_uid,
+                screen.flow_client_parameters,
+                screen.flow_server_parameters,
+                screen.screen,
+            ]
+        )
+
+    sql.write(
+        ") INSERT INTO user_client_screens("
+        " uid,"
+        " user_id,"
+        " outer_counter,"
+        " inner_counter,"
+        " client_flow_id,"
+        " client_screen_id,"
+        " flow_client_parameters,"
+        " flow_server_parameters,"
+        " screen,"
+        " added_at "
+        ") SELECT"
+        " batch.uid,"
+        " users.id,"
+        " batch.outer_counter,"
+        " batch.inner_counter,"
+        " client_flows.id,"
+        " client_screens.id,"
+        " batch.flow_client_parameters,"
+        " batch.flow_server_parameters,"
+        " batch.screen,"
+        " ? "
+        "FROM batch, users, client_flows, client_screens "
+        "WHERE"
+        " client_flows.uid = batch.client_flow_uid"
+        " AND client_screens.uid = batch.client_screen_uid"
+        " AND users.sub = ?"
+    )
+    qargs.extend([now, user_sub])
+
+    def slack_context():
+        return (
+            f"\n\n```\nuser_sub={clean_for_slack(repr(user_sub))}\n```\n\n"
+            f"```\nidentity_uid={clean_for_slack(repr(identity_uid))}\n```\n\n"
+            f"```\nprovider={clean_for_slack(repr(provider))}\n```\n\n"
+            f"```\ninterpreted_claims={clean_for_slack(repr(interpreted_claims))}\n```",
+        )
+
+    outer_stats = stats
+
+    async def handler(
+        itgs: Itgs, item: ResultItem, stats: RedisStatsPreparer, created: bool
+    ):
+        inserted = item.rows_affected is not None and item.rows_affected > 0
+        if inserted and item.rows_affected != len(screens):
+            await handle_warning(
+                f"{__name__}:prepend_screens:wrong_number_of_rows_affected",
+                f"expected {len(screens)} row affected, got {item.rows_affected}{slack_context()}",
+            )
+        if inserted is not created:
+            await handle_warning(
+                f"{__name__}:prepend_screens:mismatch",
+                f"For `user_client_screens`, `{created=}` but `{inserted=}`?{slack_context()}",
+            )
+        stats.merge_with(outer_stats)
+
+    return _CreateQuery(
+        query=sql.getvalue(),
+        qargs=qargs,
+        response_handler=handler,
+    )
 
 
 SORTED_SET_INSERT_WITH_MAX_LENGTH_AND_MIN_SCORE_SCRIPT = """

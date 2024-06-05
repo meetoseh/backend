@@ -1,5 +1,6 @@
+import os
 import socket
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Any, Dict, Literal, Optional, Union
 from fastapi import APIRouter, Header, Response
 from pydantic import BaseModel, Field, StringConstraints
 from auth import auth_id
@@ -50,21 +51,23 @@ class OauthMergeConfirmRequest(BaseModel):
 ERROR_409_TYPES = Literal["conflict"]
 ERROR_503_TYPES = Literal["service_unavailable"]
 
+MERGE_CONFIRM_RESPONSES_BY_CODE: Dict[Union[str, int], Any] = {
+    **STANDARD_ERRORS_BY_CODE,
+    "409": {
+        "model": StandardErrorResponse[ERROR_409_TYPES],
+        "description": (
+            "The email or phone hint was not provided when requested, "
+            "or was provided when not requested, or was not one of the "
+            "options provided."
+        ),
+    },
+}
+
 
 @router.post(
     "/merge/confirm",
     status_code=204,
-    responses={
-        **STANDARD_ERRORS_BY_CODE,
-        "409": {
-            "model": StandardErrorResponse[ERROR_409_TYPES],
-            "description": (
-                "The email or phone hint was not provided when requested, "
-                "or was provided when not requested, or was not one of the "
-                "options provided."
-            ),
-        },
-    },
+    responses=MERGE_CONFIRM_RESPONSES_BY_CODE,
 )
 async def merge_confirm(
     args: OauthMergeConfirmRequest,
@@ -151,19 +154,20 @@ async def merge_confirm(
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
-        try:
-            slack = await itgs.slack()
-            result_str = "success" if result else "failure"
-            await slack.send_oseh_bot_message(
-                f"`{socket.gethostname()}` Original user `{std_auth_result.result.sub}` just performed "
-                f"the confirm account merge step to merge in the identity via provider "
-                f"{confirm_merge_auth_result.result.provider} and sub "
-                f"`{confirm_merge_auth_result.result.provider_sub}`."
-                f"\n\nResult: {result_str}",
-                preview=f"Confirm merge {result_str}",
-            )
-        except Exception as e:
-            await handle_error(e)
+        if os.environ["ENVIRONMENT"] != "dev":
+            try:
+                slack = await itgs.slack()
+                result_str = "success" if result else "failure"
+                await slack.send_oseh_bot_message(
+                    f"`{socket.gethostname()}` Original user `{std_auth_result.result.sub}` just performed "
+                    f"the confirm account merge step to merge in the identity via provider "
+                    f"{confirm_merge_auth_result.result.provider} and sub "
+                    f"`{confirm_merge_auth_result.result.provider_sub}`."
+                    f"\n\nResult: {result_str}",
+                    preview=f"Confirm merge {result_str}",
+                )
+            except Exception as e:
+                await handle_error(e)
 
         if result:
             return Response(status_code=204)

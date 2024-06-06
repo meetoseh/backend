@@ -1,3 +1,4 @@
+import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term
@@ -148,11 +149,19 @@ async def raw_read_user_client_screen_actions(
     user_client_screen_actions_log = Table("user_client_screen_actions_log")
     user_client_screens_log = Table("user_client_screens_log")
 
-    query: QueryBuilder = Query.from_(user_client_screen_actions_log).select(
-        user_client_screen_actions_log.uid,
-        user_client_screens_log.uid,
-        user_client_screen_actions_log.event,
-        user_client_screen_actions_log.created_at,
+    query: QueryBuilder = (
+        Query.from_(user_client_screen_actions_log)
+        .select(
+            user_client_screen_actions_log.uid,
+            user_client_screens_log.uid,
+            user_client_screen_actions_log.event,
+            user_client_screen_actions_log.created_at,
+        )
+        .join(user_client_screens_log)
+        .on(
+            user_client_screen_actions_log.user_client_screen_log_id
+            == user_client_screens_log.id
+        )
     )
     qargs = []
 
@@ -183,7 +192,7 @@ async def raw_read_user_client_screen_actions(
             UserClientScreenActionsLog(
                 uid=row[0],
                 user_client_screen_log_uid=row[1],
-                event=row[2],
+                event=json.loads(row[2]),
                 created_at=row[3],
             )
         )

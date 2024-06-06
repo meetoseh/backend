@@ -64,17 +64,19 @@ UserClientScreensLogSortOption = Union[
 
 class UserClientScreensLogFilter(BaseModel):
     uid: Optional[FilterTextItemModel] = Field(
-        description="primary stable external row identifier"
+        None, description="primary stable external row identifier"
     )
-    user_sub: Optional[FilterTextItemModel] = Field(description="the sub of the user")
+    user_sub: Optional[FilterTextItemModel] = Field(
+        None, description="the sub of the user"
+    )
     visitor: Optional[FilterTextItemModel] = Field(
-        description="the visitor that saw this screen"
+        None, description="the visitor that saw this screen"
     )
     screen_slug: Optional[FilterTextItemModel] = Field(
-        description="the slug of the screen peeked"
+        None, description="the slug of the screen peeked"
     )
     created_at: Optional[FilterItemModel[float]] = Field(
-        description="when the screen was peeked in seconds since the unix epoch"
+        None, description="when the screen was peeked in seconds since the unix epoch"
     )
 
 

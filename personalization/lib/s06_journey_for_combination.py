@@ -247,6 +247,7 @@ async def get_journeys_for_combination_with_debug(
     instructor_uid: str,
     emotion: str,
     user_sub: str,
+    premium: bool,
     limit: int = 1,
 ) -> Sequence[JourneyForCombinationWithDebugInfo]:
     """get_journeys_for_combination with debug=True and more precise typing"""
@@ -259,6 +260,7 @@ async def get_journeys_for_combination_with_debug(
             emotion=emotion,
             user_sub=user_sub,
             limit=limit,
+            premium=premium,
             debug=True,
         ),
     )

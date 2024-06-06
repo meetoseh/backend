@@ -87,6 +87,7 @@ class AnalyzeResponse(BaseModel):
 async def analyze_personalization(
     emotion: str,
     user_sub: str,
+    premium: bool,
     limit: int = 25,
     authorization: Optional[str] = Header(None),
 ):
@@ -109,7 +110,9 @@ async def analyze_personalization(
             return auth_result.error_response
 
         combinations_started_at = time.perf_counter()
-        combinations = await get_instructor_category_and_biases(itgs, emotion=emotion)
+        combinations = await get_instructor_category_and_biases(
+            itgs, emotion=emotion, premium=premium
+        )
         combinations_finished_at = time.perf_counter()
         combinations_response = FindCombinationsResponse(
             combinations=[
@@ -297,6 +300,7 @@ async def analyze_personalization(
             instructor_uid=sorted_combinations[0].instructor_uid,
             emotion=emotion,
             user_sub=user_sub,
+            premium=premium,
             limit=limit,
         )
         best_journeys_finished_at = time.perf_counter()

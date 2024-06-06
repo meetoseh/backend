@@ -89,7 +89,10 @@ class FindFeedbackScoreResponse(BaseModel):
     response_model=FindFeedbackScoreResponse,
 )
 async def find_feedback_score(
-    emotion: str, user_sub: str, authorization: Optional[str] = Header(None)
+    emotion: str,
+    user_sub: str,
+    premium: bool,
+    authorization: Optional[str] = Header(None),
 ):
     """Performs the first step of the algorithm for finding what
     instructor/category combinations are available for the given emotion, then
@@ -106,7 +109,9 @@ async def find_feedback_score(
         if not auth_result.success:
             return auth_result.error_response
 
-        combinations = await get_instructor_category_and_biases(itgs, emotion=emotion)
+        combinations = await get_instructor_category_and_biases(
+            itgs, emotion=emotion, premium=premium
+        )
         started_at = time.perf_counter()
         feedback = await find_feedback_with_debug(itgs, user_sub=user_sub)
         feedback_scores = await map_to_feedback_score_with_debug(

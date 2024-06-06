@@ -53,6 +53,7 @@ class FindBestJourneyResponse(BaseModel):
 async def find_best_journeys(
     emotion: str,
     user_sub: str,
+    premium: bool,
     limit: int = 25,
     authorization: Optional[str] = Header(None),
 ):
@@ -78,7 +79,11 @@ async def find_best_journeys(
 
         view_counts_promise = asyncio.create_task(
             map_to_lowest_view_counts(
-                itgs, combinations=combinations, user_sub=user_sub, emotion=emotion
+                itgs,
+                combinations=combinations,
+                user_sub=user_sub,
+                emotion=emotion,
+                premium=premium,
             )
         )
         times_seen_today_promise = asyncio.create_task(
@@ -118,6 +123,7 @@ async def find_best_journeys(
             emotion=emotion,
             user_sub=user_sub,
             limit=limit,
+            premium=premium,
         )
         computation_time = time.perf_counter() - started_at
 

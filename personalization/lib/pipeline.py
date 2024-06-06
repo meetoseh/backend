@@ -49,7 +49,11 @@ async def select_journey(
 
     lowest_view_counts_promise = asyncio.create_task(
         map_to_lowest_view_counts(
-            itgs=itgs, combinations=combinations, user_sub=user_sub, emotion=emotion
+            itgs=itgs,
+            combinations=combinations,
+            user_sub=user_sub,
+            emotion=emotion,
+            premium=premium,
         )
     )
     times_seen_today_promise = asyncio.create_task(

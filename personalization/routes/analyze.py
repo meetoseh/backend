@@ -135,7 +135,11 @@ async def analyze_personalization(
 
         lowest_view_counts_started_at = time.perf_counter()
         view_counts = await map_to_lowest_view_counts(
-            itgs, combinations=combinations, user_sub=user_sub, emotion=emotion
+            itgs,
+            combinations=combinations,
+            user_sub=user_sub,
+            emotion=emotion,
+            premium=premium,
         )
         lowest_view_counts_finished_at = time.perf_counter()
         lowest_view_counts_response = FindLowestViewCountsResponse(

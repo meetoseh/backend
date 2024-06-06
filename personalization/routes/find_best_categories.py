@@ -48,7 +48,10 @@ class FindBestCategoriesResponse(BaseModel):
     response_model=FindBestCategoriesResponse,
 )
 async def find_best_categories(
-    emotion: str, user_sub: str, authorization: Optional[str] = Header(None)
+    emotion: str,
+    user_sub: str,
+    premium: bool,
+    authorization: Optional[str] = Header(None),
 ):
     """Returns a sorted list of instructor/categories available within the given
     emotion for the given user, such that earlier indices are preferred or tied
@@ -68,11 +71,17 @@ async def find_best_categories(
         if not auth_result.success:
             return auth_result.error_response
 
-        combinations = await get_instructor_category_and_biases(itgs, emotion=emotion)
+        combinations = await get_instructor_category_and_biases(
+            itgs, emotion=emotion, premium=premium
+        )
 
         view_counts_promise = asyncio.create_task(
             map_to_lowest_view_counts(
-                itgs, combinations=combinations, user_sub=user_sub, emotion=emotion
+                itgs,
+                combinations=combinations,
+                user_sub=user_sub,
+                emotion=emotion,
+                premium=premium,
             )
         )
         times_seen_today_promise = asyncio.create_task(

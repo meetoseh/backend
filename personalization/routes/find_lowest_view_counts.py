@@ -37,7 +37,10 @@ class FindLowestViewCountsResponse(BaseModel):
     response_model=FindLowestViewCountsResponse,
 )
 async def find_lowest_view_counts(
-    emotion: str, user_sub: str, authorization: Optional[str] = Header(None)
+    emotion: str,
+    user_sub: str,
+    premium: bool,
+    authorization: Optional[str] = Header(None),
 ):
     """Performs the first step of the algorithm for finding what
     instructor/category combinations are available for the given emotion, then
@@ -53,10 +56,16 @@ async def find_lowest_view_counts(
         if not auth_result.success:
             return auth_result.error_response
 
-        combinations = await get_instructor_category_and_biases(itgs, emotion=emotion)
+        combinations = await get_instructor_category_and_biases(
+            itgs, emotion=emotion, premium=premium
+        )
         started_at = time.perf_counter()
         view_counts = await map_to_lowest_view_counts(
-            itgs, combinations=combinations, user_sub=user_sub, emotion=emotion
+            itgs,
+            combinations=combinations,
+            user_sub=user_sub,
+            emotion=emotion,
+            premium=premium,
         )
         computation_time = time.perf_counter() - started_at
 

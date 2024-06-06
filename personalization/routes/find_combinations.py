@@ -45,7 +45,9 @@ class FindCombinationsResponse(BaseModel):
     responses=STANDARD_ERRORS_BY_CODE,
     response_model=FindCombinationsResponse,
 )
-async def find_combinations(emotion: str, authorization: Optional[str] = Header(None)):
+async def find_combinations(
+    emotion: str, premium: bool, authorization: Optional[str] = Header(None)
+):
     """Determines what instructor/category combinations are available
     for the given emotion. This is a debugging endpoint corresponding to
     the first step when selecting which journey to offer a user based on
@@ -59,7 +61,9 @@ async def find_combinations(emotion: str, authorization: Optional[str] = Header(
             return auth_result.error_response
 
         started_at = time.perf_counter()
-        items = await get_instructor_category_and_biases(itgs, emotion=emotion)
+        items = await get_instructor_category_and_biases(
+            itgs, emotion=emotion, premium=premium
+        )
         computation_time = time.perf_counter() - started_at
 
         return Response(

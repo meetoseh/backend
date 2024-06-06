@@ -16,6 +16,7 @@ async def map_to_lowest_view_counts(
     combinations: Sequence[InstructorAndCategory],
     user_sub: str,
     emotion: str,
+    premium: bool,
 ) -> List[int]:
     """Maps the combinations of instructor and category to the minimum view count
     on any journeys taught by that instructor in that category with that emotion
@@ -27,6 +28,8 @@ async def map_to_lowest_view_counts(
         combinations (list[InstructorAndCategory]): the combinations to map
         user_sub (str): The user whose view counts to use
         emotion (str): Filters to only journeys tagged with this emotion word
+        premium (bool): True if we are looking at premium journeys, false if we are
+            looking at normal journeys
 
     Returns:
         list[int]: A list with the same length as combinations, where index i
@@ -68,6 +71,13 @@ async def map_to_lowest_view_counts(
                             AND course_journeys.course_id = courses.id
                             AND (courses.flags & ?) = 0
                     )
+                    AND (? = 0 OR EXISTS (
+                        SELECT 1 FROM course_journeys, courses
+                        WHERE
+                            course_journeys.journey_id = journeys.id
+                            AND course_journeys.course_id = courses.id
+                            AND (courses.flags & ?) <> 0
+                    ))
                     AND EXISTS (
                         SELECT 1 FROM journey_emotions, emotions
                         WHERE
@@ -114,6 +124,13 @@ async def map_to_lowest_view_counts(
                             AND course_journeys.course_id = courses.id
                             AND (courses.flags & ?) = 0
                     )
+                    AND (? = 0 OR EXISTS (
+                        SELECT 1 FROM course_journeys, courses
+                        WHERE
+                            course_journeys.journey_id = journeys.id
+                            AND course_journeys.course_id = courses.id
+                            AND (courses.flags & ?) <> 0
+                    ))
                     AND EXISTS (
                         SELECT 1 FROM journey_emotions, emotions
                         WHERE
@@ -155,10 +172,22 @@ async def map_to_lowest_view_counts(
             """,
             (
                 *batch_values,
-                int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE),
+                int(
+                    SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM
+                    if premium
+                    else SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE
+                ),
+                int(premium),
+                int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM),
                 emotion,
                 user_sub,
-                int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE),
+                int(
+                    SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM
+                    if premium
+                    else SeriesFlags.JOURNEYS_IN_SERIES_ARE_1MINUTE
+                ),
+                int(premium),
+                int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM),
                 emotion,
                 user_sub,
             ),

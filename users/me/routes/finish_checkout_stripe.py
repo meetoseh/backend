@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -135,7 +135,7 @@ async def finish_checkout_stripe(
                 status_code=404,
             )
 
-        stripe_checkout_session_id: str = response.results[0][0]
+        stripe_checkout_session_id = cast(str, response.results[0][0])
 
         try:
             checkout_session = await run_in_threadpool(

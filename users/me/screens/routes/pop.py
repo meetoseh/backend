@@ -17,6 +17,7 @@ from users.me.screens.lib.realize_screens import realize_screens
 from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
 
+import socket
 
 router = APIRouter()
 
@@ -71,7 +72,6 @@ async def pop_screen(
         std_auth_result = await std_auth.auth_any(itgs, authorization)
         if std_auth_result.result is None:
             return std_auth_result.error_response
-
         screen_auth_result = await users.me.screens.auth.auth_any(
             itgs, args.screen_jwt, prefix=None
         )
@@ -87,6 +87,12 @@ async def pop_screen(
                 ),
             )
         else:
+
+            slack = await itgs.slack()
+            await slack.send_web_error_message(
+                f"via {socket.gethostname()}, {std_auth_result.result.sub} is popping {screen_auth_result.result.user_client_screen_uid}"
+            )
+
             screen = await execute_pop(
                 itgs,
                 user_sub=std_auth_result.result.sub,

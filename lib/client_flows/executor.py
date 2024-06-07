@@ -906,16 +906,10 @@ async def execute_pop(
         ClientScreenQueuePeekInfo: the information required for the client to display the front
             of their screen queue
     """
-    log = io.StringIO()
-    log.write(
-        f"execute_pop({user_sub=}, {platform=}, {expected_front_uid=}, {trigger=})\n"
-    )
-
     client_info = ClientFlowSimulatorClientInfo(user_sub=user_sub, platform=platform)
     expecting_bad_screens = False
     num_races = 0
     while True:
-        log.write("\nouter loop start\n")
         if num_races > 5:
             raise Exception("Too many races")
         read_consistency = "none" if num_races == 0 else "weak"
@@ -927,7 +921,6 @@ async def execute_pop(
             expecting_bad_screens=expecting_bad_screens,
             read_consistency=read_consistency,
         )
-        log.write(f"prepared_pop: {prepared_pop}\n")
 
         if prepared_pop.type == "user_not_found":
             if num_races == 0:
@@ -948,12 +941,13 @@ async def execute_pop(
         assert prepared_pop.type in ("success", "desync"), prepared_pop
 
         for _ in range(5):
-            log.write(f"inner loop start\n")
             logger.debug(
                 f"Executing pop for {user_sub} on {platform} - {num_races=} gave {prepared_pop.type=}"
             )
             if prepared_pop.type == "desync":
-                log.write(f" triggering desync\n")
+                logger.info(
+                    f"Processing desync for {user_sub} - they are popping {expected_front_uid}, but their front is {prepared_pop.state.original.user_client_screen_uid if prepared_pop.state.original is not None else 'empty'}"
+                )
                 await fetch_and_simulate_trigger(
                     itgs,
                     client_info=client_info,
@@ -966,7 +960,6 @@ async def execute_pop(
                     is_pop_trigger=False,
                 )
             else:
-                log.write(f" popping\n")
                 assert prepared_pop.state.original is not None
                 ClientScreenStatsPreparer(prepared_pop.state.stats).incr_popped(
                     unix_date=prepared_pop.state.unix_date,
@@ -979,7 +972,6 @@ async def execute_pop(
                         and trigger.flow_slug
                         not in prepared_pop.state.original.flow_screen.allowed_triggers
                     ):
-                        log.write(f" triggering forbidden\n")
                         logger.warning(
                             f"{user_sub} attempted to trigger {trigger.flow_slug} on {platform} when popping "
                             f"the screen {prepared_pop.state.original.screen.slug}, but we only expected "
@@ -998,7 +990,6 @@ async def execute_pop(
                             is_pop_trigger=False,
                         )
                     else:
-                        log.write(f" triggering {trigger.flow_slug}\n")
                         await fetch_and_simulate_trigger(
                             itgs,
                             client_info=client_info,
@@ -1020,14 +1011,12 @@ async def execute_pop(
                 client_info=client_info,
                 state=prepared_pop.state,
             )
-            log.write(f" simulating until stable -> {prepared_pop.state}\n")
 
             store_result = await try_and_store_simulation_result(
                 itgs,
                 client_info=client_info,
                 state=prepared_pop.state,
             )
-            log.write(f" store_result -> {store_result}\n")
             logger.debug(
                 f"Executing pop for {user_sub} on {platform} - {store_result.type=}"
             )
@@ -1066,7 +1055,6 @@ async def execute_pop(
                         queue_after_pop=None,
                     ),
                 )
-                log.write(f" now in sync -> {prepared_pop.state}\n")
             else:
                 logger.info(f"Pop for {user_sub=} is desync after failed store")
                 prepared_pop = TryAndPreparePopResultDesync(
@@ -1075,7 +1063,6 @@ async def execute_pop(
                         front=store_result.first,
                     ),
                 )
-                log.write(f" now in desync -> {prepared_pop.state}\n")
         else:
             raise Exception("Too many races while simulating")
 
@@ -1085,11 +1072,6 @@ async def execute_pop(
 
         assert store_result.type == "success"
         assert prepared_pop.state.current is not None
-
-        if prepared_pop.type == "desync":
-            logger.warning(
-                f"Stored success on desync pop; log:\n\n{log.getvalue()}\n\n"
-            )
 
         ClientScreenStatsPreparer(prepared_pop.state.stats).incr_peeked(
             unix_date=prepared_pop.state.unix_date,

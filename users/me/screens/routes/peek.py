@@ -8,6 +8,7 @@ from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
 from itgs import Itgs
 import auth
+import socket
 
 router = APIRouter()
 
@@ -43,6 +44,10 @@ async def peek_screen(
             result=screen,
         )
 
+        slack = await itgs.slack()
+        await slack.send_web_error_message(
+            f"via {socket.gethostname()}, {auth_result.result.sub} peeked {screen.front.user_client_screen_uid}"
+        )
         return Response(
             content=result.__pydantic_serializer__.to_json(result),
             headers={"Content-Type": "application/json; charset=utf-8"},

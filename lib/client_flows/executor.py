@@ -923,17 +923,27 @@ async def execute_pop(
         )
 
         if prepared_pop.type == "user_not_found":
-            raise ValueError(f"User not found: {user_sub}")
+            if num_races == 0:
+                logger.warning(
+                    f"First pop attempt for {user_sub} failed with user_not_found, retrying at weak consistency"
+                )
+                num_races += 1
+                continue
+            raise ValueError(f"User not found: {user_sub}, {num_races=}")
 
         if prepared_pop.type == "bad_screens":
             if expecting_bad_screens:
                 raise ValueError(f"Bad screens for {user_sub} twice")
+            logger.debug(f"Bad screens for {user_sub}, retrying with full queue")
             expecting_bad_screens = True
             continue
 
         assert prepared_pop.type in ("success", "desync"), prepared_pop
 
         for _ in range(5):
+            logger.debug(
+                f"Executing pop for {user_sub} on {platform} - {num_races=} gave {prepared_pop.type=}"
+            )
             if prepared_pop.type == "desync":
                 await fetch_and_simulate_trigger(
                     itgs,
@@ -1004,6 +1014,9 @@ async def execute_pop(
                 client_info=client_info,
                 state=prepared_pop.state,
             )
+            logger.debug(
+                f"Executing pop for {user_sub} on {platform} - {store_result.type=}"
+            )
 
             if store_result.type != "failure_with_queue":
                 break
@@ -1011,9 +1024,41 @@ async def execute_pop(
             num_races += 1
             read_consistency = "weak"
 
-            prepared_pop = TryAndPreparePopResultDesync(
-                type="desync", state=init_simulator_from_peek(front=store_result.first)
-            )
+            # It's possible we've turned a desync back into a success; in fact,
+            # it's a very likely scenario:
+            # - on screen A
+            # - Pop the queue, screen A -> screen B
+            # - Pop the queue again, providing screen B
+            #   - Read is stale, gets screen A
+            #   - Try desync
+            #   - Store gives failure_with_queue, we now have screen B at the front
+
+            if (
+                store_result.first is not None
+                and store_result.first.user_client_screen_uid == expected_front_uid
+            ):
+                logger.info(f"Pop for {user_sub=} is now in sync after failed store")
+                # tmp to verify this occurs sometimes
+                slack = await itgs.slack()
+                await slack.send_web_error_message(
+                    f"Converting {prepared_pop.type=} to success after store failure"
+                )
+                prepared_pop = TryAndPreparePopResultSuccess(
+                    type="success",
+                    state=init_simulator_from_pop(
+                        to_pop=store_result.first,
+                        second=store_result.second,
+                        queue_after_pop=None,
+                    ),
+                )
+            else:
+                logger.info(f"Pop for {user_sub=} is desync after failed store")
+                prepared_pop = TryAndPreparePopResultDesync(
+                    type="desync",
+                    state=init_simulator_from_peek(
+                        front=store_result.first,
+                    ),
+                )
         else:
             raise Exception("Too many races while simulating")
 

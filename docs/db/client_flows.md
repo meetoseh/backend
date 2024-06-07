@@ -38,6 +38,10 @@ See also: [client flows](../concepts/clients_flows/README.md)
   - `merge_created_and_attached`: see `empty_with_merge_token`
   - `merge_trivial`: see `empty_with_merge_token`
   - `merge_confirmation_required`: see `empty_with_merge_token`
+  - `post_checkout_success`: this must be the trigger after completing a checkout and having
+    Oseh+ (for stripe), or completing a Oseh+ purchase (for native)
+  - `post_checkout_failure`: this must be the trigger after completing a checkout and not having
+    Oseh+ (for stripe), or for completing a checkout for something other than Oseh+ (for native)
 - `name (text null)`: The human readable name of the flow for the admin area
 - `description (text null)`: A description of the flow for the admin area
 - `client_schema (text not null)`: A valid openapi 3.0.3 schema object for the

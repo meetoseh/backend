@@ -759,6 +759,7 @@ async def execute_peek(
     user_sub: str,
     platform: ClientFlowSource,
     trigger: Optional[TrustedTrigger],
+    initial_read_consistency: Literal["none", "weak", "strong"] = "none",
 ) -> ClientScreenQueuePeekInfo:
     """Peeks the front of the queue, performs the given trusted trigger (if any),
     then performs any automatic triggers as a result of the front of the queue
@@ -771,7 +772,7 @@ async def execute_peek(
     while True:
         if num_races > 5:
             raise Exception("Too many races")
-        read_consistency = "none" if num_races == 0 else "weak"
+        read_consistency = initial_read_consistency if num_races == 0 else "weak"
 
         prepared_peek = await try_and_prepare_peek(
             itgs,
@@ -1018,9 +1019,8 @@ async def execute_pop(
                 state=prepared_pop.state,
             )
             logger.debug(
-                f"Executing pop for {user_sub} on {platform} - {store_result.type=}"
+                f"Executing pop for {user_sub} on {platform} - {store_result.type=}, {prepared_pop.state.original.user_client_screen_uid if prepared_pop.state.original is not None else 'no original'} -> {prepared_pop.state.current.user_client_screen_uid if prepared_pop.state.current is not None else 'no current'}"
             )
-            logger.info("Look at me there are changes!")
 
             if store_result.type != "failure_with_queue":
                 break
@@ -1082,11 +1082,14 @@ async def execute_pop(
 
         prefetch = get_prefetch_screens_from_state(prepared_pop.state)
         if prefetch is None:
+            logger.info(
+                f"forced to fetch prefetch screens from DB before can return {prepared_pop.state.current.user_client_screen_uid}"
+            )
             prefetch = await get_prefetch_screens(
                 itgs,
                 client_info=client_info,
                 expected_front_uid=prepared_pop.state.current.user_client_screen_uid,
-                read_consistency=read_consistency,
+                read_consistency="weak",
             )
 
             if prefetch.type == "user_not_found":
@@ -1094,7 +1097,11 @@ async def execute_pop(
 
             if prefetch.type == "desync":
                 return await execute_peek(
-                    itgs, user_sub=user_sub, platform=platform, trigger=None
+                    itgs,
+                    user_sub=user_sub,
+                    platform=platform,
+                    trigger=None,
+                    initial_read_consistency="weak",
                 )
 
             assert prefetch.type == "success"

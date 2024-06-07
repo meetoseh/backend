@@ -1031,6 +1031,7 @@ async def execute_pop(
             logger.debug(
                 f"Executing pop for {user_sub} on {platform} - {store_result.type=}"
             )
+            logger.info("Look at me there are changes!")
 
             if store_result.type != "failure_with_queue":
                 break
@@ -1086,10 +1087,8 @@ async def execute_pop(
         assert prepared_pop.state.current is not None
 
         if prepared_pop.type == "desync":
-            slack = await itgs.slack()
-            await slack.send_web_error_message(
-                f"```\n{log.getvalue()}\n```",
-                "Desync during pop",
+            logger.warning(
+                f"Stored success on desync pop; log:\n\n{log.getvalue()}\n\n"
             )
 
         ClientScreenStatsPreparer(prepared_pop.state.stats).incr_peeked(

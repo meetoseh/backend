@@ -789,6 +789,9 @@ async def _period_from_subscription_key(itgs: Itgs, key: str) -> Optional[Period
         elif frequency_str == "yearly":
             # confirmed for some users
             return Period(iso8601="P1Y")
+        elif frequency_str == "lifetime":
+            # confirmed for some users
+            return Period(iso8601="P100Y")
 
         await handle_warning(
             f"{__name__}:bad_promo_frequency",

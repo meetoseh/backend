@@ -394,6 +394,7 @@ async def test_screen(
                 allow_missing=(
                     req_param.variable_parameter.type == "extract"
                     and req_param.variable_parameter.skip_if_missing
+                    or req_param.usage_type == "string_formattable"
                 ),
             )
             if input_schema.type == "failure":

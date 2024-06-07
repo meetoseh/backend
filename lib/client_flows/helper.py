@@ -240,7 +240,7 @@ async def handle_trigger_time_transformations(
                         replaced_part = True
                         new_format_parts[part_idx] = (
                             part[0],
-                            "server[__extracted][__none]",
+                            "{server[__extracted][__none]}",
                             part[2],
                             part[3],
                         )

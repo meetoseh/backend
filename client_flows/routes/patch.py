@@ -406,10 +406,17 @@ async def check_flow_screens(
 
             if req_param.usage_type == "string_formattable":
                 produced_type = produced_schema.get("type")
+                if produced_type is None:
+                    raise PreconditionFailedException(
+                        f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
+                        "to be a string, number, integer, boolean",
+                        f"lacking a 'type' - {json.dumps(produced_schema)}",
+                    )
+
                 if produced_type not in STRING_FORMATTABLE_TYPES:
                     raise PreconditionFailedException(
                         f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
-                        "to be a string, number, integer, or boolean",
+                        "to be a string, number, integer, boolean, or null",
                         f"a(n) {produced_type}",
                     )
                 if target_type != "string":
@@ -772,6 +779,12 @@ def _get_param_schema_from_schema(
                         src,
                         f"to reference a valid parameter (at level {level})",
                         f"{param} (no fixed for enum discrimination @ {param[:level]})",
+                    )
+                if not isinstance(current_fixed, dict):
+                    raise PreconditionFailedException(
+                        src,
+                        f"to reference a valid parameter (at level {level})",
+                        f"{param} (fixed not a dict for enum discrimination @ {param[:level]})",
                     )
 
                 discrim_value = current_fixed.get(enum_discriminator)

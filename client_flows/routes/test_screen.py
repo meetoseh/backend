@@ -1407,7 +1407,7 @@ def fix_special_enum_path_indices(
                         status_code=409,
                         content=StandardErrorResponse[ERROR_409_TYPES](
                             type="screen_input_parameters_wont_match",
-                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} does not have property {part} in fixed",
+                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} does not have property {part} in fixed and is required in schmea {item.schema}",
                         ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),

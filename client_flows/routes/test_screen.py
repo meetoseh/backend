@@ -237,7 +237,7 @@ async def test_screen(
                     args.flow_screen.screen.fixed,
                 ):
                     try:
-                        value = extract_schema_default_value(
+                        res = extract_schema_default_value(
                             schema=screen.raw_schema,
                             fixed=args.flow_screen.screen.fixed,
                             path=enum_path,
@@ -252,7 +252,7 @@ async def test_screen(
                             headers={"Content-Type": "application/json; charset=utf-8"},
                         )
 
-                    if value not in allowed_values:
+                    if res.type == 'success' and res.value not in allowed_values:
                         return Response(
                             status_code=409,
                             content=StandardErrorResponse[ERROR_409_TYPES](
@@ -262,7 +262,11 @@ async def test_screen(
                             headers={"Content-Type": "application/json; charset=utf-8"},
                         )
 
-                    discriminators[tuple(enum_path[:-1])] = allowed_values.index(value)
+                    if res.type == 'success':
+                        discriminators[tuple(enum_path[:-1])] = allowed_values.index(res.value)
+                    else:
+                        discriminators[tuple(enum_path[:-1])] = 0
+                        
         except UserSafeError as e:
             return e.response
 
@@ -1278,6 +1282,7 @@ class _SpecialEnumPathStackItem:
     path_from_here: List[Union[str, SpecialIndex]]
     schema: dict
     value: Any
+    is_really_none: bool
 
 
 def fix_special_enum_path_indices(
@@ -1294,17 +1299,42 @@ def fix_special_enum_path_indices(
             path_from_here=enum_path_with_special_indices,
             schema=screen_schema,
             value=fixed,
+            is_really_none=False,
         )
     ]
     while stack:
         item = stack.pop()
-        if item.value is None and item.schema.get("default") is not None:
+        if item.value is None and not item.is_really_none:
+            if item.schema.get("default") is not None:
+                stack.append(
+                    _SpecialEnumPathStackItem(
+                        path_to_here=item.path_to_here,
+                        path_from_here=item.path_from_here,
+                        schema=item.schema,
+                        value=item.schema["default"],
+                        is_really_none=item.is_really_none,
+                    )
+                )
+                continue
+            if item.schema.get("nullable", False) is not True:
+                raise UserSafeError(
+                    message="Expected nullable or default",
+                    response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"cannot determine enum discriminator for {enum_path_with_special_indices} since {pretty_path(item.path_to_here)} has None value, None default, and is not nullable",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
             stack.append(
                 _SpecialEnumPathStackItem(
                     path_to_here=item.path_to_here,
                     path_from_here=item.path_from_here,
                     schema=item.schema,
-                    value=item.schema["default"],
+                    value=None,
+                    is_really_none=True,
                 )
             )
             continue
@@ -1370,9 +1400,20 @@ def fix_special_enum_path_indices(
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),
                 )
-            if item.value is None or (
-                isinstance(item.value, dict) and part not in item.value
-            ):
+
+            if item.is_really_none:
+                stack.append(
+                    _SpecialEnumPathStackItem(
+                        path_to_here=item.path_to_here + [part],
+                        path_from_here=item.path_from_here[1:],
+                        schema=properties[part],
+                        value=item.value,
+                        is_really_none=True,
+                    )
+                )
+                continue
+
+            if isinstance(item.value, dict) and part not in item.value:
                 # we swap to the default value if its not required
                 required = item.schema.get("required", [])
                 if part not in required:
@@ -1397,6 +1438,7 @@ def fix_special_enum_path_indices(
                             path_from_here=item.path_from_here[1:],
                             schema=properties[part],
                             value=part_schema["default"],
+                            is_really_none=item.is_really_none,
                         )
                     )
                     continue
@@ -1413,7 +1455,7 @@ def fix_special_enum_path_indices(
                     ),
                 )
 
-            if not isinstance(item.value, dict):
+            if item.value is not None and not isinstance(item.value, dict):
                 raise UserSafeError(
                     message="Expected object in fixed",
                     response=Response(
@@ -1432,6 +1474,7 @@ def fix_special_enum_path_indices(
                     path_from_here=item.path_from_here[1:],
                     schema=properties[part],
                     value=item.value[part],
+                    is_really_none=item.is_really_none,
                 )
             )
             continue
@@ -1461,6 +1504,10 @@ def fix_special_enum_path_indices(
                     headers={"Content-Type": "application/json; charset=utf-8"},
                 ),
             )
+
+        if item.is_really_none:
+            # this path is a dead end
+            continue
 
         if not isinstance(item.value, list):
             raise UserSafeError(
@@ -1496,6 +1543,7 @@ def fix_special_enum_path_indices(
                     path_from_here=item.path_from_here[1:],
                     schema=items,
                     value=value,
+                    is_really_none=item.is_really_none,
                 )
             )
 

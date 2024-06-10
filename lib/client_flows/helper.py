@@ -1317,12 +1317,27 @@ def deep_extract(
     return src
 
 
+@dataclass
+class ExtractSchemaDefaultValueSuccess:
+    type: Literal["success"]
+    """indicates that the extraction was successful"""
+    value: Any
+
+
+@dataclass
+class ExtractSchemaDefaultValueIrrelevant:
+    type: Literal["irrelevant"]
+    """indicates that the extraction failed because if you walk to that
+    path you find a nullable field set to null
+    """
+
+
 def extract_schema_default_value(
     *,
     schema: dict,
     fixed: dict,
     path: Union[List[Union[str, int]], List[str], List[int]],
-) -> Any:
+) -> Union[ExtractSchemaDefaultValueSuccess, ExtractSchemaDefaultValueIrrelevant]:
     """
     Given that you have the given openapi 3.0.3 schema, and you have filled the
     object `fixed`, determines what the effective value is at the given path.
@@ -1378,6 +1393,13 @@ def extract_schema_default_value(
                 )
             src = src_schema["default"]
             src_path = src_schema_path + ["default"]
+
+            if src is None:
+                if src_schema.get("nullable", False) is not True:
+                    raise KeyError(
+                        f"Expected default is not None or nullable is True at {pretty_path(src_schema_path)} to extract {pretty_path(path)}"
+                    )
+                return ExtractSchemaDefaultValueIrrelevant(type="irrelevant")
 
         if src_schema.get("type") == "array":
             if not isinstance(item, int):
@@ -1487,7 +1509,7 @@ def extract_schema_default_value(
 
         idx += 1
 
-    return src
+    return ExtractSchemaDefaultValueSuccess(type="success", value=src)
 
 
 def deep_set(

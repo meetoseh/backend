@@ -29,6 +29,13 @@ from loguru import logger
 from visitors.lib.get_or_create_visitor import VisitorSource
 
 
+MAX_PREFETCH_SCREENS = 3
+"""The maximum number of screens to request the client prefetch. Prefetching excessively
+many screens (20+) can cause screen transitions to be slow due to the sheer amount of data
+in the peek/pop response body
+"""
+
+
 @dataclass
 class TryAndStoreSimulationResultSuccess:
     type: Literal["success"]
@@ -608,7 +615,7 @@ def get_prefetch_screens_from_state(
             if not mut.screens:
                 continue
             result: List[ClientFlowSimulatorScreen] = []
-            for idx, screen in enumerate(mut.screens):
+            for idx, screen in enumerate(mut.screens[:MAX_PREFETCH_SCREENS]):
                 if idx == 0:
                     continue
                 result.append(
@@ -692,13 +699,15 @@ async def get_prefetch_screens(
                 "LIMIT 1"
                 " )"
                 " AND user_client_screens.uid <> ? "
-                "ORDER BY user_client_screens.outer_counter DESC, user_client_screens.inner_counter ASC",
+                "ORDER BY user_client_screens.outer_counter DESC, user_client_screens.inner_counter ASC "
+                "LIMIT ?",
                 [
                     client_info.user_sub,
                     expected_front_uid,
                     client_info.user_sub,
                     client_info.user_sub,
                     expected_front_uid,
+                    MAX_PREFETCH_SCREENS,
                 ],
             ),
         )

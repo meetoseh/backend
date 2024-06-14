@@ -363,9 +363,7 @@ def _encode_db_response(
         out.write(b".ts\n")
 
 
-async def get_m3u_vod(
-    itgs: Itgs, uid: str, jwt: Optional[str]
-) -> Optional[
+async def get_m3u_vod(itgs: Itgs, uid: str, jwt: Optional[str]) -> Optional[
     Union[
         bytes,
         io.BytesIO,

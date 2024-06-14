@@ -8,7 +8,7 @@ import gzip
 import json
 import secrets
 from typing import Any, Callable, List, Optional, Set, Tuple, Union, cast
-from error_middleware import handle_warning
+from error_middleware import handle_contextless_error, handle_warning
 import image_files.auth
 import content_files.auth
 from lib.client_flows.helper import pretty_path
@@ -888,6 +888,7 @@ SELECT
 FROM interactive_prompts, users, interactive_prompt_sessions
 WHERE
     interactive_prompts.uid = ?
+    AND interactive_prompts.deleted_at IS NULL
     AND users.sub = ?
     AND interactive_prompt_sessions.user_id = users.id
     AND interactive_prompt_sessions.interactive_prompt_id = interactive_prompts.id
@@ -934,8 +935,20 @@ WHERE
                     user_sub,
                 ),
             ),
+            (
+                "SELECT 1 FROM interactive_prompts WHERE uid=? AND deleted_at IS NULL",
+                (interactive_prompt_uid,),
+            ),
         )
     )
+
+    if not response[2].results:
+        assert not response[0].results, response
+        assert not response[1].rows_affected, response
+        await handle_contextless_error(
+            extra_info=f"failed to convert interactive prompt `{interactive_prompt_uid}` for user `{user_sub}` because it does not exist"
+        )
+        return None
 
     if response[0].results:
         session_uid = cast(str, response[0].results[0][0])

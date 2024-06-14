@@ -20,6 +20,7 @@ from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
 
 import oauth.lib.merging.start_merge_auth as start_merge_auth
+from loguru import logger
 
 
 router = APIRouter()
@@ -94,6 +95,10 @@ async def empty_with_merge_token(
             start_merge_auth_result.result.original_user_sub
             != std_auth_result.result.sub
         ):
+            logger.warning(
+                f"received start merge token with original user {start_merge_auth_result.result.original_user_sub} "
+                f"but it was provided by user {std_auth_result.result.sub}. this is probably our error"
+            )
             return AUTHORIZATION_UNKNOWN_TOKEN
 
         merge_result = await attempt_start_merge(

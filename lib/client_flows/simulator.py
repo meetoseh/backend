@@ -337,6 +337,7 @@ async def materialize_queue(
     if state.queue is not None:
         return
 
+    logger.info("Materializing queue")
     assert state.original is not None, "we knew the queue when we initialized the state"
     conn = await itgs.conn()
     cursor = conn.cursor("weak")
@@ -344,12 +345,16 @@ async def materialize_queue(
     response = await cursor.execute(
         """
 SELECT
-    uid, screen, outer_counter, flow_client_parameters, flow_server_parameters
+    user_client_screens.uid, 
+    user_client_screens.screen, 
+    user_client_screens.outer_counter, 
+    user_client_screens.flow_client_parameters, 
+    user_client_screens.flow_server_parameters
 FROM users, user_client_screens
 WHERE
     users.sub = ?
     AND user_client_screens.user_id = users.id
-ORDER BY outer_counter DESC, inner_counter ASC
+ORDER BY user_client_screens.outer_counter DESC, user_client_screens.inner_counter ASC
         """,
         (client_info.user_sub,),
     )
@@ -359,6 +364,9 @@ ORDER BY outer_counter DESC, inner_counter ASC
         response.results
         and response.results[0][0] == state.original.user_client_screen_uid
     ):
+        logger.info(
+            f"Successfully received the entire queue from the database as it was at the start of the simulation"
+        )
         for row in response.results:
             flow_screen = ClientFlowScreen.model_validate_json(row[1])
             screen = await get_client_screen(itgs, slug=flow_screen.screen.slug)
@@ -377,11 +385,20 @@ ORDER BY outer_counter DESC, inner_counter ASC
                     flow_server_parameters=json.loads(row[4]),
                 )
             )
+    else:
+        logger.info(
+            "Either there were no additional screens in the database "
+            "or the queue has changed since the simulator was initialized "
+            "and this result will be discarded anyway"
+        )
 
+    logger.info("Applying mutations to fetched queue..")
     for mutation in state.mutations:
         if mutation.type == "empty_queue":
+            logger.info("  applying empty_queue")
             fetched_queue = []
         elif mutation.type == "prepend":
+            logger.info(f"  applying prepend with {len(mutation.screens)} screens")
             prepended: List[ClientFlowSimulatorScreen] = []
             for to_prepend in mutation.screens:
                 prepended.append(
@@ -396,9 +413,11 @@ ORDER BY outer_counter DESC, inner_counter ASC
                 )
             fetched_queue = prepended + fetched_queue
         elif mutation.type == "skip":
+            logger.info("  applying skip")
             fetched_queue = fetched_queue[1:]
         else:
             raise ValueError(f"Unknown mutation: {mutation}")
+    logger.info(f"After mutations have {len(fetched_queue)} screens in the queue")
 
     if not fetched_queue:
         assert state.current is None
@@ -408,6 +427,7 @@ ORDER BY outer_counter DESC, inner_counter ASC
             state.current.user_client_screen_uid
             == fetched_queue[0].user_client_screen_uid
         )
+    state.queue = fetched_queue
 
 
 async def simulate_skip(

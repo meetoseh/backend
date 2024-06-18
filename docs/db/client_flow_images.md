@@ -16,7 +16,11 @@ the images to get them back in sync).
 - `id (integer primary key)`: Internal row identifier
 - `uid (text unique not null)`: Primary stable external identifier. Uses the
   [uid prefix](../uid_prefixes.md) `cfi`
-- `list_slug (text not null)`: The slug of the list that this image belongs to
+- `list_slug (text not null)`: The slug of the list that this image belongs to.
+  This is formatted as `{slug}[@{width}x{height}]`. For a simple list where the
+  targets do not vary, this is just a slug e.g. `image_interstitial`. For a list
+  which supports a dynamic size hint, this is `{slug}@{width}x{height}` e.g.
+  `exact_dynamic@300x200`.
 - `image_file_id (integer not null references image_files(id) on delete cascade)`: The id of the processed image file
 - `original_s3_file_id (integer null references s3_files(id) on delete set null)`:
   Where the originally uploaded file can be found, if it hasn't been deleted

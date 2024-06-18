@@ -11,7 +11,7 @@ from typing import Any, Callable, List, Optional, Set, Tuple, Union, cast
 from error_middleware import handle_contextless_error, handle_warning
 import image_files.auth
 import content_files.auth
-from lib.client_flows.helper import pretty_path
+from lib.client_flows.helper import extract_schema_default_value, pretty_path
 from lib.client_flows.special_index import SpecialIndex
 from resources.patch.not_set import NotSetEnum
 from response_utils import response_to_bytes
@@ -380,8 +380,43 @@ class ScreenSchemaRealizer:
                     assert isinstance(
                         state.given, str
                     ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
+
+                    default_thumbhash_size = {"width": 1, "height": 1}
+
+                    x_dynamic_size = state.schema.get("x-dynamic-size")
+                    if x_dynamic_size is not None:
+                        assert isinstance(x_dynamic_size, dict)
+
+                        width_path = x_dynamic_size.get("width")
+                        assert isinstance(width_path, list)
+                        assert all(isinstance(x, str) for x in width_path)
+
+                        height_path = x_dynamic_size.get("height")
+                        assert isinstance(height_path, list)
+                        assert all(isinstance(x, str) for x in height_path)
+
+                        width_path = cast(List[str], width_path)
+                        height_path = cast(List[str], height_path)
+
+                        width = extract_schema_default_value(
+                            schema=self.raw_schema,
+                            fixed=input,
+                            path=width_path,
+                        )
+                        if width.type == "success":
+                            height = extract_schema_default_value(
+                                schema=self.raw_schema,
+                                fixed=input,
+                                path=height_path,
+                            )
+                            if height.type == "success":
+                                default_thumbhash_size = {
+                                    "width": width.value,
+                                    "height": height.value,
+                                }
+
                     x_thumbhash = state.schema.get(
-                        "x-thumbhash", {"width": 1, "height": 1}
+                        "x-thumbhash", default_thumbhash_size
                     )
                     assert isinstance(
                         x_thumbhash, dict

@@ -9,6 +9,8 @@ from file_uploads.helper import FileUploadWithProgressResponse, start_upload
 from itgs import Itgs
 from models import STANDARD_ERRORS_BY_CODE
 
+from admin.client_flows.image.models.dynamic_size import ClientFlowDynamicSize
+
 
 class CreateClientFlowImageRequest(BaseModel):
     job: str = Field(
@@ -19,6 +21,14 @@ class CreateClientFlowImageRequest(BaseModel):
         )
     )
     file_size: int = Field(description="The size of the file in bytes")
+    dynamic_size: Optional[ClientFlowDynamicSize] = Field(
+        None,
+        description=(
+            "If a dynamic size is supported for the content as indicated via the "
+            "x-dynamic-size hint, provides dynamic size information to forward "
+            "to the processor."
+        ),
+    )
 
 
 router = APIRouter()
@@ -52,6 +62,11 @@ async def create_client_flow_image(
             success_job_kwargs={
                 "uploaded_by_user_sub": auth_result.result.sub,
                 "job_progress_uid": job_progress_uid,
+                **(
+                    {}
+                    if args.dynamic_size is None
+                    else {"dynamic_size": args.dynamic_size.model_dump()}
+                ),
             },
             failure_job_name="runners.delete_file_upload",
             failure_job_kwargs=dict(),

@@ -60,6 +60,34 @@ See also: [client flows](../concepts/client_flows/README.md)
       should render the attached image for this field in the admin area. This is
       the logical resolution on the client.
 
+    - `x-dynamic-size`:
+
+      ```json
+      {
+        "width": ["width"],
+        "height": ["height"]
+      }
+      ```
+
+      If specified, the user can specify a dynamic size for this component using
+      other parameters on the screen. Specifically, `width` will point to where
+      the width of this image can be taken from relative to the screen schema
+      root, and `height` will point to where the height of this image can be
+      taken from. The processor will be passed this object under the
+      `dynamic_size` keyword argument.
+
+      If `x-thumbhash` is not specified but `x-dynamic-size` is, the thumbhash size will
+      be the 1x size.
+
+      Typical processing will be 1x, 1.5x, 2x, 2.5x, and 3x, and, for previewing, the smallest of:
+
+      - 1x
+      - 200 width, natural height (for large landscape images) (natural meaning 200\*(height/width),
+        not using the actual uploaded images aspect ratio)
+      - 200 height, natural width (for large portrait images)
+
+      In order to avoid accidental cropping, even widths and heights are generally required.
+
   - `content_uid`: the input parameter must be a string, the output parameter is
 
     ```json

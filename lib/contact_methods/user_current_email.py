@@ -6,9 +6,10 @@ the given way.
 This is generally appropriate for prefilling forms where only a single
 email address can be provided, such as a stripe payment form.
 """
+
 from itgs import Itgs
 from auth import AuthResult
-from typing import Literal, Optional, Tuple, Union
+from typing import Literal, Optional, Tuple, Union, cast
 from pypika import Query, Parameter, Table
 from pypika.terms import ExistsCriterion
 from enum import Enum
@@ -43,11 +44,17 @@ async def get_user_current_email(
         raise ValueError("auth_result must be successful")
 
     if auth_result.result.claims is None:
-        return await _fallback_to_primary(itgs, auth_result.result.sub, default=default)
+        return cast(
+            Union[str, None],
+            await _fallback_to_primary(itgs, auth_result.result.sub, default=default),
+        )
 
     email = auth_result.result.claims.get("email")
     if email in (None, "anonymous@example.com"):
-        return await _fallback_to_primary(itgs, auth_result.result.sub, default=default)
+        return cast(
+            Union[str, None],
+            await _fallback_to_primary(itgs, auth_result.result.sub, default=default),
+        )
 
     return email
 

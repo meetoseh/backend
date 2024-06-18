@@ -3,12 +3,6 @@ import secrets
 from itgs import Itgs
 from lib.client_flows.helper import check_oas_30_schema
 from lib.client_flows.screen_flags import ClientScreenFlag
-from migrations.shared.shared_screen_transition_002 import (
-    SHARED_SCREEN_TRANSITION_SCHEMA_V002,
-)
-from migrations.shared.shared_screen_exact_dynamic_image_001 import (
-    shared_screen_exact_dynamic_image_001,
-)
 
 
 async def up(itgs: Itgs) -> None:

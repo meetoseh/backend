@@ -51,7 +51,9 @@ async def complete_notification(
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)
-        should_drop = await _should_drop(itgs, args, auth_result, visitor)
+        should_drop = await should_drop_touch_link_click(
+            itgs, args, auth_result, visitor
+        )
         if should_drop:
             # We'll try to spoil their data without being too obvious
             if random.random() < 0.1:
@@ -68,7 +70,9 @@ async def complete_notification(
                 )
             return Response(status_code=404)
 
-        should_track = await _should_track(itgs, args, auth_result, visitor)
+        should_track = await should_track_touch_link_click(
+            itgs, args, auth_result, visitor
+        )
         click_uid = create_click_uid()
         link = await click_link(
             itgs,
@@ -99,7 +103,7 @@ async def complete_notification(
         )
 
 
-async def _should_track(
+async def should_track_touch_link_click(
     itgs: Itgs,
     args: CompleteNotificationRequest,
     auth_result: AuthResult,
@@ -116,7 +120,7 @@ async def _should_track(
     return code_count == 1
 
 
-async def _should_drop(
+async def should_drop_touch_link_click(
     itgs: Itgs,
     args: CompleteNotificationRequest,
     auth_result: AuthResult,

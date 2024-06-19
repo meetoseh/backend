@@ -8,7 +8,7 @@ import pytz
 
 from error_middleware import handle_error
 from itgs import Itgs
-from lib.client_flows.client_flow_screen import ClientFlowScreen
+from lib.client_flows.client_flow_screen import ClientFlowScreen, get_flow_screen_flag_by_platform
 from lib.client_flows.client_flow_source import ClientFlowSource
 from lib.client_flows.client_flow_stats_preparer import ClientFlowStatsPreparer
 from lib.client_flows.client_screen_stats_preparer import ClientScreenStatsPreparer
@@ -736,6 +736,8 @@ async def maybe_simulate_skip(
 
     if (
         state.current.screen.flags & get_screen_flag_by_platform(client_info.platform)
+    ) != 0 and (
+        state.current.flow_screen.flags & get_flow_screen_flag_by_platform(client_info.platform)
     ) != 0:
         return False
 

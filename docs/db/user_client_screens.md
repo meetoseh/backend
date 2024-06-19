@@ -39,7 +39,7 @@ See also: [client flows](../concepts/client_flows/README.md)
   screens schema upon it being realized.
 - `screen (text not null)`: the exact object in the client flow list that
   referred to this screen, duplicated here as modifying the flow should not
-  affect already queued screens. Has `screen` and `allowed_triggers`, where
+  affect already queued screens. Has `screen`, `allowed_triggers`, and `flags` where
   `screen` has `slug`, `fixed`, and `variable` (see `client_flows` column `screens`)
 - `added_at (real not null)`: when this item was added to the queue in seconds since
   the unix epoch. It's probably fine to remove screens that have been in a users queue

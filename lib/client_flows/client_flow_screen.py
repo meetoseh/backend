@@ -1,6 +1,8 @@
 from typing import List, Literal, Optional, Union
-
+from enum import IntFlag, auto
 from pydantic import BaseModel, Field
+
+from visitors.lib.get_or_create_visitor import VisitorSource
 
 
 class ClientFlowScreenVariableInputStringFormat(BaseModel):
@@ -79,6 +81,22 @@ class ClientFlowScreenScreen(BaseModel):
     )
 
 
+class ClientFlowScreenFlag(IntFlag):
+    """We include a int64 on client flow screens which functions as a bit-field,
+    where set bits do not change behavior and unset bits prevent the screen
+    from being shown in the corresponding context.
+    """
+
+    SHOWS_ON_IOS = auto()
+    """If unset, this screen should be skipped at peek time on the iOS platform"""
+
+    SHOWS_ON_ANDROID = auto()
+    """If unset, this screen should be skipped at peek time on the Android platform"""
+
+    SHOWS_ON_WEB = auto()
+    """If unset, this screen should be skipped at peek time on the web platform"""
+
+
 class ClientFlowScreen(BaseModel):
     """Describes a screen within the `screens` column of a `client_flows` row. This
     isn't the same thing as a `client_screen`, but a client screen is referenced by
@@ -93,3 +111,18 @@ class ClientFlowScreen(BaseModel):
     allowed_triggers: List[str] = Field(
         description="The slugs of client flows that can be triggered when popping this screen"
     )
+    flags: int = Field(
+        description="A bit-field that suppresses this screen in certain contexts"
+    )
+
+
+def get_flow_screen_flag_by_platform(platform: VisitorSource) -> ClientFlowScreenFlag:
+    """Returns the corresponding flag for the given platform"""
+    if platform == "ios":
+        return ClientFlowScreenFlag.SHOWS_ON_IOS
+    elif platform == "android":
+        return ClientFlowScreenFlag.SHOWS_ON_ANDROID
+    elif platform == "browser":
+        return ClientFlowScreenFlag.SHOWS_ON_WEB
+    else:
+        raise ValueError(f"Unknown platform: {platform}")

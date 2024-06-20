@@ -96,6 +96,12 @@ class ClientFlowScreenFlag(IntFlag):
     SHOWS_ON_WEB = auto()
     """If unset, this screen should be skipped at peek time on the web platform"""
 
+    SHOWS_FOR_FREE = auto()
+    """If unset, this screen should be skipped at peek time for free users"""
+
+    SHOWS_FOR_PRO = auto()
+    """If unset, this screen should be skipped at peek time for Oseh+ users"""
+
 
 class ClientFlowScreen(BaseModel):
     """Describes a screen within the `screens` column of a `client_flows` row. This

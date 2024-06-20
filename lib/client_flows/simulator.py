@@ -6,9 +6,13 @@ from typing import List, Literal, Optional, Union, cast
 
 import pytz
 
-from error_middleware import handle_error
+from error_middleware import handle_contextless_error, handle_error
 from itgs import Itgs
-from lib.client_flows.client_flow_screen import ClientFlowScreen, get_flow_screen_flag_by_platform
+from lib.client_flows.client_flow_screen import (
+    ClientFlowScreen,
+    ClientFlowScreenFlag,
+    get_flow_screen_flag_by_platform,
+)
 from lib.client_flows.client_flow_source import ClientFlowSource
 from lib.client_flows.client_flow_stats_preparer import ClientFlowStatsPreparer
 from lib.client_flows.client_screen_stats_preparer import ClientScreenStatsPreparer
@@ -18,6 +22,7 @@ from lib.client_flows.helper import handle_trigger_time_transformations
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_flags import get_screen_flag_by_platform
 from lib.redis_stats_preparer import RedisStatsPreparer
+from users.lib.entitlements import get_entitlement
 import unix_dates
 
 from loguru import logger
@@ -723,22 +728,18 @@ async def maybe_simulate_skip(
     Preconditions for the `skip` trigger: The front of the queue is not empty and that
     screen is not supported by the client.
 
-    Note: this is the only way that the server pops the front of the queue. Conceptually,
+    Note: this is the only way that the server pops the front of the queue. Sometimes,
     this is just a performance improvement over full round trips with the client and server.
-    The biggest improvement is when many screens in a row will be unsupported, as this will
-    also avoid tons of round trips with the database.
+
+    Other times, this is configuring the behavior, such as when a screen could be rendered
+    by the platform, but the flow that the screen was part of doesn't want the screen to
+    show on that platform anyway (e.g., because it's an interstitial introducing a platform
+    specific screen)
     """
     if state.current is None:
         return False
 
-    if client_info.platform == "server":
-        return False
-
-    if (
-        state.current.screen.flags & get_screen_flag_by_platform(client_info.platform)
-    ) != 0 and (
-        state.current.flow_screen.flags & get_flow_screen_flag_by_platform(client_info.platform)
-    ) != 0:
+    if not await check_skip_preconditions(itgs, client_info=client_info, state=state):
         return False
 
     await simulate_skip(itgs, state=state, client_info=client_info)
@@ -756,6 +757,70 @@ async def maybe_simulate_skip(
     return True
 
 
+async def check_skip_preconditions(
+    itgs: Itgs,
+    /,
+    *,
+    client_info: ClientFlowSimulatorClientInfo,
+    state: ClientFlowSimulatorState,
+) -> bool:
+    """Checks if the skip preconditions are met, returning True if they are and False
+    otherwise.
+    """
+    if state.current is None:
+        return False
+
+    if client_info.platform == "server":
+        return False
+
+    if (
+        state.current.screen.flags & get_screen_flag_by_platform(client_info.platform)
+    ) == 0:
+        # Unsupported on that platform
+        logger.debug(
+            f"Should skip because the screen {state.current.screen.slug} does not support the clients platform {client_info.platform}"
+        )
+        return True
+
+    if (
+        state.current.flow_screen.flags
+        & get_flow_screen_flag_by_platform(client_info.platform)
+    ) == 0:
+        # Not desired on that platform
+        logger.debug(
+            f"Should skip because the flow screen {state.current.screen.slug} is not intended for the clients platform {client_info.platform}"
+        )
+        return True
+
+    if state.current.screen.flags & (
+        ClientFlowScreenFlag.SHOWS_FOR_FREE | ClientFlowScreenFlag.SHOWS_FOR_PRO
+    ) != (ClientFlowScreenFlag.SHOWS_FOR_FREE | ClientFlowScreenFlag.SHOWS_FOR_PRO):
+        pro = await get_entitlement(
+            itgs, user_sub=client_info.user_sub, identifier="pro"
+        )
+        has_pro = pro is not None and pro.is_active
+
+        if (
+            (state.current.flow_screen.flags & ClientFlowScreenFlag.SHOWS_FOR_FREE) == 0
+        ) and not has_pro:
+            # This screen is not intended for users without Oseh+
+            logger.debug(
+                f"Should skip because the flow screen {state.current.screen.slug} is not intended for users without Oseh+"
+            )
+            return True
+
+        if (
+            (state.current.flow_screen.flags & ClientFlowScreenFlag.SHOWS_FOR_PRO) == 0
+        ) and has_pro:
+            # This screen is not intended for users with Oseh+
+            logger.debug(
+                f"Should skip because the flow screen {state.current.screen.slug} is not intended for users with Oseh+"
+            )
+            return True
+
+    return False
+
+
 async def simulate_until_stable(
     itgs: Itgs,
     /,
@@ -764,8 +829,16 @@ async def simulate_until_stable(
     state: ClientFlowSimulatorState,
 ) -> None:
     """Keeps greedily triggering until no automatic trigger preconditions are satisfied."""
+    seen_empty = False
     while True:
         if await maybe_simulate_empty(itgs, client_info=client_info, state=state):
+            if seen_empty:
+                await handle_contextless_error(
+                    extra_info=f"While simulating screens until stable for {client_info.user_sub} on {client_info.platform}, "
+                    "detected infinite loop (triggered empty multiple times). Skipping remaining stabilization steps"
+                )
+                return
+            seen_empty = True
             continue
         if await maybe_simulate_skip(itgs, client_info=client_info, state=state):
             continue

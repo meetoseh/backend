@@ -18,12 +18,12 @@ from starlette.concurrency import run_in_threadpool
 import stripe
 from lifespan import lifespan_handler
 import perpetual_pub_sub as pps
+from users.lib.stripe_trials import is_user_stripe_trial_eligible
+import time
 
 
 async def get_localized_price(
-    itgs: Itgs,
-    user_sub: Optional[str],
-    product_id: str,
+    itgs: Itgs, user_sub: Optional[str], product_id: str, now: Optional[float] = None
 ) -> Optional[PurchasesStoreProduct]:
     """Determines the localized price for the user with the given sub purchasing
     the stripe product with the given id.
@@ -34,17 +34,42 @@ async def get_localized_price(
         None for no localization
       product_id (str): the id of the stripe product
     """
-    # For now we don't do any price localization on stripe, but the idea
+    # Supported price localization for stripe:
+    #
+    # This has to match what we do in `start_checkout_stripe`
+    #
+    # - If no user is provided, we assume a trial is not available
+    # - Otherwise, if the user has not had Oseh+ in the last 60 days,
+    #   and the metadata includes a `trial` key whose value is a ISO8601
+    #   duration, we will use that as the trial period. Otherwise, we assume
+    #   no trial is available
+
+    # For now we don't do any regional pricing on stripe, but the idea
     # would be if we were going to do that, we would have multiple prices
     # on the products and use some kind of tag/metadata on them. Would have
     # to update get_default_stripe_price_id in start_checkout_stripe as well
+    if now is None:
+        now = time.time()
 
-    # similarly, we would use the metadata to indicate trials, intro offers,
-    # coupons, etc that we want to use whenever using that product
-    price = await get_stripe_price(itgs, product_id)
+    trial_eligible_task = (
+        None
+        if user_sub is None
+        else asyncio.create_task(
+            is_user_stripe_trial_eligible(itgs, user_sub=user_sub, now=now)
+        )
+    )
+    try:
+        price = await get_stripe_price(itgs, product_id)
+    finally:
+        trial_eligible = (
+            False if trial_eligible_task is None else await trial_eligible_task
+        )
+
     if price is None:
         return None
-    return await convert_stripe_price_to_purchases_store_product(itgs, user_sub, price)
+    return await convert_stripe_price_to_purchases_store_product(
+        itgs, user_sub, price, trial_eligible
+    )
 
 
 get_localized_price_by_platform["stripe"] = get_localized_price
@@ -112,6 +137,7 @@ async def convert_stripe_price_to_purchases_store_product(
     itgs: Itgs,
     user_sub: Optional[str],
     stripe_price: AbridgedStripePrice,
+    trial_eligible: bool,
 ) -> PurchasesStoreProduct:
     """Localizes the given stripe price to the user with the given sub, or the
     generic price if a user sub isn't available
@@ -120,6 +146,9 @@ async def convert_stripe_price_to_purchases_store_product(
     assert stripe_price.currency == "usd", stripe_price
     assert stripe_price.unit_amount is not None, stripe_price
     assert stripe_price.livemode is (os.environ["ENVIRONMENT"] != "dev"), stripe_price
+
+    trial_duration_raw = cast(Optional[str], stripe_price.metadata.get("trial"))
+    trial_duration = Period(iso8601=trial_duration_raw) if trial_duration_raw else None
 
     exact_dollars = stripe_price.unit_amount // 100
     exact_extra_cents = stripe_price.unit_amount % 100
@@ -145,6 +174,21 @@ async def convert_stripe_price_to_purchases_store_product(
         product_category="SUBSCRIPTION",
         default_option=SubscriptionOption(
             pricing_phases=[
+                *(
+                    []
+                    if trial_duration is None or not trial_eligible
+                    else [
+                        PricingPhase(
+                            billing_period=trial_duration,
+                            recurrence_mode=3,
+                            billing_cycle_count=1,
+                            price=Price(
+                                formatted="free", amount_micros=0, currency_code="USD"
+                            ),
+                            offer_payment_mode="FREE_TRIAL",
+                        )
+                    ]
+                ),
                 PricingPhase(
                     billing_period=Period(
                         iso8601=convert_to_iso8601(stripe_price.recurring.interval, 1),
@@ -157,7 +201,7 @@ async def convert_stripe_price_to_purchases_store_product(
                         currency_code=stripe_price.currency.upper(),
                     ),
                     offer_payment_mode=None,
-                )
+                ),
             ]
         ),
     )

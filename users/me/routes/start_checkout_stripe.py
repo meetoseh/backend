@@ -1,9 +1,10 @@
+import asyncio
 import os
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Any, Literal, Optional, cast
 from auth import AuthResult, auth_id
 from itgs import Itgs
 from lib.contact_methods.user_current_email import get_user_current_email
@@ -13,11 +14,13 @@ from user_safe_error import UserSafeError
 from error_middleware import handle_error
 import users.lib.entitlements as entitlements
 import users.lib.offerings as offerings
+from users.lib.prices import Period
 import stripe
 import secrets
 from urllib.parse import urlencode
 
 from users.lib.stripe_prices import get_stripe_price
+from users.lib.stripe_trials import is_user_stripe_trial_eligible
 
 
 router = APIRouter()
@@ -125,11 +128,19 @@ async def start_checkout_stripe(
             )
 
         try:
-            customer_id = await ensure_stripe_customer(itgs, auth_result)
+            customer_id, is_trial_eligible = await asyncio.gather(
+                ensure_stripe_customer(itgs, auth_result),
+                is_user_stripe_trial_eligible(
+                    itgs, user_sub=auth_result.result.sub, now=time.time()
+                ),
+            )
         except UserSafeError as exc:
             return exc.response
 
-        stripe_price_id = os.environ["OSEH_STRIPE_PRICE_ID"]
+        stripe_price_info = CachedStripePriceInfo(
+            trial=None,
+            price_id=os.environ["OSEH_STRIPE_PRICE_ID"],
+        )
         if args.package_id is not None:
             user_offerings = await offerings.get_offerings(
                 itgs, user_sub=auth_result.result.sub, platform="stripe", force=False
@@ -147,14 +158,14 @@ async def start_checkout_stripe(
 
             if stripe_product_id is not None:
                 try:
-                    product_default_price_id = await get_default_stripe_price_id(
+                    product_default_price_info = await get_default_stripe_price_info(
                         itgs, stripe_product_id=stripe_product_id
                     )
                 except UserSafeError as exc:
                     return exc.response
 
-                if product_default_price_id is not None:
-                    stripe_price_id = product_default_price_id
+                if product_default_price_info is not None:
+                    stripe_price_info = product_default_price_info
 
         uid = f"oseh_oscs_{secrets.token_urlsafe(16)}"
         try:
@@ -173,10 +184,22 @@ async def start_checkout_stripe(
                 allow_promotion_codes=True,
                 line_items=[
                     {
-                        "price": stripe_price_id,
+                        "price": stripe_price_info.price_id,
                         "quantity": 1,
                     }
                 ],
+                **cast(
+                    Any,
+                    (
+                        {
+                            "subscription_data": {
+                                "trial_period_days": stripe_price_info.trial.in_days()
+                            }
+                        }
+                        if is_trial_eligible and stripe_price_info.trial is not None
+                        else {}
+                    ),
+                ),
             )
         except Exception as exc:
             await handle_error(exc)
@@ -371,11 +394,16 @@ async def store_session(
     )
 
 
-async def get_default_stripe_price_id(
+class CachedStripePriceInfo(BaseModel):
+    trial: Optional[Period] = Field()
+    price_id: str = Field()
+
+
+async def get_default_stripe_price_info(
     itgs: Itgs, /, *, stripe_product_id: str
-) -> Optional[str]:
+) -> Optional[CachedStripePriceInfo]:
     """Fetches the default stripe price id associated with the stripe product
-    with the given id. Caches the result in redis for 15 minutes.
+    with the given id.
     """
     try:
         price = await get_stripe_price(itgs, product_id=stripe_product_id)
@@ -410,4 +438,10 @@ async def get_default_stripe_price_id(
             ),
         )
 
-    return price.id
+    trial_raw = price.metadata.get("trial", None)
+    if trial_raw is not None and isinstance(trial_raw, str):
+        trial = Period(iso8601=trial_raw)
+    else:
+        trial = None
+
+    return CachedStripePriceInfo(trial=trial, price_id=price.id)

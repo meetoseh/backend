@@ -129,6 +129,30 @@ class Period(BaseModel):
         description=("The ISO 8601 duration of the period, e.g., `P1M` for 1 month. ")
     )
 
+    def in_days(self) -> int:
+        """Converts this period to a number of days. Raises ValueError if the period
+        is not in a convertible format.
+
+        Uses 31 days for a month and 366 days for a year.
+        """
+        assert len(self.iso8601) > 2
+        if self.iso8601[0] != "P":
+            raise ValueError(f"Invalid period: {self.iso8601}")
+
+        unit_specifier = self.iso8601[-1]
+        assert unit_specifier in ("D", "W", "M", "Y")
+
+        count_in_unit = int(self.iso8601[1:-1])
+        if unit_specifier == "D":
+            return count_in_unit
+        elif unit_specifier == "W":
+            return count_in_unit * 7
+        elif unit_specifier == "M":
+            return count_in_unit * 31
+        elif unit_specifier == "Y":
+            return count_in_unit * 366
+        raise ValueError(f"Invalid period: {self.iso8601}")
+
 
 class Price(BaseModel):
     formatted: str = Field(

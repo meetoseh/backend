@@ -1,3 +1,4 @@
+import secrets
 from typing import Literal, Optional, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -142,6 +143,7 @@ async def finish_checkout_stripe(
                 stripe.checkout.Session.retrieve,
                 stripe_checkout_session_id,
                 api_key=os.environ["OSEH_STRIPE_SECRET_KEY"],
+                expand=["subscription"],
             )
         except Exception as exc:
             await handle_error(exc)
@@ -246,6 +248,38 @@ async def finish_checkout_stripe(
                 ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=503,
+            )
+
+        if checkout_session.subscription is not None:
+            # Mark that they shouldn't get a trial for a while
+            assert not isinstance(
+                checkout_session.subscription, str
+            ), "subscription should have been expanded"
+            subscription_id = checkout_session.subscription.id
+            subscription_created = checkout_session.subscription.created
+            await cursor.execute(
+                """
+INSERT INTO stripe_trials (
+    uid, user_id, stripe_subscription_id, subscription_created, created_at
+)
+SELECT
+    ?, users.id, ?, ?, ?
+FROM users
+WHERE
+    users.sub = ?
+    AND NOT EXISTS (
+        SELECT 1 FROM stripe_trials AS st
+        WHERE st.user_id = users.id AND st.stripe_subscription_id = ?
+    )
+                """,
+                (
+                    f"oseh_st_{secrets.token_urlsafe(16)}",
+                    subscription_id,
+                    subscription_created,
+                    request_at,
+                    auth_result.result.sub,
+                    subscription_id,
+                ),
             )
 
         if (

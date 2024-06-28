@@ -490,6 +490,11 @@ the keys we store locally on backend instances via diskcache
   the aspect ratio that really matters. Always set to expire after about 8 hours from when
   it was last checked.
 
+- `email_images:{uid}:{ext}` goes to a string containing a json object whose format is
+  discriminated by the `type` key. See `image_files/routes/show_email_image.py` for details
+  (it is an EmailImageLookupResult). Always set to expire about 8 hours after it was last
+  checked.
+
 ## Personalization
 
 This contains keys for the personalization subspace

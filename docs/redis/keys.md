@@ -555,6 +555,11 @@ the keys that we use in redis
   the aspect ratio that really matters. Always set to expire after about 8 hours from when
   it was last checked.
 
+- `email_images:{uid}:{ext}` goes to a string containing a json object whose format is
+  discriminated by the `type` key. See `image_files/routes/show_email_image.py` for details
+  (it is an EmailImageLookupResult). Always set to expire about 8 hours after it was last
+  checked.
+
 ### Push Namespace
 
 - `push:send_job:lock` is a [smart lock](./locks.md) used to ensure only one send job is
@@ -3669,6 +3674,11 @@ These are regular keys used by the personalization module
   messages are formatted as `(uint32, blob)` corresponding to
   `(length of slug, slug)`. All numbers are big-endian encoded.
 
-- `ps:client_screenss` is used to sync client screens across instances.
+- `ps:client_screens` is used to sync client screens across instances.
   messages are formatted as `(uint32, blob)` corresponding to
   `(length of slug, slug)`. All numbers are big-endian encoded.
+
+- `ps:email_images` is used to eagerly fill caches for email image metadata.
+  messages are formatted as `(uint64, blob)`, where the blob is the json-serialized
+  `EmailImageLookupResult` which includes the email image uid and extension.
+  All numbers are big-endian encoded.

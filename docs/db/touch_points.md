@@ -66,7 +66,6 @@ SEE ALSO: [user_touch_point_states](./user_touch_point_states.md)
   Schema Extensions:
 
   - `x-enum-discriminator` can be used in the same way as in client screens
-  - the following string formats:
 
 - `selection_strategy (text not null)`: the selection strategy used to
   choose amongst multiple options for the desired channel. This dictates the state

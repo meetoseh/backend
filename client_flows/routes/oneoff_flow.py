@@ -159,7 +159,7 @@ async def test_client_flow(
                         f"{'[DEV ENVIRONMENT] ' if is_dev else ''}Progress on `{args.slug}` one off trigger: {users_so_far} users processed so far\n"
                         f"- time elapsed: {overall_time_elapsed:.1f} seconds\n"
                         f"- rate overall: {users_so_far / overall_time_elapsed if overall_time_elapsed > 1e-6 else 0:.1f} users per second\n"
-                        f"- rate recent: {(users_so_far - last_reported_users_so_far) / (time_now - last_reported_progress_at) if time_now - last_reported_progress_at > 1e-6 else 0} users per second\n"
+                        f"- rate recent: {(users_so_far - last_reported_users_so_far) / (time_now - last_reported_progress_at) if time_now - last_reported_progress_at > 1e-6 else 0:.1f} users per second\n"
                     )
                     last_reported_progress_at = time_now
                     last_reported_users_so_far = users_so_far

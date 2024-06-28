@@ -21,6 +21,11 @@ was initially added to the to send queue.
 - `attempted_breakdown (text not null)`: a json object whose keys are in the format
   `{event}:{channel}`, e.g., `daily_reminder:sms` and the values correspond to how
   many of those touches we attempted to process from the to send queue
+- `improper (integer not null)`: how many touches were removed from the send queue
+  without further processing because the event parameters for the touch did not match
+  the event schema on the touch point
+- `improper_breakdown (text not null)`: a json object whose keys are in the format
+  `{event}:{channel}` and whose values are numbers for how many that day
 - `reachable (integer not null)`: how many touches we found at least one contact
   address for and thus were able to forward to the appropriate subqueue. for example,
   we can only send an sms if we found a phone number.
@@ -43,6 +48,8 @@ CREATE TABLE touch_send_stats (
     queued INTEGER NOT NULL,
     attempted INTEGER NOT NULL,
     attempted_breakdown TEXT NOT NULL,
+    improper INTEGER NOT NULL,
+    improper_breakdown TEXT NOT NULL,
     reachable INTEGER NOT NULL,
     reachable_breakdown TEXT NOT NULL,
     unreachable INTEGER NOT NULL,

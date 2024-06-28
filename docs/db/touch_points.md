@@ -50,6 +50,24 @@ SEE ALSO: [user_touch_point_states](./user_touch_point_states.md)
   this touch point. Events contain a slug, channel, and parameters that may be
   referenced in order to form the message. Touch points are usually referenced
   by their slug within the code as it's stable across environments, unlike uids.
+- `event_schema (text not null)`: describes the openapi 3.0.3 schema that the parameters
+  the event parameters must conform to. By configuring this before configuring
+  messages, it's possible for the UI to allow discovery/autocomplete/validate
+  that the substitutions will actually succeed. Furthermore, it ensures that the
+  actual code that triggers the event matches what the touch point expects,
+  which avoids sending poorly formatted emails silently (instead raising an
+  error).
+
+  Schema Restrictions:
+
+  - `type` is required
+  - `example` is required
+
+  Schema Extensions:
+
+  - `x-enum-discriminator` can be used in the same way as in client screens
+  - the following string formats:
+
 - `selection_strategy (text not null)`: the selection strategy used to
   choose amongst multiple options for the desired channel. This dictates the state
   format as well. The state formats corresponding to each option are documented
@@ -168,6 +186,7 @@ CREATE TABLE touch_points (
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
     event_slug TEXT UNIQUE NOT NULL,
+    event_schema TEXT NOT NULL,
     selection_strategy TEXT NOT NULL,
     messages TEXT NOT NULL,
     created_at REAL NOT NULL

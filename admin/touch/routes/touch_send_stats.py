@@ -19,6 +19,12 @@ class TouchSendStats(BaseModel):
     attempted_breakdown: Dict[str, List[int]] = Field(
         description="attempted broken down by {event}:{channel}, e.g., daily_reminder:sms"
     )
+    improper: List[int] = Field(
+        description="how many touches failed because event parameters didnt match schema"
+    )
+    improper_breakdown: Dict[str, List[int]] = Field(
+        description="improper broken down by {event}:{channel}"
+    )
     reachable: List[int] = Field(
         description="of those attempted, how many a contact address was found for"
     )
@@ -41,6 +47,8 @@ class PartialTouchSendStatsItem(BaseModel):
     queued: int = Field(0)
     attempted: int = Field(0)
     attempted_breakdown: Dict[str, int] = Field(default_factory=dict)
+    improper: int = Field(0)
+    improper_breakdown: Dict[str, int] = Field(default_factory=dict)
     reachable: int = Field(0)
     reachable_breakdown: Dict[str, int] = Field(default_factory=dict)
     unreachable: int = Field(0)
@@ -73,7 +81,7 @@ route = read_daily_stats.create_daily_stats_route(
         simple_fields=[
             "queued",
         ],
-        fancy_fields=["attempted", "reachable", "unreachable"],
+        fancy_fields=["attempted", "improper", "reachable", "unreachable"],
         sparse_fancy_fields=[],
         response_model=TouchSendStats,
         partial_response_model=PartialTouchSendStats,

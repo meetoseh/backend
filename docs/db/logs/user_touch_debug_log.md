@@ -30,6 +30,8 @@ we don't include raw emails since that could get annoyingly large)
   - `{"type":"send_unreachable", "parent": "string"}` occurs when the send job determines that
     there is no appropriate contact address for the channel. `parent` is the `uid` of the
     `send_attempt` row.
+  - `{"type":"send_event_improper", "parent": "string"}` occurs when the send job determines that
+    the event parameters don't meet validation against the event schema.
   - `{"type":"send_stale", "parent": "string"}` occurs when the send job dropped the attempt
     because it was too old
   - `{"type":"send_reachable", "parent": "string", "message": {}, "destinations": ["string"]}`

@@ -957,7 +957,9 @@ They are generally used for persisting or deleting related resources, see e.g.,
   - `failure_callback (dict)`: the job callback (name, kwargs) to call once all
     destinations have not succeeded. This is called if the target is unreachable,
     e.g., no destinations are selected, or we found destinations but all attempts
-    have either been abandoned or failed permanently.
+    have either been abandoned or failed permanently, or because the event parameters
+    don't match the event parameter schema on the corresponding touch point at the
+    time we went to send the touch.
   - `queued_at (float)`: when this was added to the send queue in seconds since
     the unix epoch
 
@@ -2269,13 +2271,19 @@ rather than external functionality.
   - `attempted`: how many touches we tried to forward to the appropriate subqueue
   - `touch_points`: how many distinct touch points were fetched this run
   - `attempted_sms`: of those attempted, how many were for sms
+  - `improper_sms`: of those attempted, how many were for sms but skipped becaus the event parameters
+    did not match the event parameter schema
   - `reachable_sms`: of those sms attempted, how many did we find (at least one) phone number for
   - `unreachable_sms`: of those sms attempted, how many could we not find a phone number for
   - `attempted_push`: of those attempted, how many were for push
+  - `improper_push`: of those attempted, how many were for push but skipped because the event
+    parameters did not match the event parameter schema
   - `reachable_push`: of those push attempted, how many did we find (at least
     one) expo push token for
   - `unreachable_push`: of those push attempted, how many could we not find a push token for
   - `attempted_email`: of those attempted, how many were for email
+  - `improper_email`: of those attempted, how many were for email but skipped because the event
+    parameters did not match the event parameter schema
   - `reachable_email`: of those email attempted, how many did we find (at least one) email for
   - `unreachable_email`: of those email attempted, how many could we not find an email for
   - `stale`: of those attempted, how many have been in the queue so long that we
@@ -2294,6 +2302,8 @@ rather than external functionality.
 
   - `queued`: how many touches were added to the to send queue
   - `attempted`: how many touches did we attempt processing on
+  - `improper`: how many touches did we skip because the event parameters didn't match the
+    event schema
   - `reachable`: of those attempted, how many did we find (at least one) contact address for
   - `unreachable`: of those attempted, how many could we not find a contact address for
   - `stale`: of those attempted, how many were too old by the time they reached the front
@@ -2304,6 +2314,7 @@ rather than external functionality.
   the key:
 
   - `attempted` is broken down by `{event}:{channel}`, e.g, `daily_reminder:sms`
+  - `improper` is broken down by `{event}:{channel}`
   - `reachable` is broken down by `{event}:{channel}:{count}`, e.g., `daily_reminder:sms:3`
     means we found 3 phone numbers to contact for the daily reminder event. the count mostly
     applies to push for e.g., phone/tablet.

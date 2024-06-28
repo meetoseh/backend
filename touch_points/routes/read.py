@@ -1,5 +1,6 @@
 import base64
 import gzip
+import json
 from pypika import Table, Query, Parameter
 from pypika.queries import QueryBuilder
 from pypika.terms import Term
@@ -34,6 +35,13 @@ class TouchPointNoMessages(BaseModel):
             "business logic for customized flows (e.g., daily reminders)"
         )
     )
+    event_schema: Literal[None] = Field(
+        description=(
+            "Only provided if requested as it may be quite large. The schema for the event parameters "
+            "for this touch point. Used for validating the messages are sensible and reducing time between bugs and "
+            "errors being raised."
+        )
+    )
     selection_strategy: TouchPointSelectionStrategy = Field(
         description="Decides how the touch point system decides which message to send among those available"
     )
@@ -58,6 +66,12 @@ class TouchPointWithMessages(BaseModel):
             "The event slug that triggers this touch point. Note that this "
             "is stable across environments, and is referenced directly by "
             "business logic for customized flows (e.g., daily reminders)"
+        )
+    )
+    event_schema: Any = Field(
+        description=(
+            "The OpenAPI 3.0.3 schema that the event parameters must adhere to "
+            "when triggering the event slug."
         )
     )
     selection_strategy: TouchPointSelectionStrategy = Field(
@@ -236,7 +250,7 @@ async def raw_read_touch_points(
         touch_points.created_at,
     )
     if include_messages:
-        query = query.select(touch_points.messages)
+        query = query.select(touch_points.event_schema, touch_points.messages)
     qargs = []
 
     def pseudocolumn(key: str) -> Term:
@@ -261,13 +275,14 @@ async def raw_read_touch_points(
     if include_messages:
         items_with_messages: List[TouchPointWithMessages] = []
         for row in response.results or []:
-            messages_raw = cast(str, row[4])
+            messages_raw = cast(str, row[5])
             items_with_messages.append(
                 TouchPointWithMessages(
                     uid=row[0],
                     event_slug=row[1],
                     selection_strategy=row[2],
                     created_at=row[3],
+                    event_schema=json.loads(row[4]),
                     messages=TouchPointMessages.model_validate_json(
                         gzip.decompress(base64.b85decode(messages_raw))
                     ),
@@ -284,6 +299,7 @@ async def raw_read_touch_points(
                     event_slug=row[1],
                     selection_strategy=row[2],
                     created_at=row[3],
+                    event_schema=None,
                     messages=None,
                     messages_etag=None,
                 )

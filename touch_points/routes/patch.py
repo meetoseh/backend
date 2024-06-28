@@ -2,6 +2,7 @@ import base64
 from functools import partial
 import gzip
 import io
+import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -37,14 +38,17 @@ from resources.patch.precondition import (
 )
 from resources.patch.query import Query
 from touch_points.lib.etag import get_messages_etag
+from touch_points.lib.schema.check_touch_point_schema import check_touch_point_schema
 from touch_points.lib.touch_points import TouchPointMessages
 from touch_points.routes.read import TouchPointSelectionStrategy, TouchPointWithMessages
+from user_safe_error import UserSafeError
 
 router = APIRouter()
 
 
 class TouchPointPreconditionModel(BaseModel):
     event_slug: str = Field(default_factory=lambda: NotSetEnum.NOT_SET)
+    event_schema: Any = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     selection_strategy: TouchPointSelectionStrategy = Field(
         default_factory=lambda: NotSetEnum.NOT_SET
     )
@@ -54,6 +58,7 @@ class TouchPointPreconditionModel(BaseModel):
 
 class TouchPointPatchModel(BaseModel):
     event_slug: str = Field(default_factory=lambda: NotSetEnum.NOT_SET)
+    event_schema: Any = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     selection_strategy: TouchPointSelectionStrategy = Field(
         default_factory=lambda: NotSetEnum.NOT_SET
     )
@@ -73,13 +78,14 @@ class PatchTouchPointRequest(BaseModel):
 
 
 ERROR_404_TYPES = Literal["touch_point_not_found"]
+ERROR_409_TYPES = Literal["schema_fails_validation", "messages_dont_match_schema"]
 
 
 @router.patch(
     "/",
     response_model=TouchPointWithMessages,
     description=create_description("touch point"),
-    responses=create_responses(ERROR_404_TYPES),
+    responses=create_responses(ERROR_404_TYPES, ERROR_409_TYPES),
 )
 async def patch_touch_point(
     args: PatchTouchPointRequest,
@@ -93,6 +99,13 @@ async def patch_touch_point(
         try:
             messages_precondition = await get_messages_precondition(
                 itgs, args.uid, args.precondition
+            )
+            messages_precondition = await _check_schema_and_messages(
+                itgs,
+                uid=args.uid,
+                precondition=args.precondition,
+                patch=args.patch,
+                messages_precondition=messages_precondition,
             )
         except SubresourceMissingException as e:
             return e.to_response()
@@ -108,6 +121,8 @@ async def patch_touch_point(
                 status_code=412,
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
+        except UserSafeError as e:
+            return e.response
 
         patch_queries = do_patch(
             args.uid,
@@ -165,7 +180,7 @@ async def get_messages_precondition(
             "touch_point_not_found", "touch_point", uid
         )
 
-    messages_raw = response.results[0][0]
+    messages_raw = cast(str, response.results[0][0])
     current_etag = get_messages_etag(messages_raw)
     if current_etag == preconditions.messages_etag:
         return messages_raw
@@ -177,6 +192,93 @@ async def get_messages_precondition(
 
     raise PreconditionFailedException(
         "messages_etag", preconditions.messages_etag, current_etag
+    )
+
+
+async def _check_schema_and_messages(
+    itgs: Itgs,
+    /,
+    *,
+    uid: str,
+    precondition: TouchPointPreconditionModel,
+    patch: TouchPointPatchModel,
+    messages_precondition: Union[str, NotSet],
+) -> Union[str, NotSet]:
+    """Check that the schema is a valid OpenAPI 3.0.3 object and meets our additional
+    requirements (examples, types and formats), and the substitutions would be likely
+    to succeed given the event schema
+
+    This mutates the precondition to enforce the event schema / messages match the
+    ones we verified against. Returns the new messages precondition
+    """
+    event_schema = patch.event_schema
+    if event_schema is NotSetEnum.NOT_SET:
+        event_schema = precondition.event_schema
+
+    messages = patch.messages
+    if (
+        messages is NotSetEnum.NOT_SET
+        and messages_precondition is not NotSetEnum.NOT_SET
+    ):
+        messages = TouchPointMessages.model_validate_json(
+            gzip.decompress(base64.b85decode(messages_precondition))
+        )
+
+    if event_schema is NotSetEnum.NOT_SET and messages is NotSetEnum.NOT_SET:
+        # Since the query doesn't check or change the event schema or messages,
+        # there's no need to check them
+        return NotSetEnum.NOT_SET
+
+    if event_schema is NotSetEnum.NOT_SET:
+        conn = await itgs.conn()
+        cursor = conn.cursor("weak")
+        response = await cursor.execute(
+            "SELECT event_schema FROM touch_points WHERE uid = ?", (uid,)
+        )
+        if not response.results:
+            raise SubresourceMissingException[ERROR_404_TYPES](
+                "touch_point_not_found", "touch_point", uid
+            )
+        event_schema = json.loads(response.results[0][0])
+        precondition.event_schema = event_schema
+
+    if messages is NotSetEnum.NOT_SET:
+        conn = await itgs.conn()
+        cursor = conn.cursor("weak")
+        response = await cursor.execute(
+            "SELECT messages FROM touch_points WHERE uid = ?", (uid,)
+        )
+        if not response.results:
+            raise SubresourceMissingException[ERROR_404_TYPES](
+                "touch_point_not_found", "touch_point", uid
+            )
+        messages_precondition = cast(str, response.results[0][0])
+        messages = TouchPointMessages.model_validate_json(
+            gzip.decompress(base64.b85decode(messages_precondition))
+        )
+
+    result = await check_touch_point_schema(
+        itgs, schema=event_schema, messages=messages
+    )
+    if result.success is True:
+        return messages_precondition
+
+    raise UserSafeError(
+        message=result.message,
+        response=Response(
+            content=StandardErrorResponse[ERROR_409_TYPES](
+                type=(
+                    "schema_fails_validation"
+                    if result.category == "schema"
+                    else "messages_dont_match_schema"
+                ),
+                message=result.message,
+            ).model_dump_json(),
+            status_code=409,
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+            },
+        ),
     )
 
 
@@ -214,6 +316,7 @@ def check_preconditions(
     simple = partial(check_simple_precondition, "touch_points", uid)
     return [
         *simple("event_slug", preconditions.event_slug),
+        *simple("event_schema", json.dumps(preconditions.event_schema, sort_keys=True)),
         *simple("selection_strategy", preconditions.selection_strategy),
         *_check_messages(uid, preconditions, messages_precondition),
     ]
@@ -258,6 +361,10 @@ def _checked_touch_points(
         result.write(" AND event_slug = ?")
         qargs.append(precondition.event_slug)
 
+    if precondition.event_schema is not NotSetEnum.NOT_SET:
+        result.write(" AND event_schema = ?")
+        qargs.append(json.dumps(precondition.event_schema, sort_keys=True))
+
     if precondition.selection_strategy is not NotSetEnum.NOT_SET:
         result.write(" AND selection_strategy = ?")
         qargs.append(precondition.selection_strategy)
@@ -287,6 +394,10 @@ def do_patch(
     if patch.event_slug is not NotSetEnum.NOT_SET:
         updates.append("event_slug = ?")
         update_qargs.append(patch.event_slug)
+
+    if patch.event_schema is not NotSetEnum.NOT_SET:
+        updates.append("event_schema = ?")
+        update_qargs.append(json.dumps(patch.event_schema, sort_keys=True))
 
     if patch.selection_strategy is not NotSetEnum.NOT_SET:
         updates.append("selection_strategy = ?")
@@ -352,7 +463,7 @@ def do_read(uid: str) -> Query:
     return Query(
         sql="""
 SELECT
-    uid, event_slug, selection_strategy, messages, created_at
+    uid, event_slug, event_schema, selection_strategy, messages, created_at
 FROM touch_points
 WHERE uid = ?
         """,
@@ -365,14 +476,15 @@ async def parse_read_result(itgs: Itgs, r: ResultItem) -> TouchPointWithMessages
     assert r.results
 
     row = r.results[0]
-    messages_raw = cast(str, row[3])
+    messages_raw = cast(str, row[4])
     return TouchPointWithMessages(
         uid=row[0],
         event_slug=row[1],
-        selection_strategy=row[2],
+        event_schema=json.loads(row[2]),
+        selection_strategy=row[3],
         messages=TouchPointMessages.model_validate_json(
             gzip.decompress(base64.b85decode(messages_raw))
         ),
         messages_etag=get_messages_etag(messages_raw),
-        created_at=row[4],
+        created_at=row[5],
     )

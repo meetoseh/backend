@@ -25,6 +25,9 @@ class ReadLastSendJobResponse(BaseModel):
         description="How many distinct touch points were attempted"
     )
     attempted_sms: int = Field(description="Of those attempted, how many were for sms")
+    improper_sms: int = Field(
+        description="Of those attempted, how many were for SMS, but were skipped because the event parameters did not match the events schema"
+    )
     reachable_sms: int = Field(
         description="Of those attempted, how many had a phone number for sms"
     )
@@ -34,6 +37,9 @@ class ReadLastSendJobResponse(BaseModel):
     attempted_push: int = Field(
         description="Of those attempted, how many were for push"
     )
+    improper_push: int = Field(
+        description="Of those attempted, how many were for push, but were skipped because the event parameters did not match the events schema"
+    )
     reachable_push: int = Field(
         description="Of those attempted, how many had a push token for push"
     )
@@ -42,6 +48,9 @@ class ReadLastSendJobResponse(BaseModel):
     )
     attempted_email: int = Field(
         description="Of those attempted, how many were for email"
+    )
+    improper_email: int = Field(
+        description="Of those attempted, how many were for email, but were skipped because the event parameters did not match the events schema"
     )
     reachable_email: int = Field(
         description="Of those attempted, how many had an email address for email"
@@ -91,12 +100,15 @@ async def read_last_send_job(authorization: Optional[str] = Header(None)):
                 b"attempted",  # type: ignore
                 b"touch_points",  # type: ignore
                 b"attempted_sms",  # type: ignore
+                b"improper_sms",  # type: ignore
                 b"reachable_sms",  # type: ignore
                 b"unreachable_sms",  # type: ignore
                 b"attempted_push",  # type: ignore
+                b"improper_push",  # type: ignore
                 b"reachable_push",  # type: ignore
                 b"unreachable_push",  # type: ignore
                 b"attempted_email",  # type: ignore
+                b"improper_email",  # type: ignore
                 b"reachable_email",  # type: ignore
                 b"unreachable_email",  # type: ignore
                 b"stale",  # type: ignore
@@ -116,16 +128,19 @@ async def read_last_send_job(authorization: Optional[str] = Header(None)):
                 attempted=int(result[3]),
                 touch_points=int(result[4]),
                 attempted_sms=int(result[5]),
-                reachable_sms=int(result[6]),
-                unreachable_sms=int(result[7]),
-                attempted_push=int(result[8]),
-                reachable_push=int(result[9]),
-                unreachable_push=int(result[10]),
-                attempted_email=int(result[11]),
-                reachable_email=int(result[12]),
-                unreachable_email=int(result[13]),
-                stale=int(result[14]),
-                stop_reason=result[15].decode("ascii"),
+                improper_sms=int(result[6]),
+                reachable_sms=int(result[7]),
+                unreachable_sms=int(result[8]),
+                attempted_push=int(result[9]),
+                improper_push=int(result[10]),
+                reachable_push=int(result[11]),
+                unreachable_push=int(result[12]),
+                attempted_email=int(result[13]),
+                improper_email=int(result[14]),
+                reachable_email=int(result[15]),
+                unreachable_email=int(result[16]),
+                stale=int(result[17]),
+                stop_reason=result[18].decode("ascii"),
                 in_purgatory=purgatory_size,
             ).model_dump_json(),
             status_code=200,

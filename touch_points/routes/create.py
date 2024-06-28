@@ -1,5 +1,6 @@
 import base64
 import gzip
+import json
 import secrets
 import time
 from fastapi import APIRouter, Header
@@ -48,6 +49,8 @@ ERROR_EVENT_SLUG_EXISTS_RESPONSE = Response(
     status_code=409,
 )
 
+DEFAULT_SCHEMA = {"type": "object", "additionalProperties": False, "example": {}}
+
 
 @router.post(
     "/",
@@ -91,10 +94,10 @@ async def create_touch_point(
         response = await cursor.execute(
             """
 INSERT INTO touch_points (
-    uid, event_slug, selection_strategy, messages, created_at
+    uid, event_slug, event_schema, selection_strategy, messages, created_at
 )
 SELECT
-    ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?
 WHERE
     NOT EXISTS (
         SELECT 1 FROM touch_points WHERE event_slug = ?
@@ -103,6 +106,7 @@ WHERE
             (
                 uid,
                 args.event_slug,
+                json.dumps(DEFAULT_SCHEMA, sort_keys=True),
                 args.selection_strategy,
                 messages_raw,
                 request_at,
@@ -117,6 +121,7 @@ WHERE
             content=TouchPointWithMessages(
                 uid=uid,
                 event_slug=args.event_slug,
+                event_schema=DEFAULT_SCHEMA,
                 selection_strategy=args.selection_strategy,
                 messages=args.messages,
                 messages_etag=get_messages_etag(messages_raw),

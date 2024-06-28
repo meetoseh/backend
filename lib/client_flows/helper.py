@@ -1516,10 +1516,11 @@ def deep_set(
     original: Union[dict, list],
     path: Union[List[Union[str, int]], List[str], List[int]],
     value: Any,
+    auto_extend_lists: bool = False,
 ) -> None:
     assert path, f"_deep_set empty path on {original}, value {value}, path {path}"
     src = original
-    for item in path[:-1]:
+    for item_idx, item in enumerate(path[:-1]):
         if isinstance(item, str):
             assert isinstance(
                 src, dict
@@ -1533,10 +1534,20 @@ def deep_set(
             assert isinstance(
                 src, list
             ), f"Expected list in src at {pretty_path(path)} to set {value}, got {src}"
-            if item < 0 or item >= len(src):
+            if item < 0 or item > len(src):
                 raise IndexError(
                     f"Expected {item} in range in src at {pretty_path(path)} to set {value}, got {src}"
                 )
+            if item == len(src):
+                if not auto_extend_lists:
+                    raise IndexError(
+                        f"Expected {item} in range in src at {pretty_path(path)} to set {value}, got {src} (did we want auto_extend=True?)"
+                    )
+                next_item = path[item_idx + 1]
+                if isinstance(next_item, int):
+                    src.append([])
+                else:
+                    src.append(dict())
             src = src[item]
         else:
             raise ValueError(f"Expected str or int in path, got {item!r}")
@@ -1551,11 +1562,18 @@ def deep_set(
         assert isinstance(
             src, list
         ), f"Expected list in src at {pretty_path(path)} to set {value}, got {src}"
-        if last_key < 0 or last_key >= len(src):
+        if last_key < 0 or last_key > len(src):
             raise IndexError(
                 f"Expected {last_key} in range in src at {pretty_path(path)} to set {value}, got {src}"
             )
-        src[last_key] = value
+        if last_key == len(src):
+            if not auto_extend_lists:
+                raise IndexError(
+                    f"Expected {last_key} in range in src at {pretty_path(path)} to set {value}, got {src} (did we want auto_extend=True?)"
+                )
+            src.append(value)
+        else:
+            src[last_key] = value
     else:
         raise ValueError(f"Expected str or int in path, got {last_key!r}")
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Union
 
 
 class TouchPointSmsMessage(BaseModel):
@@ -13,7 +13,7 @@ class TouchPointSmsMessage(BaseModel):
         description="the format string for the body of the message, e.g., 'Hello {name}'"
     )
     body_parameters: List[str] = Field(
-        description="the parameters to use for the body format string, e.g., ['name']"
+        description="the parameters to use for the body format string, e.g., ['name']. May use dots as separators."
     )
 
 
@@ -28,13 +28,13 @@ class TouchPointPushMessage(BaseModel):
         description="the format string for the title of the message, e.g., 'Hello {name}'"
     )
     title_parameters: List[str] = Field(
-        description="the parameters to use for the title format string, e.g., ['name']"
+        description="the parameters to use for the title format string, e.g., ['name']. May use dots as separators."
     )
     body_format: str = Field(
         description="the format string for the body of the message, e.g., 'Hello {name}'"
     )
     body_parameters: List[str] = Field(
-        description="the parameters to use for the body format string, e.g., ['name']"
+        description="the parameters to use for the body format string, e.g., ['name']. May use dots as separators."
     )
     channel_id: str = Field(
         description="the channel id for android push notifications, e.g., 'default'"
@@ -42,12 +42,12 @@ class TouchPointPushMessage(BaseModel):
 
 
 class TouchPointTemplateParameterSubstitution(BaseModel):
-    key: List[str] = Field(description="the path to the key to set")
+    key: List[Union[str, int]] = Field(description="the path to the key to set")
     format: str = Field(
         description="the format string for the value, e.g., 'Hello {name}'"
     )
     parameters: List[str] = Field(
-        description="the parameters to use for the format string, e.g., ['name']"
+        description="the parameters to use for the format string, e.g., ['name']. May use dots as separators."
     )
 
 
@@ -62,11 +62,11 @@ class TouchPointEmailMessage(BaseModel):
         description="the format string for the subject of the message, e.g., 'Hello {name}'"
     )
     subject_parameters: List[str] = Field(
-        description="the parameters to use for the subject format string, e.g., ['name']"
+        description="the parameters to use for the subject format string, e.g., ['name']. May use dots as separators."
     )
     template: str = Field(description="the slug of the template within email-templates")
     template_parameters_fixed: Dict[str, Any] = Field(
-        description="non-substituted template parameters"
+        description="non-substituted template parameters. May use dots as separators in keys."
     )
     template_parameters_substituted: List[TouchPointTemplateParameterSubstitution] = (
         Field(description="substituted template parameters")

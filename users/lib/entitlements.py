@@ -285,6 +285,29 @@ async def get_entitlements_from_source(
                             period = Period(iso8601="P1Y")
                         elif cycle_days_approx == 73000:
                             period = Period(iso8601="P200Y")
+                        elif cycle_days_approx == 0:
+                            # test purchase?
+                            cycle_minutes_approx = round(
+                                cycle_time.total_seconds() / 60
+                            )
+                            if cycle_minutes_approx == 5:
+                                # 1 week or 1 month
+                                period = Period(iso8601="PT5M")
+                            elif cycle_minutes_approx == 10:
+                                # 3 months
+                                period = Period(iso8601="PT10M")
+                            elif cycle_minutes_approx == 15:
+                                # 6 months
+                                period = Period(iso8601="PT15M")
+                            elif cycle_minutes_approx == 30:
+                                # 1 year
+                                period = Period(iso8601="PT30M")
+                            else:
+                                await handle_warning(
+                                    f"{__name__}:bad_cycle_approx:test",
+                                    f"bad cycle minutes approximation: {cycle_minutes_approx} minutes from {subscription_type} for {revenue_cat_id=}",
+                                )
+                                period = Period(iso8601=f"PT{cycle_minutes_approx}M")
                         else:
                             await handle_warning(
                                 f"{__name__}:bad_cycle_approx",

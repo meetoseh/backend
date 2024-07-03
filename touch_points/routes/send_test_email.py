@@ -1,14 +1,27 @@
+import json
+import os
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from typing import Annotated, Literal, Optional, cast
-from touch_points.lib.create_preview_parameters import create_preview_parameters
+from typing import Annotated, Any, Literal, Optional, cast
+from pydantic import BaseModel, Field
+from touch_points.lib.schema.check_touch_point_schema import make_template_parameters
 from touch_points.lib.touch_points import TouchPointEmailMessage
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_admin
+from emails.auth import create_jwt as create_email_jwt
 from itgs import Itgs
+import aiohttp
 
 
 router = APIRouter()
+
+
+class SendTestEmailRequest(BaseModel):
+    event_parameters: Any = Field(description="The parameters to use for the event")
+    message: TouchPointEmailMessage = Field(
+        description="The message to send, formatted with the given event parameters"
+    )
+
 
 ERROR_404_TYPES = Literal["no_email"]
 ERROR_NO_EMAIL_RESPONSE = Response(
@@ -23,7 +36,7 @@ ERROR_NO_EMAIL_RESPONSE = Response(
 
 @router.post("/send_test_email", status_code=202, responses=STANDARD_ERRORS_BY_CODE)
 async def send_touch_point_test_email(
-    message: TouchPointEmailMessage,
+    args: SendTestEmailRequest,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
     """Sends a test email message to the verified email addresses for the authorized
@@ -53,43 +66,47 @@ async def send_touch_point_test_email(
         emails = [cast(str, row[0]) for row in response.results]
         jobs = await itgs.jobs()
 
-        requested_parameters = set(message.subject_parameters)
-        for substitute in message.template_parameters_substituted:
-            requested_parameters.update(substitute.parameters)
+        subject = args.message.subject_format.format_map(args.event_parameters)
 
-        preview_parameters = await create_preview_parameters(
-            itgs, user_sub=auth_result.result.sub, requested=requested_parameters
+        template_parameters = make_template_parameters(
+            event_parameters=args.event_parameters,
+            template_parameters_fixed=args.message.template_parameters_fixed,
+            template_parameters_substituted=args.message.template_parameters_substituted,
         )
 
-        subject = message.subject_format.format_map(preview_parameters)
-
-        template_parameters = dict()
-        stack = [[template_parameters, message.template_parameters_fixed]]
-        while stack:
-            my_version, to_add = stack.pop()
-            for key, value in to_add.items():
-                if isinstance(value, dict):
-                    my_version[key] = dict()
-                    stack.append([my_version[key], value])
-                else:
-                    my_version[key] = value
-
-        for substitute in message.template_parameters_substituted:
-            ele = template_parameters
-            for key in substitute.key[:-1]:
-                if key not in ele:
-                    ele[key] = dict()
-                ele = ele[key]
-
-            last_key = substitute.key[-1]
-            ele[last_key] = substitute.format.format_map(preview_parameters)
+        # before sending the test, verify we shouldn't get a templating error..
+        email_template_jwt = await create_email_jwt(
+            itgs, args.message.template, duration=60
+        )
+        root_email_template_url = os.environ["ROOT_EMAIL_TEMPLATE_URL"]
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{root_email_template_url}/api/3/templates/{args.message.template}",
+                headers={
+                    "Authorization": f"Bearer {email_template_jwt}",
+                    "Content-Type": "application/json; charset=utf-8",
+                    "Accept": "text/html; charset=utf-8",
+                },
+                data=json.dumps(template_parameters).encode("utf-8"),
+            ) as resp:
+                if not resp.ok:
+                    slack = await itgs.slack()
+                    text = await resp.text()
+                    await slack.send_web_error_message(
+                        f"Test email failed! Failed to template {args.message.template} using parameters:\n\n```\n{json.dumps(template_parameters, indent=2)}\n```\n\nResponse:\n\n```\n{text}\n```\n\nStatus: {resp.status}"
+                    )
+                    return Response(
+                        content=text.encode("utf-8"),
+                        headers={"Content-Type": resp.headers["Content-Type"]},
+                        status_code=resp.status,
+                    )
 
         for email in emails[:3]:
             await jobs.enqueue(
                 "runners.emails.send_test",
                 email=email,
                 subject=subject,
-                template=message.template,
+                template=args.message.template,
                 template_parameters=template_parameters,
             )
 

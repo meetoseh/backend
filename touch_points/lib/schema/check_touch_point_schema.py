@@ -806,6 +806,30 @@ def check_substituted_email_parameter(
     )
 
 
+def make_template_parameters(
+    *,
+    event_parameters: Any,
+    template_parameters_fixed: Dict[str, Any],
+    template_parameters_substituted: List[TouchPointTemplateParameterSubstitution],
+) -> Dict[str, Any]:
+    """Produces the template parameters from the event parameters and template
+    configuration.
+    """
+    result = deep_copy(template_parameters_fixed)
+    for substituted in template_parameters_substituted:
+        deep_set(
+            result,
+            substituted.key,
+            format_with_dot_parameters(
+                substituted.format,
+                parameters=substituted.parameters,
+                event_parameters=event_parameters,
+            ),
+            auto_extend_lists=True,
+        )
+    return result
+
+
 def check_example_event_matches_email_schema(
     event_schema: dict,
     template_parameters_fixed: Dict[str, Any],
@@ -820,19 +844,11 @@ def check_example_event_matches_email_schema(
     if not isinstance(event_parameters, dict):
         raise ValueError(f"expected object at $.example, got {type(event_parameters)}")
 
-    result = deep_copy(template_parameters_fixed)
-    for substituted in template_parameters_substituted:
-        deep_set(
-            result,
-            substituted.key,
-            format_with_dot_parameters(
-                substituted.format,
-                parameters=substituted.parameters,
-                event_parameters=event_parameters,
-            ),
-            auto_extend_lists=True,
-        )
-
+    result = make_template_parameters(
+        event_parameters=event_parameters,
+        template_parameters_fixed=template_parameters_fixed,
+        template_parameters_substituted=template_parameters_substituted,
+    )
     validate(result, email_template_schema, cls=cast(Type[Validator], OAS30Validator))
 
 

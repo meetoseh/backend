@@ -40,6 +40,7 @@ from lib.redis_stats_preparer import RedisStatsPreparer
 from lib.shared.clean_for_slack import clean_for_slack
 from lib.shared.describe_user import enqueue_send_described_user_slack_message
 from oauth.lib.feature_flags import get_feature_flags
+from oauth.lib.send_welcome_email import send_welcome_email
 from oauth.models.oauth_state import OauthState
 from oauth.settings import ProviderSettings
 from redis.asyncio import Redis
@@ -598,15 +599,22 @@ async def initialize_user_from_info(
             example_claims=example_claims,
             now=time.time(),
         )
-        if user is not None and os.environ["ENVIRONMENT"] != "dev":
+        if user is None:
+            await asyncio.sleep(0.1 + 0.1 * random.random())
+            continue
+
+        if os.environ["ENVIRONMENT"] != "dev":
             await enqueue_send_described_user_slack_message(
                 itgs,
                 message=f"{{name}} just signed up with {provider}!",
                 sub=user.user_sub,
                 channel="oseh_bot",
             )
-            return user
-        await asyncio.sleep(0.1 + 0.1 * random.random())
+
+        if interpreted_claims.given_name is not None and 'anon' not in interpreted_claims.given_name.lower():
+            await send_welcome_email(itgs, user_sub=user.user_sub, name=interpreted_claims.given_name)
+            
+        return user
 
     raise OauthInternalException(
         "Failed to initialize user - too many concurrent modifications"

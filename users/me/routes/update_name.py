@@ -1,10 +1,12 @@
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints
-from typing import Literal, Optional, Annotated
+from typing import Literal, Optional, Annotated, cast
 from auth import auth_any
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
+from oauth.lib.send_welcome_email import send_welcome_email
 
 
 router = APIRouter()
@@ -46,11 +48,21 @@ async def update_name(
 
         conn = await itgs.conn()
         cursor = conn.cursor("none")
-        response = await cursor.execute(
-            "UPDATE users SET given_name=?, family_name=? WHERE sub=?",
-            (args.given_name, args.family_name, auth_result.result.sub),
+        responses = await cursor.executeunified3(
+            (
+                (
+                    "SELECT given_name, created_at FROM users WHERE sub=?",
+                    (auth_result.result.sub,),
+                ),
+                (
+                    "UPDATE users SET given_name=?, family_name=? WHERE sub=?",
+                    (args.given_name, args.family_name, auth_result.result.sub),
+                ),
+            ),
         )
-        if response.rows_affected is None or response.rows_affected < 1:
+        select_response = responses[0]
+        update_response = responses[1]
+        if update_response.rows_affected is None or update_response.rows_affected < 1:
             return Response(
                 content=StandardErrorResponse[ERROR_503_TYPES](
                     type="integrity",
@@ -62,6 +74,19 @@ async def update_name(
                 },
                 status_code=503,
             )
+
+        if select_response.results:
+            old_given_name = cast(Optional[str], select_response.results[0][0])
+            old_created_at = cast(float, select_response.results[0][1])
+
+            if (
+                old_given_name is None
+                or "anon" in old_given_name.lower()
+                and old_created_at > time.time() - 60 * 60 * 24
+            ):
+                await send_welcome_email(
+                    itgs, user_sub=auth_result.result.sub, name=args.given_name
+                )
 
         jobs = await itgs.jobs()
         await jobs.enqueue(

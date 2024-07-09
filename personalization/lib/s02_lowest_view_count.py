@@ -193,7 +193,8 @@ async def map_to_lowest_view_counts(
             ),
         )
 
-        batch_view_counts = [0] * len(batch)
+        # we use a huge default value to make sure errors are really obvious
+        batch_view_counts = [2**31 - 1] * len(batch)
         for batch_idx, view_count in response.results or []:
             batch_view_counts[batch_idx] = view_count
 

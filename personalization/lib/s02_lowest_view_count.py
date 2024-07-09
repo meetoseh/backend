@@ -156,7 +156,7 @@ async def map_to_lowest_view_counts(
                         ))
                     )
                     AND users.sub = ?
-                GROUP BY journey_id
+                GROUP BY journeys.id
             )
             SELECT
                 batch.idx AS batch_idx,

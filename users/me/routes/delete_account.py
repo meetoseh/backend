@@ -295,6 +295,8 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
             await cleanup_user_push_tokens(itgs, auth_result.result.sub)
             await cleanup_user_emails(itgs, auth_result.result.sub)
             await cleanup_user_phones(itgs, auth_result.result.sub)
+            await cleanup_user_journal_master_keys(itgs, auth_result.result.sub)
+            await cleanup_user_journal_client_keys(itgs, auth_result.result.sub)
             await cleanup_siwo_email_log(itgs, auth_result.result.sub)
             await cleanup_siwo_identities(itgs, auth_result.result.sub)
             await cursor.execute(
@@ -484,6 +486,57 @@ async def cleanup_user_phones(itgs: Itgs, sub: str) -> None:
         stats.incr_deleted(
             unix_date, channel="phone", reason="account", amt=phones_deleted
         )
+
+
+async def cleanup_user_journal_master_keys(itgs: Itgs, sub: str) -> None:
+    """If the user with the given sub exists and we have generated any journal master
+    keys for them, queues them to be deleted from s3
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+
+    response = await cursor.execute(
+        "SELECT s3_files.key FROM user_journal_master_keys, s3_files, users "
+        "WHERE"
+        " users.sub = ?"
+        " AND users.id = user_journal_master_keys.user_id"
+        " AND user_journal_master_keys.s3_file_id = s3_files.id",
+        (sub,),
+    )
+
+    if not response.results:
+        return
+
+    jobs = await itgs.jobs()
+    for row in response.results:
+        key = cast(str, row[0])
+        await jobs.enqueue("runners.delete_s3_file", key=key)
+
+
+async def cleanup_user_journal_client_keys(itgs: Itgs, sub: str) -> None:
+    """If the user with the given sub exists and we have generated any journal client
+    keys for them, queues them to be deleted from s3
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+
+    response = await cursor.execute(
+        "SELECT s3_files.key FROM user_journal_client_keys, s3_files, users "
+        "WHERE"
+        " users.sub = ?"
+        " AND users.id = user_journal_client_keys.user_id"
+        " AND user_journal_client_keys.s3_file_id IS NOT NULL"
+        " AND user_journal_client_keys.s3_file_id = s3_files.id",
+        (sub,),
+    )
+
+    if not response.results:
+        return
+
+    jobs = await itgs.jobs()
+    for row in response.results:
+        key = cast(str, row[0])
+        await jobs.enqueue("runners.delete_s3_file", key=key)
 
 
 async def cleanup_siwo_email_log(itgs: Itgs, sub: str) -> None:

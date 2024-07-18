@@ -560,6 +560,138 @@ the keys that we use in redis
   (it is an EmailImageLookupResult). Always set to expire about 8 hours after it was last
   checked.
 
+- `journals:client_keys:ratelimits:created:user:{sub}` goes to the string `1` while we are
+  preventing the user with the given sub from creating new client keys and is unset otherwise.
+
+### Journal Chats
+
+We use a special queue instead of just `jobs:hot` because these jobs are all
+assumed to be have low cpu/memory usage and thus be highly parallelizable, since
+most of the work is being performed by the LLM servers (which are managed openai
+currently, and if we were to do it custom we would keep it on a different instance).
+Furthermore, we want to support Oseh+ users being served preferentially to free
+users. Thus, it makes sense to have a different top-level loop and in doing so
+it's also convenient to tailor exactly whats stored to make chat related
+metrics/analysis easier.
+
+Queueing a journal chat job is done by:
+
+- incrementing the number of queued jobs by the user, possibly failing out if it's
+  too high (`journals:count_queued_journal_chat_jobs_by_user:{sub}`)
+- writing the request information to the data hash key
+  (`journals:journal_chat_jobs:{journal_chat_uid}`),
+- writing the first message to the events list and update its expiry
+  (`journal_chats:{uid}:events`)
+- publishing a message to the events pubsub channel (`ps:journal_chats:{uid}:events`)
+- writing to the appropriate job queue (`journals:journal_chat_jobs:priority` or
+  `journals:journal_chat_jobs:normal`)
+- waking the worker instances (in case they are sleeping) by publishing to the
+  journal worker queued pubsub channel (`ps:journal_chat_jobs:queued`).
+
+Requesting a journal chat job is done by trying to remove (described later) from
+the high priority queue (`journals:journal_chat_jobs:priority`) and then the
+normal priority queue (`journals:journal_chat_jobs:normal`), and if neither are
+found then to wait for the earlier of 1 minute and a message of the waken pubsub
+channel.
+
+To remove from one of the queues, the entry is added to the purgatory sorted set
+(`journals:journal_chat_jobs:purgatory`) where the score is the time the entry
+was was popped from the queue and the value is the uid of the journal chat,
+incrementing `starts` on the data hash key
+(`journals:journal_chat_jobs:{journal_chat_uid}`), and overwriting `start_time`,
+`started_by` and `log_id` with the current time, the hostname of the
+instance, and a random value to track if the job is stolen from you. Further,
+you write a message to the events list and update its expiry
+(`journal_chats:{uid}:events`) and publish that message to the events pubsub
+channel (`ps:journal_chats:{uid}:events`).
+
+Finally, when the job completes (successfully or not), the entry is removed from
+the purgatory sorted set (`journals:journal_chat_jobs:purgatory`), delete the
+data hash key (`journals:journal_chat_jobs:{journal_chat_uid}`), write the last
+message to the events list and update its expiry (`journal_chats:{uid}:events`)
+and publish that message to the events pubsub channel
+(`ps:journal_chats:{uid}:events`), and decrement the number of queued jobs by the
+user (`journals:count_queued_journal_chat_jobs_by_user:{sub}`), deleting the key
+if the new value is 0 or lower.
+
+Documentation by key:
+
+The core queues:
+
+- `journals:journal_chat_jobs:priority` goes to the high priority queue
+- `journals:journal_chat_jobs:normal` goes to the normal priority queue
+  Each entry in these queues is the uid of a journal chat, such that there
+  also exists a `journals:journal_chat_jobs:{journal_chat_uid}` key.
+- `journals:journal_chat_jobs:{journal_chat_uid}` goes to a hash with the
+  following keys:
+  - `starts (integer)`: the number of times a worker has picked up this job;
+    0 when first queued
+  - `start_time (float or 'never')`: the last time a worker picked up this
+    job, or the literal `never` when first queued
+  - `started_by (string or 'never')`: the hostname of the last worker to start
+    this job, or the literal `never` when first queued
+  - `log_id (string or 'never')`: a random string set by the last worker
+    to start this job, used as a sanity check and to help grep log messages
+  - `queued_at (integer)`: when this job was queued, in seconds since the
+    epoch (floored instance local time)
+  - `user_sub (string)`: the sub of the user this job is for
+  - `journal_entry_uid (string)`: the uid of the journal entry that is being edited
+  - `journal_master_key_uid (string)`: the uid of the journal master key used to encrypt `encrypted_task`
+  - `encrypted_task (string, json)`: a json object, stringified, Fernet encrypted with the journal
+    master key, then base64url encoded. Has the following keys:
+    - `type (string, enum)`: one of:
+      - `greeting`: generate a conversation starter
+      - `chat`: continue the conversation and suggest activities
+      - `reflection-question`: generate an open-ended question the user can use
+        to write something for themself
+    - `conversation (array)` The current state of the conversation, as a json array.
+      Each object in the array is the same type of json blob found in
+      `journal_entry_items` `master_encrypted_data`
+    - `replace_index (int, null)` is either `null` if the task is to generate a new chat message at
+      the end of the conversation, otherwise an integer `0 <= index < len(conversation)`
+      for the message to regenerate
+- `journals:journal_chat_jobs:purgatory` a sorted set where the scores are the times when a
+  worker picked up on a job and the values are the journal chat uids that are being worked on.
+  this is used to ensure that if the job dies unexpectedly (e.g., sudden power loss), we can
+  still quickly find and cleanup the data hash key later
+
+Used for security / rate limiting:
+
+- `journals:count_queued_journal_chat_jobs_by_user:{sub}`: the number of jobs whose `user_sub`
+  matches the given sub and are in either the high or normal queues or the purgatory. Generally,
+  Oseh+ users should be blocked from having more than 3 queued and free users should be blocked
+  from having more than 1 queued.
+
+Used for transferring between the jobs server and the websocket server:
+
+- `journal_chats:{uid}:events` is a list where each item is `(uint32, blob, uint64, blob)`
+  where the parts are:
+
+  - size of the first blob
+  - journal master key uid
+  - size of the second blob
+  - encrypted json object discriminated by type, with the keys:
+    - `counter`: a unique incrementing value that starts at 0 to indicate the
+      first event. This should match the index. This is particularly useful
+      when syncing up to the corresponding `ps:journal_chats:{uid}:events` pubsub channel
+    - `type`: one of:
+      - `mutations`: this packet contains mutations which can be combined before forwarding
+        has additional keys
+        - `mutations`: json array of json objects (SegmentDataMutation)
+          - `key`: json array of strings and integers for the path to where to insert the value
+          - `value`: the value to insert
+        - `more`: boolean indicating if there are more events after this
+      - `passthrough`: this packet contains an event that can be forwarded as is or dropped after
+        inspection. it can make sense to drop a thinking-\* event if you know theres more events after
+        already. has additional keys:
+        - `event`: the event to forward, which is enum-discriminated by type, where type is one of
+          `thinking-bar`, `thinking-spinner`, or `error`, and the rest can be found by reading the
+          websocket documentation for `/api/2/journals/chat` (specifically the events there)
+
+  For each entry, after applying all the mutations _for that entry_, integrity checks should
+  pass on journal chat state (see the websocket endpoint /api/2/journals/chat documentation)
+  Always has an expiration set of 30m since the last entry was added.
+
 ### Push Namespace
 
 - `push:send_job:lock` is a [smart lock](./locks.md) used to ensure only one send job is
@@ -3348,6 +3480,123 @@ via a share code. The UTM is:
 - `stats:client_screens:daily:earliest`: goes to the earliest unix date for which
   there might still be client screen statistics in redis
 
+- `stats:journals:daily:{unix_date}` goes to a hash describing the different parts
+  of creating and editing journal entries, mostly focused on the health of system
+  responses
+
+  - `greetings_requested`: when creating a journal entry the first step is the system
+    prompting the user with a greeting in the form of a question like "How are you feeling?".
+    This is the number of greetings requested by users as measured in the earliest point
+    in the backend http request.
+  - `greetings_succeeded`: of the greetings requested, how many were successfully
+    responded to with a greeting, as measured as close as possible to storing the response
+    in the database
+  - `greetings_failed`: of the greetings requested, how many were not responded to with
+    a greeting, as measured as close as possible to the error being detected
+  - `user_chats`: how many chats were received by users. When a user sends us a chat message
+    that always results in a system chat being requested, however, they can also request
+    system chats through other means (e.g., the "refresh" button to get a new response),
+    so the system may be healthy if this is less than or equal to the number of system chats
+    requested
+  - `system_chats_requested`: how many system chats were requested by users, i.e., they
+    requested the system respond to the end of a chat. If the previous response was from
+    the system, they can request to replace it with a new response, otherwise they can
+    to add on a new response.
+  - `system_chats_succeeded`: how many system chats did we successfully produce, as measured as
+    close as possible to storing (or updating) the response in the database
+  - `user_chat_actions`: how many times users interacted with something within a system chat,
+    like a journey link.
+  - `reflection_questions_requested`: at the end of a journal entry we ask the user a reflection
+    question, to which they are expected to write a longer response for themself to keep in their
+    journal (and to which we do not provide a system response). this is the number of such questions
+    requested by users as measured in the earliest point in the backend http request.
+  - `reflection_questions_succeeded`: of the reflection questions requested, how many were
+    successfully responded to with a reflection question, as measured as close as possible to
+    storing the response in the database
+  - `reflection_questions_failed`: of the reflection questions requested, how many were not
+    responded to with a reflection question, as measured as close as possible to the error
+    being detected
+  - `reflection_questions_edited`: how many users edited (possibly by deleting and rewriting
+    from scratch) their reflection question
+  - `reflection_responses`: how many users responded to their reflection question
+
+- `stats:journals:daily:{unix_date}:extra:{event}` goes to a hash breaking down the event key,
+  where the keys in the breakdown depend on the event:
+
+  - `greetings_succeeded` is broken down by technique, where technique is one of:
+    - `fixed-{version}`: we used the given version of the fixed greeting, where the
+      version is a simple counter, with the first version being `1`
+  - `greetings_failed` is broken down by `{technique}:{reason}` if the failure occurred
+    after the job was queued, otherwise:
+    - `queue:ratelimited:pro`: the user had too many jobs already processing or in the queue,
+      using the pro limits
+    - `queue:ratelimited:free`: the user had too many jobs already processing or in the queue,
+      using the free limits
+    - `queue:backpressure:pro`: there were too many jobs in the queue in total, using the pro limits
+    - `queue:backpressure:free`: there were too many jobs in the queue in total, using the free limits
+    - `queue:user_not_found`: the user did not appear to exist when we went to queue the job
+    - `queue:encryption_failed`: we failed to get a master key for encryption
+
+- `user_chats (integer not null)`: number of user chats, where technique is
+  as in `greetings_succeeded` and reason is one of:
+
+  - `internal_error`: an unexpected error occurred
+  - `user_chats` is broken down by the length of the message written by the user,
+    where the options are `1-9 words`, `10-19 words`, `20-99 words`, `100-499 words`, `500+ words`
+  - `system_chats_requested` is broken down by `initial`, `refresh`
+  - `system_chats_succeeded` is broken down by technique, where technique is one of:
+    - `llm-{platform}-{model}-{prompt identifier}` where platform is always `openai` and model is the
+      model used, e.g., `gpt-3.5-turbo` or `gpt-4.0-turbo`. The prompt identifier is typically
+      of the form `{slug}:{version}`, e.g., `journals:1.0.0`
+  - `system_chats_failed` is broken down by `{technique}:{reason}`, where technique is
+    as in `system_chats_succeeded` and reason is one of:
+
+    - `net:{status_code}` - provider returned a non-200 status code (e.g., openai:404)
+    - `net:timeout` - provider timed out
+    - `net:unknown:{error name}` - some kind of network error occurred connecting to openai, such as
+      a connection error or bad TLS. the error name is literally `e.__class__.__name__` or the
+      nearest equivalent
+    - `llm:{detail}`: an issue occurred parsing the LLM response. may be further broken down, but
+      the breakdown will be very dependent on the technique
+    - `internal`: an unexpected error occurred
+    - `encryption`: something went wrong related to encryption
+
+    unless the error occurred while trying to queue the request, in which the reason is one of:
+
+    - any of the options for `greeting_failed` with the `queue:` prefix,
+    - `queue:journal_entry_not_found` the journal entry that was being mutated didn't exist
+    - `queue:journal_entry_item_not_found` the journal entry item that was being refreshed didn't exist
+    - `queue:decryption_failed` failed to decrypt the conversation so far
+    - `queue:bad_state` the conversation was not in a state that could be processed, e.g., they
+      hadn't responded yet
+
+  - `user_chat_actions` is broken down by the type of thing interacted with, roughly of the form
+    `{link_type}:{action_taken}`, but specifically:
+    - `journey:free:regular` they clicked on a free journey link and we took them through a client flow
+      for that journey
+    - `journey:pro:regular` they clicked on a paywalled journey link that they had access to through
+      Oseh+ and we took them through a client flow for that journey
+    - `journey:pro:paywall` they clicked on a paywalled journey link that they did not have access to
+      through Oseh+ and we took them through a client flow to purchase oseh+
+  - `reflection_questions_requested` is broken down by `initial`, `refresh`, referring to if its the
+    first reflection question or if they requested a new one
+  - `reflection_questions_succeeded` is broken down by technique, where technique is the same as in
+    the `system_chats_succeeded` breakdown, i.e., `llm-{platform}-{model}-{prompt identifier}`
+  - `reflection_questions_failed` is broken down either by one of the pre-queue failure reasons like in
+    `greetings_failed`, or is broken down by `{technique}:{reason}`, just as in system chats failed
+    unless the error occurred while trying to queue the request, in which the reason is any of the
+    options for `greeting_failed` with the `queue:` prefix
+  - `reflection_responses` is broken down by length:
+    - `skip`: they didn't write anything
+    - `1-9 words`
+    - `10-19 words`
+    - `20-99 words`
+    - `100-499 words`
+    - `500+ words`
+
+- `stats:journals:daily:earliest` goes to the earliest unix date for which there might still be
+  journal statistics in redis
+
 ### Personalization subspace
 
 These are regular keys used by the personalization module
@@ -3682,3 +3931,26 @@ These are regular keys used by the personalization module
   messages are formatted as `(uint64, blob)`, where the blob is the json-serialized
   `EmailImageLookupResult` which includes the email image uid and extension.
   All numbers are big-endian encoded.
+
+- `ps:journal_chats:{uid}:events` is used by the journal chat websocket endpoint
+  for streaming events to clients. Messages are formatted as (uint32, blob, uint64, blob) where the parts are:
+  - size of the first blob
+  - journal master key uid
+  - size of the second blob
+  - encrypted json object discriminated by type, with the keys:
+    - `counter`: a unique incrementing value that starts at 0 to indicate the
+      first event. This should match the index in the corresponding
+      `journal_chats:{uid}:events` key
+    - `type`: one of:
+      - `mutations`: this packet contains mutations which can be combined before forwarding
+        has additional keys
+        - `mutations`: json array of json objects (SegmentDataMutation)
+          - `key`: json array of strings and integers for the path to where to insert the value
+          - `value`: the value to insert
+        - `more`: boolean indicating if there are more events after this
+      - `passthrough`: this packet contains an event that can be forwarded as is or dropped after
+        inspection. it can make sense to drop a thinking-\* event if you know theres more events after
+        already. has additional keys:
+        - `event`: the event to forward, which is enum-discriminated by type, where type is one of
+          `thinking-bar`, `thinking-spinner`, or `error`, and the rest can be found by reading the
+          websocket documentation for `/api/2/journals/chat` (specifically the events there)

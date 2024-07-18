@@ -46,4 +46,7 @@ class OperationOrder(IntEnum):
     move_user_touch_debug_log = auto()
     move_user_client_screens_log = auto()
     delete_user_client_screens = auto()
+    move_journal_entries = auto()
+    move_user_journal_master_keys = auto()
+    move_user_journal_client_keys = auto()
     move_created_at = auto()

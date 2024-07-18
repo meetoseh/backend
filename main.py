@@ -55,6 +55,7 @@ import admin.sms.routes.read_daily_sms_events
 import transcripts.router
 import client_screens.router
 import client_flows.router
+import journals.router
 import asyncio
 from loguru import logger
 from typing import cast as typing_cast
@@ -257,6 +258,7 @@ app.include_router(
 app.include_router(
     client_flows.router.router, prefix="/api/1/client_flows", tags=["client_flows"]
 )
+app.include_router(journals.router.router, prefix="/api/1/journals", tags=["journals"])
 app.router.redirect_slashes = False
 
 

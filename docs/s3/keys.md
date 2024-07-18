@@ -58,3 +58,7 @@ existing keys.
 - `s3_files/jobs/repopulate_emotions/dropped_{datetime.datetime.now().isoformat()}.txt`:
   When the repopulate_emotions job is run, if a lot of emotions are dropped (>20), they
   are uploaded here for analysis. Otherwise, they are just posted to slack
+- `s3_files/journals/keys/master/{uid}`: Contains the fernet key corresponding
+  to the user journal master key with the given uid.
+- `s3_files/journals/keys/client/{uid}`: Contains the fernet key corresponding
+  to the user journal client key with the given uid.

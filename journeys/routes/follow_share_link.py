@@ -212,12 +212,16 @@ async def follow_journey_share_link(
                     b"uid": view_uid,
                     b"journey_share_link_code": args.code.encode("utf-8"),
                     b"journey_share_link_uid": journey_share_link_uid.encode("utf-8"),
-                    b"user_sub": auth_result.result.sub.encode("utf-8")
-                    if auth_result.result is not None
-                    else b"",
-                    b"visitor": cleaned_visitor.encode("utf-8")
-                    if cleaned_visitor is not None
-                    else b"",
+                    b"user_sub": (
+                        auth_result.result.sub.encode("utf-8")
+                        if auth_result.result is not None
+                        else b""
+                    ),
+                    b"visitor": (
+                        cleaned_visitor.encode("utf-8")
+                        if cleaned_visitor is not None
+                        else b""
+                    ),
                     b"clicked_at": str(request_at).encode("utf-8"),
                     b"confirmed_at": str(request_at).encode("utf-8"),
                 },
@@ -431,6 +435,8 @@ def incr_ratelimiting_on_bad_code(
         ("1m", 60),
         ("10m", 600),
     ]:
+        duration = cast(Literal["1m", "10m"], duration)
+
         at = int(request_at) // duration_seconds
         expire_at = at + duration_seconds + 60 * 30
         stats.incr_ratelimiting(

@@ -20,6 +20,9 @@ NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and
   the rqlite database, except for db/README.md (if it exists), which may be
   used for any additional conventions within that folder. For example, the
   table `users` is documented via [db/users.md](db/users.md)
+- `diskcache/`: each file SHOULD be a markdown file describing something (or a
+  set of things) in the disk cache, except for diskcache/README.md (if it
+  exists), which may be used for any additional conventions within that folder.
 - `redis/`: each file SHOULD be a markdown file describing something specific
   in the redis database, except for redis/README.md (if it exists), which may
   be used for any additional conventions within that folder. All keys that are

@@ -21,6 +21,8 @@ import asyncio
 import twilio.rest
 import lib.gender.api
 from loguru import logger
+from dataclasses import dataclass
+import threading
 
 
 our_diskcache: diskcache.Cache = diskcache.Cache(
@@ -43,6 +45,14 @@ ItgsCleanupIdentifier = Literal[
     "twilio",
     "gender_api",
 ]
+
+
+@dataclass
+class _ItgsGuard:
+    tid: int
+    """thread id that aentered"""
+    pid: int
+    """process id that aentered"""
 
 
 class Itgs:
@@ -86,16 +96,41 @@ class Itgs:
         )
         """functions to run on __aexit__ to cleanup opened resources"""
 
+        self._guard: Optional[_ItgsGuard] = None
+        """If we've been aentered, guard info, otherwise none. Used to protect
+        against the following issue very easy to make in python:
+
+        ```py
+        def foo():
+          async with Itgs() as itgs:
+            ...
+          redis = await itgs.redis()  # leaks without guard
+        ```
+        """
+
     async def __aenter__(self) -> "Itgs":
         """allows support as an async context manager"""
+        async with self._lock:
+            if self._guard is not None:
+                raise ValueError("Cannot __aenter__ twice")
+            self._guard = _ItgsGuard(tid=threading.get_ident(), pid=os.getpid())
         return self
+
+    async def _check_guard_with_lock(self) -> None:
+        assert self._guard is not None
+        pid = os.getpid()
+        assert pid == self._guard.pid, f"{pid=} {self._guard.pid=}"
+        tid = threading.get_ident()
+        assert tid == self._guard.tid, f"{tid=} {self._guard.tid=}"
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
         """closes any managed resources"""
         async with self._lock:
+            await self._check_guard_with_lock()
             for closure in self._closures.values():
                 await closure(self)
             self._closures = dict()
+            self._guard = None
 
     async def conn(self) -> rqdb.async_connection.AsyncConnection:
         """Gets or creates and initializes the rqdb connection.
@@ -105,6 +140,7 @@ class Itgs:
             return self._conn
 
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._conn is not None:
                 return self._conn
 
@@ -249,6 +285,7 @@ class Itgs:
             return self._redis_main
 
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._redis_main is not None:
                 return self._redis_main
 
@@ -327,6 +364,7 @@ class Itgs:
             return self._slack
 
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._slack is not None:
                 return self._slack
 
@@ -349,6 +387,7 @@ class Itgs:
 
         _redis = await self.redis()
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._jobs is not None:
                 return self._jobs
 
@@ -370,6 +409,7 @@ class Itgs:
             return self._file_service
 
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._file_service is not None:
                 return self._file_service
 
@@ -394,6 +434,8 @@ class Itgs:
 
     async def local_cache(self) -> diskcache.Cache:
         """gets or creates the local cache for storing files transiently on this instance"""
+        async with self._lock:
+            await self._check_guard_with_lock()
         return our_diskcache
 
     async def revenue_cat(self) -> revenue_cat.RevenueCat:
@@ -402,6 +444,7 @@ class Itgs:
             return self._revenue_cat
 
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._revenue_cat is not None:
                 return self._revenue_cat
 
@@ -434,6 +477,7 @@ class Itgs:
             return self._twilio
 
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._twilio is not None:
                 return self._twilio
 
@@ -456,6 +500,7 @@ class Itgs:
             return self._gender_api
 
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._gender_api is not None:
                 return self._gender_api
 
@@ -482,6 +527,7 @@ class Itgs:
             return
 
         async with self._lock:
+            await self._check_guard_with_lock()
             if self._redis_main is None:
                 return
 

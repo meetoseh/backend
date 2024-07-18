@@ -275,6 +275,24 @@ async def create_merging_queries(
             operation_order=OperationOrder.move_user_client_screens_log,
         ),
         *await _delete_user_client_screens(itgs, ctx),
+        *await _create_standard_move_merge_queries(
+            itgs,
+            ctx,
+            table_name="journal_entries",
+            operation_order=OperationOrder.move_journal_entries,
+        ),
+        *await _create_standard_move_merge_queries(
+            itgs,
+            ctx,
+            table_name="user_journal_master_keys",
+            operation_order=OperationOrder.move_user_journal_master_keys,
+        ),
+        *await _create_standard_move_merge_queries(
+            itgs,
+            ctx,
+            table_name="user_journal_client_keys",
+            operation_order=OperationOrder.move_user_journal_client_keys,
+        ),
         *await _create_move_created_at_queries(itgs, ctx),
         *await _delete_merging_user(itgs, ctx),
     ]

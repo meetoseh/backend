@@ -37,6 +37,8 @@ the day, local time, and to cycle.
 - `created_at (real not null)`: when this record was created in seconds since the epoch
 - `live_at (real not null)`: earliest time in seconds since the unix epoch when this image
   can be served.
+- `last_processed_at (real not null)`: the last time the source image was processed to make
+  sure it had the correct targets. When we change targets, we slowly reprocess old images.
 
 ## Schema
 
@@ -51,7 +53,8 @@ CREATE TABLE home_screen_images (
     flags INTEGER NOT NULL,
     dates TEXT NULL,
     created_at REAL NOT NULL,
-    live_at REAL NOT NULL
+    live_at REAL NOT NULL,
+    last_processed_at REAL NOT NULL
 );
 
 /* Foreign key */
@@ -59,4 +62,7 @@ CREATE INDEX home_screen_images_darkened_image_file_id_idx ON home_screen_images
 
 /* Standard admin sort */
 CREATE INDEX home_screen_images_last_created_at_visible_in_admin_idx ON home_screen_images(created_at, uid) WHERE (flags & 2097152) = 1;
+
+/* Reprocessing job sort */
+CREATE INDEX home_screen_images_last_processed_at_idx ON home_screen_images(last_processed_at);
 ```

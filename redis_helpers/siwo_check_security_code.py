@@ -164,15 +164,18 @@ def parse_siwo_check_security_code_result(res) -> SiwoCheckSecurityCodeResult:
 
     if res[0] < 0:
         assert res[1] is None
-        return {
-            -1: ("unknown", None),
-            -2: ("lost", None),
-            -3: ("bogus", None),
-            -4: ("already_used", None),
-            -5: ("expired", None),
-            -6: ("revoked", None),
-            -7: ("not_sent_yet", None),
-        }[res[0]]
+        return typing_cast(
+            SiwoCheckSecurityCodeResult,
+            {
+                -1: ("unknown", None),
+                -2: ("lost", None),
+                -3: ("bogus", None),
+                -4: ("already_used", None),
+                -5: ("expired", None),
+                -6: ("revoked", None),
+                -7: ("not_sent_yet", None),
+            }[res[0]],
+        )
 
     assert res[0] == 1, res
     assert isinstance(res[1], list), res

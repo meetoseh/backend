@@ -1,3 +1,4 @@
+import json
 import secrets
 import time
 from fastapi import APIRouter, Header
@@ -760,6 +761,13 @@ async def patch_journey(
             )
 
         if standard_field_update:
+            redis = await itgs.redis()
+            await redis.set(
+                b"journey_embeddings_needs_refresh",
+                json.dumps({"reason": "journey-patched", "at": time.time()}).encode(
+                    "utf-8"
+                ),
+            )
             jobs = await itgs.jobs()
             await jobs.enqueue("runners.refresh_journey_emotions", journey_uid=uid)
             await jobs.enqueue("runners.process_journey_video_sample", journey_uid=uid)

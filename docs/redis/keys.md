@@ -563,6 +563,21 @@ the keys that we use in redis
 - `journals:client_keys:ratelimits:created:user:{sub}` goes to the string `1` while we are
   preventing the user with the given sub from creating new client keys and is unset otherwise.
 
+- `journey_embeddings_needs_refresh` goes to a json object with a reason key which goes to a
+  string and an `at` key which goes to number representing the time in seconds the key was
+  set if we should refresh the journey embeddings used for fast semantic search, and is unset
+  if we don't need to refresh them. This is used, for example, in the jobs repo by the
+  `journal_chat_jobs.runners.chat_embeddings_rank_and_pluck` module. Never has an expiration
+  set.
+
+- `journey_embeddings` goes to a json object with the following keys:
+  - `uid`: the uid of the current preferred journey embeddings
+  - `s3_file_key`: the s3 key where the embeddings can be found
+  - `s3_file_bucket`: the s3 bucket where the embeddings can be found
+  - `journal_uid_byte_length`: the byte length of each journal uid in the file
+  - `embedding_byte_length`: the byte length of each embedding in the file
+  - `sha512`: the expected sha512 hash for the file
+
 ### Journal Chats
 
 We use a special queue instead of just `jobs:hot` because these jobs are all

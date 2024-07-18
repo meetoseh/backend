@@ -62,3 +62,6 @@ existing keys.
   to the user journal master key with the given uid.
 - `s3_files/journals/keys/client/{uid}`: Contains the fernet key corresponding
   to the user journal client key with the given uid.
+- `s3_files/journey_embeddings/{uid}`: Contains the binary encoded journey embeddings
+  for a sequence of journeys. Consists of padded journey uids (usually 3 0s followed by
+  29 characters), then the embedding. See [journey_embeddings](../db/journey_embeddings.md)

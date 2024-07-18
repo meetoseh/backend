@@ -158,3 +158,5 @@ something (in this case, identify a row)
 - `ujck` - [user_journal_client_keys](db/user_journal_client_keys.md)
 - `jeil` - [journal_entry_item_log](db/logs/journal_entry_item_log.md)
 - `jc` - journal chats, which is an in-memory structure used to transfer parts of a journal entry
+- `jemb` - [journey_embeddings](db/journey_embeddings.md)
+- `jemi` - [journey_embedding_items](db/journey_embedding_items.md)

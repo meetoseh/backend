@@ -1,3 +1,5 @@
+import json
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Literal, Optional
@@ -65,6 +67,14 @@ async def undelete_journey(uid: str, authorization: Optional[str] = Header(None)
         if response.rows_affected is not None and response.rows_affected > 0:
             await evict_external_journey(itgs, uid=uid)
             await purge_emotion_content_statistics_everywhere(itgs)
+
+            redis = await itgs.redis()
+            await redis.set(
+                b"journey_embeddings_needs_refresh",
+                json.dumps({"reason": "journey-undeleted", "at": time.time()}).encode(
+                    "utf-8"
+                ),
+            )
             return Response(status_code=200)
 
         response = await cursor.execute(

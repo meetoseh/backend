@@ -1,3 +1,5 @@
+import json
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints
@@ -12,9 +14,9 @@ router = APIRouter()
 
 
 class UpdateInstructorRequest(BaseModel):
-    name: Annotated[
-        str, StringConstraints(strip_whitespace=True, min_length=1)
-    ] = Field(description="The new display name for the instructor")
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)] = (
+        Field(description="The new display name for the instructor")
+    )
     bias: float = Field(
         description=(
             "A non-negative number generally less than 1 that influences "
@@ -156,5 +158,14 @@ async def update_instructor(
                 )
 
             biggest_journey_id = response.results[-1][0]
+
+        if biggest_journey_id != 0:
+            redis = await itgs.redis()
+            await redis.set(
+                b"journey_embeddings_needs_refresh",
+                json.dumps({"reason": "instructor-patched", "at": time.time()}).encode(
+                    "utf-8"
+                ),
+            )
 
         return success_response

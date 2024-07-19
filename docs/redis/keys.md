@@ -571,12 +571,30 @@ the keys that we use in redis
   set.
 
 - `journey_embeddings` goes to a json object with the following keys:
+
   - `uid`: the uid of the current preferred journey embeddings
   - `s3_file_key`: the s3 key where the embeddings can be found
   - `s3_file_bucket`: the s3 bucket where the embeddings can be found
   - `journal_uid_byte_length`: the byte length of each journal uid in the file
   - `embedding_byte_length`: the byte length of each embedding in the file
+  - `model`: `"text-embedding-3-large"`
   - `sha512`: the expected sha512 hash for the file
+
+- `openai:ratelimits:{category}:{type}:{idx}` goes to hash with the keys
+  `last_refill_time` and `tokens`, which says that at `last_refill_time`
+  (integer seconds since the unix epoch), there were `tokens` tokens in the
+  bucket, or is potentially unset if the bucket is full. Always has an expiration
+  set after the bucket fills.
+
+  The `category` is e.g. `gpt-4o` or `gpt-4o-mini` for the thing that openai
+  ratelimits. This is referring to the number of requests allowed. The index
+  is used to distinguish between different bucket configurations (e.g., per
+  minute vs per second vs per day).
+
+  The `type` is one of `requests` or `tokens` and is used to distinguish between
+  which thing is being ratelimited.
+
+  See jobs `redis_helpers/reserve_openai.py` for details.
 
 ### Journal Chats
 

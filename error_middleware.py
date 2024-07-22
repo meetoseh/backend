@@ -133,7 +133,7 @@ async def handle_warning(
         async with Itgs() as itgs:
             slack = await itgs.slack()
             if is_urgent:
-                logger.debug("sending warning to #ops")
+                logger.debug("sending warning to #oseh-bot")
                 await slack.send_oseh_bot_message(message, preview=preview)
             else:
                 logger.debug("sending warning to #web-errors")

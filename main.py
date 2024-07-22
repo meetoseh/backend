@@ -56,6 +56,7 @@ import transcripts.router
 import client_screens.router
 import client_flows.router
 import journals.router
+import general_feedback.router
 import asyncio
 from loguru import logger
 from typing import cast as typing_cast
@@ -259,6 +260,11 @@ app.include_router(
     client_flows.router.router, prefix="/api/1/client_flows", tags=["client_flows"]
 )
 app.include_router(journals.router.router, prefix="/api/1/journals", tags=["journals"])
+app.include_router(
+    general_feedback.router.router,
+    prefix="/api/1/general_feedback",
+    tags=["general_feedback"],
+)
 app.router.redirect_slashes = False
 
 

@@ -596,6 +596,11 @@ the keys that we use in redis
 
   See jobs `redis_helpers/reserve_openai.py` for details.
 
+- `general_feedback:ratelimits:user:{sub}` goes to the number of times the user with
+  the given sub has submitted feedback with less than 60 seconds between
+  requests, with a 60 second expiration which is reset when incrementing. Used
+  to avoid excessive
+
 ### Journal Chats
 
 We use a special queue instead of just `jobs:hot` because these jobs are all

@@ -160,3 +160,4 @@ something (in this case, identify a row)
 - `jc` - journal chats, which is an in-memory structure used to transfer parts of a journal entry
 - `jemb` - [journey_embeddings](db/journey_embeddings.md)
 - `jemi` - [journey_embedding_items](db/journey_embedding_items.md)
+- `gf` - [general_feedback](db/general_feedback.md)

@@ -346,7 +346,7 @@ WORKING LIST
 - [x] rotate journal stats daily
 - [x] user respond endpoint
 - [x] retry system response endpoint
-- [ ] jobs server needs to be able to fetch entitlements
+- [x] jobs server needs to be able to fetch entitlements
       this can either be done by porting users.lib.entitlements over (faster)
       or by creating a new backend endpoint which is server<->server authenticated (easier?)
 
@@ -370,4 +370,8 @@ WORKING LIST
 
       bump # expected redis connections 50 -> 55 to account for the new perpetual connection
 
+- [x] embeddings
+- [x] large image interstitial screen
+- [ ] feedback screen
+- [ ] simple navigation screen
 - [ ] cleanup empty journal entries job (>2 days old with no items)

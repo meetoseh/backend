@@ -101,6 +101,7 @@ async def test_client_flow(
             itgs,
             user_sub=args.user_sub or auth_result.result.sub,
             platform="server",
+            version=None,
             trigger=TrustedTrigger(
                 flow_slug=flow.slug,
                 client_parameters=args.client_parameters,

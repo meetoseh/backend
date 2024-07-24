@@ -94,7 +94,16 @@ See also: [client flows](../concepts/clients_flows/README.md)
         }
       ]
     },
-    "allowed_triggers": ["string"]
+    "allowed_triggers": ["string"],
+    "rules": {
+      "trigger": {
+        "version": {
+          "operator": "geq",
+          "value": 68
+        }
+      },
+      "peek": null
+    }
   }
   ```
 
@@ -137,6 +146,70 @@ See also: [client flows](../concepts/clients_flows/README.md)
   close this screen we will silently treat it as a `forbidden` trigger. `skip` is always
   allowed, regardless of the list.
 
+  The `rules` sublists are interpreted the same way as the rules list in the
+  colum `rules`, but is applied only to the specific screen, the effect is
+  always to remove the screen, and applies to trigger time (for `rules.trigger`)
+  or peek time (for `rules.peek`). At peek time, the `skip` flow is triggered
+  if the conditions are met. At trigger time, the screen is simply not queued.
+  `rules` may be null, which is treated the same as `{"trigger": null, "peek": null}`,
+  which is no restrictions.
+
+- `rules (text not null)`: A json array of effects and conditions. Conditions are evaluated
+  in order. If a condition matches, the effect is applied and the remaining conditions are
+  not evaluated. Flow-level rules are only checked once, at trigger time, as the "flow" is
+  no longer relevant once the flow screens is on the queue. For peek-time triggers they must
+  be duplicated to each flow screen. For the patch endpoint, this should always be dumped with
+  sorted keys so its exact value can be known.
+
+  Example:
+
+  ```json
+  [
+    {
+      "effect": {
+        "type": "replace",
+        "slug": "string",
+        "client_parameters": {
+          "type": "omit"
+        },
+        "server_parameters": {
+          "type": "omit"
+        }
+      },
+      "condition": {
+        "version": {
+          "operator": "geq",
+          "value": 68
+        }
+      }
+    }
+  ]
+  ```
+
+  The effects are objects enum discriminated by type:
+
+  - `replace`: the flow is replaced with a different flow. Has additional
+    parameters:
+    - `slug`: the slug of the flow to replace this flow with
+    - `client_parameters`: how to handle the client parameters. Enum discriminated by type.
+      - `omit`: do not pass the client parameters to the new flow (instead, an empty object is used)
+      - `copy`: pass the client parameters as-is to the new flow
+    - `server_parameters`: how to handle the server parameters. Enum discriminated by type.
+      - `omit`: do not pass the server parameters to the new flow (instead, an empty object is used)
+      - `copy`: pass the server parameters as-is to the new flow
+  - `skip`: Shorthand for replace with `skip` and omit all parameters
+
+  The condition is like a filter in search endpoints (see `FilterItem`), meaning
+  you can have exactly one constraint on each field (though constraints may be relatively
+  sophisticated, e.g., for text items there is a case-insensitive like operator). The fields
+  that can be searched are:
+
+  - `version (int or None)`: the version of the client that is triggering the
+    flow. Since we use sqlite-style operators, None always compares falsily, so
+    `None gt 5` is False, and so is `None lt 5`, and so is `None eq 5`.
+    Generally you should never compare this with `lt`, instead, use `ltn` (less
+    than or null)
+
 - `flags (integer not null)`: a bitfield for configuring this flow. The flags are,
   from least significant to most significant bit:
 
@@ -168,6 +241,7 @@ CREATE TABLE client_flows (
     server_schema TEXT NOT NULL,
     replaces BOOLEAN NOT NULL,
     screens TEXT NOT NULL,
+    rules TEXT NOT NULL,
     flags INTEGER NOT NULL,
     created_at REAL NOT NULL
 );

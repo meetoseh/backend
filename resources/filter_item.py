@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar, get_args, Union, List
+from typing import Any, Generic, Optional, TypeVar, cast, get_args, Union, List
 from .standard_operator import StandardOperator
 from pydantic import BaseModel, ConfigDict, Field, validator
 from pypika import Parameter
@@ -148,6 +148,95 @@ class FilterItem(Generic[ValueT]):
             return term.isnull() | ((term >= p) & (term < p))
 
         raise ValueError(f"Unsupported operator: {self.operator}")
+
+    def check_constant(self, the_constant_value: Optional[ValueT]) -> bool:
+        """Checks this filter item against a known constant value."""
+        if self.operator == StandardOperator.EQUAL:
+            if self.value is None or the_constant_value is None:
+                return False
+            return the_constant_value == self.value
+        elif self.operator == StandardOperator.NOT_EQUAL:
+            if self.value is None or the_constant_value is None:
+                return False
+            return the_constant_value != self.value
+        elif self.operator == StandardOperator.GREATER_THAN:
+            if self.value is None or the_constant_value is None:
+                return False
+            return cast(Any, the_constant_value) > cast(Any, self.value)
+        elif self.operator == StandardOperator.GREATER_THAN_OR_NULL:
+            if the_constant_value is None:
+                return True
+            if self.value is None:
+                return False
+            return cast(Any, the_constant_value) > cast(Any, self.value)
+        elif self.operator == StandardOperator.GREATER_THAN_OR_EQUAL:
+            if self.value is None or the_constant_value is None:
+                return False
+            return cast(Any, the_constant_value) >= cast(Any, self.value)
+        elif self.operator == StandardOperator.GREATER_THAN_OR_EQUAL_OR_NULL:
+            if the_constant_value is None:
+                return True
+            if self.value is None:
+                return False
+            return cast(Any, the_constant_value) >= cast(Any, self.value)
+        elif self.operator == StandardOperator.LESS_THAN:
+            if self.value is None or the_constant_value is None:
+                return False
+            return cast(Any, the_constant_value) < cast(Any, self.value)
+        elif self.operator == StandardOperator.LESS_THAN_OR_NULL:
+            if the_constant_value is None:
+                return True
+            if self.value is None:
+                return False
+            return cast(Any, the_constant_value) < cast(Any, self.value)
+        elif self.operator == StandardOperator.LESS_THAN_OR_EQUAL:
+            if self.value is None or the_constant_value is None:
+                return False
+            return cast(Any, the_constant_value) <= cast(Any, self.value)
+        elif self.operator == StandardOperator.LESS_THAN_OR_EQUAL_OR_NULL:
+            if the_constant_value is None:
+                return True
+            if self.value is None:
+                return False
+            return cast(Any, the_constant_value) <= cast(Any, self.value)
+        elif self.operator == StandardOperator.BETWEEN:
+            if self.value is None or the_constant_value is None:
+                return False
+            return (
+                cast(Any, self.value)[0]
+                <= the_constant_value
+                <= cast(Any, self.value)[1]
+            )
+        elif self.operator == StandardOperator.BETWEEN_OR_NULL:
+            if the_constant_value is None:
+                return True
+            if self.value is None:
+                return False
+            return (
+                cast(Any, self.value)[0]
+                <= the_constant_value
+                <= cast(Any, self.value)[1]
+            )
+        elif self.operator == StandardOperator.BETWEEN_EXCLUSIVE_END:
+            if self.value is None or the_constant_value is None:
+                return False
+            return (
+                cast(Any, self.value)[0]
+                <= the_constant_value
+                < cast(Any, self.value)[1]
+            )
+        elif self.operator == StandardOperator.BETWEEN_EXCLUSIVE_END_OR_NULL:
+            if the_constant_value is None:
+                return True
+            if self.value is None:
+                return False
+            return (
+                cast(Any, self.value)[0]
+                <= the_constant_value
+                < cast(Any, self.value)[1]
+            )
+        else:
+            raise ValueError(f"Unsupported operator: {self.operator}")
 
     def to_model(self) -> "FilterItemModel[ValueT]":
         return FilterItemModel[self.__valuet__()].model_validate(

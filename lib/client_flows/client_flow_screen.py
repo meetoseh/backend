@@ -2,6 +2,7 @@ from typing import List, Literal, Optional, Union
 from enum import IntFlag, auto
 from pydantic import BaseModel, Field
 
+from lib.client_flows.client_flow_predicate import ClientFlowPredicate
 from visitors.lib.get_or_create_visitor import VisitorSource
 
 
@@ -103,6 +104,21 @@ class ClientFlowScreenFlag(IntFlag):
     """If unset, this screen should be skipped at peek time for Oseh+ users"""
 
 
+class ClientFlowScreenRules(BaseModel):
+    """Restricts when this screen is actually added to the queue or if its skipped
+    at peek time
+    """
+
+    trigger: Optional[ClientFlowPredicate] = Field(
+        None,
+        description="If not None, if this rule matches the screen should not be added to the queue at trigger time",
+    )
+    peek: Optional[ClientFlowPredicate] = Field(
+        None,
+        description="If not None, if this rule matches the screen should be skipped at peek time",
+    )
+
+
 class ClientFlowScreen(BaseModel):
     """Describes a screen within the `screens` column of a `client_flows` row. This
     isn't the same thing as a `client_screen`, but a client screen is referenced by
@@ -119,6 +135,10 @@ class ClientFlowScreen(BaseModel):
     )
     flags: int = Field(
         description="A bit-field that suppresses this screen in certain contexts"
+    )
+    rules: ClientFlowScreenRules = Field(
+        default_factory=lambda: ClientFlowScreenRules.model_validate({}),
+        description="Restricts when this screen is actually added to the queue or if its skipped at peek time",
     )
 
 

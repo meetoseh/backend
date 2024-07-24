@@ -13,6 +13,7 @@ import jsonschema.protocols
 from client_flows.lib.parse_flow_screens import decode_flow_screens, encode_flow_screens
 from error_middleware import handle_error
 from itgs import Itgs
+from lib.client_flows.client_flow_rule import ClientFlowRules, client_flow_rules_adapter
 from lib.client_flows.client_flow_screen import ClientFlowScreen
 from lib.client_flows.flow_flags import ClientFlowFlag
 from lifespan import lifespan_handler
@@ -57,6 +58,9 @@ class ClientFlow:
     """The boolean configuration options generally loosely related to access control
     for this client flow
     """
+
+    rules: ClientFlowRules
+    """The rules that should be checked at trigger time for this client flow"""
 
 
 memory_cache_size = 200
@@ -153,13 +157,15 @@ def convert_to_raw(client_flow: ClientFlow) -> bytes:
             "replaces": client_flow.replaces,
             "screens": encode_flow_screens(client_flow.screens),
             "flags": int(client_flow.flags),
+            "rules": client_flow_rules_adapter.dump_python(client_flow.rules),
         }
     ).encode("utf-8")
 
 
 def convert_from_raw(raw: bytes) -> ClientFlow:
     """Converts the raw bytes to a client flow object"""
-    as_python = json.loads(raw)
+    as_python = cast(dict, json.loads(raw))
+
     return ClientFlow(
         uid=as_python["uid"],
         slug=as_python["slug"],
@@ -174,6 +180,7 @@ def convert_from_raw(raw: bytes) -> ClientFlow:
         replaces=as_python["replaces"],
         screens=decode_flow_screens(as_python["screens"]),
         flags=ClientFlowFlag(as_python["flags"]),
+        rules=client_flow_rules_adapter.validate_python(as_python.get("rules", [])),
     )
 
 
@@ -261,7 +268,8 @@ SELECT
     server_schema,
     replaces,
     screens,
-    flags
+    flags,
+    rules
 FROM client_flows
 WHERE slug = ?
         """,
@@ -274,6 +282,7 @@ WHERE slug = ?
     client_schema_raw = json.loads(row[2])
     server_schema_raw = json.loads(row[3])
     screens = decode_flow_screens(row[5])
+    rules = client_flow_rules_adapter.validate_python(json.loads(row[7]))
 
     for screen in screens:
         screen.name = None
@@ -295,4 +304,5 @@ WHERE slug = ?
         replaces=bool(row[4]),
         screens=screens,
         flags=ClientFlowFlag(row[6]),
+        rules=rules,
     )

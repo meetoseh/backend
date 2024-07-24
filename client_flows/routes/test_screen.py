@@ -252,7 +252,7 @@ async def test_screen(
                             headers={"Content-Type": "application/json; charset=utf-8"},
                         )
 
-                    if res.type == 'success' and res.value not in allowed_values:
+                    if res.type == "success" and res.value not in allowed_values:
                         return Response(
                             status_code=409,
                             content=StandardErrorResponse[ERROR_409_TYPES](
@@ -262,11 +262,13 @@ async def test_screen(
                             headers={"Content-Type": "application/json; charset=utf-8"},
                         )
 
-                    if res.type == 'success':
-                        discriminators[tuple(enum_path[:-1])] = allowed_values.index(res.value)
+                    if res.type == "success":
+                        discriminators[tuple(enum_path[:-1])] = allowed_values.index(
+                            res.value
+                        )
                     else:
                         discriminators[tuple(enum_path[:-1])] = 0
-                        
+
         except UserSafeError as e:
             return e.response
 
@@ -495,6 +497,7 @@ async def test_screen(
                 server_schema_raw=args.flow.server_schema,
                 replaces=False,
                 screens=[args.flow_screen],
+                rules=[],
                 flags=ClientFlowFlag.ANDROID_TRIGGERABLE
                 | ClientFlowFlag.IOS_TRIGGERABLE
                 | ClientFlowFlag.BROWSER_TRIGGERABLE,

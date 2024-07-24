@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints
 from typing import Annotated, Optional, Literal
 from client_flows.lib.parse_flow_screens import encode_flow_screens
+from lib.client_flows.client_flow_rule import client_flow_rules_adapter
 from itgs import Itgs
 from lib.client_flows.flow_cache import purge_client_flow_cache
 from lib.client_flows.flow_flags import ClientFlowFlag
@@ -88,6 +89,7 @@ async def create_client_flow(
             },
             replaces=False,
             screens=[],
+            rules=[],
             flags=int(
                 ClientFlowFlag.SHOWS_IN_ADMIN
                 | ClientFlowFlag.IS_CUSTOM
@@ -102,10 +104,10 @@ async def create_client_flow(
             """
 INSERT INTO client_flows (
     uid, slug, name, description, client_schema, server_schema,
-    replaces, screens, flags, created_at
+    replaces, screens, rules, flags, created_at
 )
 SELECT
-    ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?
+    ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?, ?
 WHERE
     NOT EXISTS (
         SELECT 1 FROM client_flows AS cf
@@ -119,6 +121,9 @@ WHERE
                 json.dumps(flow.server_schema, sort_keys=True),
                 int(flow.replaces),
                 encode_flow_screens(flow.screens),
+                json.dumps(
+                    client_flow_rules_adapter.dump_python(flow.rules), sort_keys=True
+                ),
                 flow.flags,
                 flow.created_at,
                 flow.slug,

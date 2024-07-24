@@ -32,6 +32,7 @@ from client_flows.routes.read import ClientFlow
 from courses.models.external_course import ExternalCourse
 from error_middleware import handle_warning
 from itgs import Itgs
+from lib.client_flows.client_flow_rule import ClientFlowRules, client_flow_rules_adapter
 from lib.client_flows.client_flow_screen import ClientFlowScreen
 from lib.client_flows.flow_cache import purge_client_flow_cache
 from lib.client_flows.helper import (
@@ -74,6 +75,7 @@ class ClientFlowPreconditionModel(BaseModel):
     server_schema: dict = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     replaces: bool = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     screens: List[ClientFlowScreen] = Field(default_factory=lambda: NotSetEnum.NOT_SET)
+    rules: ClientFlowRules = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     flags: int = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     created_at: float = Field(default_factory=lambda: NotSetEnum.NOT_SET)
 
@@ -94,6 +96,7 @@ class ClientFlowPatchModel(BaseModel):
     server_schema: dict = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     replaces: bool = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     screens: List[ClientFlowScreen] = Field(default_factory=lambda: NotSetEnum.NOT_SET)
+    rules: ClientFlowRules = Field(default_factory=lambda: NotSetEnum.NOT_SET)
     flags: int = Field(default_factory=lambda: NotSetEnum.NOT_SET)
 
 
@@ -921,6 +924,14 @@ def check_preconditions(
                 else NotSetEnum.NOT_SET
             ),
         ),
+        *simple(
+            "rules",
+            (
+                json.dumps(client_flow_rules_adapter.dump_python(preconditions.rules), sort_keys=True)
+                if preconditions.rules is not NotSetEnum.NOT_SET
+                else NotSetEnum.NOT_SET
+            )
+        ),
         *simple("flags", preconditions.flags),
         *simple("created_at", preconditions.created_at),
         *[
@@ -1073,6 +1084,12 @@ def _checked_client_flows(
         result.write(" AND screens = ?")
         qargs.append(encode_flow_screens(precondition.screens))
 
+    if precondition.rules is not NotSetEnum.NOT_SET:
+        result.write(" AND rules = ?")
+        qargs.append(
+            json.dumps(client_flow_rules_adapter.dump_python(precondition.rules), sort_keys=True)
+        )
+
     if precondition.flags is not NotSetEnum.NOT_SET:
         result.write(" AND flags = ?")
         qargs.append(precondition.flags)
@@ -1128,6 +1145,12 @@ def do_patch(
     if patch.screens is not NotSetEnum.NOT_SET:
         updates.append("screens = ?")
         update_qargs.append(encode_flow_screens(patch.screens))
+
+    if patch.rules is not NotSetEnum.NOT_SET:
+        updates.append("rules = ?")
+        update_qargs.append(
+            json.dumps(client_flow_rules_adapter.dump_python(patch.rules), sort_keys=True)
+        )
 
     if patch.flags is not NotSetEnum.NOT_SET:
         updates.append("flags = ?")

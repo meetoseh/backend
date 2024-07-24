@@ -8,6 +8,7 @@ from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from auth import auth_admin
+from lib.client_flows.client_flow_rule import ClientFlowRules, client_flow_rules_adapter
 from lib.client_flows.client_flow_screen import ClientFlowScreen
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
@@ -52,6 +53,9 @@ class ClientFlow(BaseModel):
             "The screens that are prepended to the users client screen queue "
             "when this flow is triggered"
         )
+    )
+    rules: ClientFlowRules = Field(
+        description=("The rules that are checked when this flow is triggered")
     )
     flags: int = Field(
         description="64-bit signed integer, where each bit represents a boolean flag, which, from lowest to highest:\n"
@@ -192,6 +196,7 @@ async def raw_read_client_flows(
         client_flows.server_schema,
         client_flows.replaces,
         client_flows.screens,
+        client_flows.rules,
         client_flows.flags,
         client_flows.created_at,
     )
@@ -228,8 +233,9 @@ async def raw_read_client_flows(
                 server_schema=json.loads(row[5]),
                 replaces=bool(row[6]),
                 screens=decode_flow_screens(row[7]),
-                flags=row[8],
-                created_at=row[9],
+                rules=client_flow_rules_adapter.validate_json(row[8]),
+                flags=row[9],
+                created_at=row[10],
             )
         )
     return items

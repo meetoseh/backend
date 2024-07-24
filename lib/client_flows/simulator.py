@@ -8,6 +8,7 @@ import pytz
 
 from error_middleware import handle_contextless_error, handle_error
 from itgs import Itgs
+from lib.client_flows.client_flow_predicate import check_flow_predicate
 from lib.client_flows.client_flow_screen import (
     ClientFlowScreen,
     ClientFlowScreenFlag,
@@ -257,7 +258,8 @@ async def simulate_add_screens(
     flow_server_parameters: dict,
 ) -> None:
     """Mutates the client flow simulator state in-place to prepend the given client flow's
-    screens using the given parameters.
+    screens using the given parameters. This will evaluate the trigger rules on each screen in
+    turn, not queueing screens for which the trigger rules pass.
     """
     if not flow.screens:
         return
@@ -271,7 +273,16 @@ async def simulate_add_screens(
     )
 
     screen_stats = ClientScreenStatsPreparer(state.stats)
+    assigned_current = False
     for idx, raw_flow_screen in enumerate(flow.screens):
+        if raw_flow_screen.rules.trigger is not None and check_flow_predicate(
+            raw_flow_screen.rules.trigger, version=version
+        ):
+            logger.info(
+                f"Skipping {flow.slug} screen {idx + 1} of {len(flow.screens)} (a {raw_flow_screen.screen.slug} screen) - trigger predicate passed"
+            )
+            continue
+
         screen = await get_client_screen(itgs, slug=raw_flow_screen.screen.slug)
         if screen is None:
             raise ValueError(
@@ -319,7 +330,7 @@ async def simulate_add_screens(
             )
         )
 
-        if idx != 0 and queue_prepend is None:
+        if assigned_current and queue_prepend is None:
             continue
 
         simulator_screen = ClientFlowSimulatorScreen(
@@ -331,7 +342,8 @@ async def simulate_add_screens(
             flow_server_parameters=transformation.transformed_server_parameters,
         )
 
-        if idx == 0:
+        if not assigned_current:
+            assigned_current = True
             state.current = simulator_screen
 
         if queue_prepend is not None:
@@ -595,6 +607,9 @@ async def fetch_and_simulate_trigger(
     parameters don't match its schema, simulates `error_flow_schema`. This check may
     be skipped for `trusted` inputs for performance.
 
+    Otherwise, if the flow has rules specified, applies those rules (which may result
+    in replacing the flow with another flow)
+
     Finally, if the flow exists and the flow parameters match the schemas, simulates
     the requested flow
     """
@@ -699,6 +714,68 @@ async def fetch_and_simulate_trigger(
                 is_pop_trigger=is_pop_trigger,
             )
 
+    for rule in flow.rules:
+        if check_flow_predicate(rule.condition, version=client_info.version):
+            logger.debug(
+                f"Applying rule for {flow.slug}, checked with version={client_info.version}: {rule.model_dump_json()}"
+            )
+            if rule.effect.type == "replace":
+                logger.info(f"Replacing {flow_slug} with {rule.effect.slug}")
+                stats.incr_replaced(
+                    unix_date=state.unix_date,
+                    platform=source,
+                    version=client_info.version,
+                    screen_slug=_replaced_screen_slug(state, is_pop_trigger),
+                    original_flow_slug=flow_slug,
+                    replaced_flow_slug=rule.effect.slug,
+                )
+                replaced_flow_client_parameters = (
+                    flow_client_parameters
+                    if rule.effect.client_parameters.type == "copy"
+                    else {}
+                )
+                replaced_flow_server_parameters = (
+                    flow_server_parameters
+                    if rule.effect.server_parameters.type == "copy"
+                    else {}
+                )
+                return await fetch_and_simulate_trigger(
+                    itgs,
+                    client_info=client_info,
+                    state=state,
+                    flow_slug=rule.effect.slug,
+                    flow_client_parameters=replaced_flow_client_parameters,
+                    flow_server_parameters=replaced_flow_server_parameters,
+                    source=source,
+                    trusted=trusted,
+                    is_pop_trigger=is_pop_trigger,
+                )
+            elif rule.effect.type == "skip":
+                logger.info(f"Replacing {flow_slug} with skip")
+                stats.incr_replaced(
+                    unix_date=state.unix_date,
+                    platform=source,
+                    version=client_info.version,
+                    screen_slug=_replaced_screen_slug(state, is_pop_trigger),
+                    original_flow_slug=flow_slug,
+                    replaced_flow_slug="skip",
+                )
+                return await fetch_and_simulate_trigger(
+                    itgs,
+                    client_info=client_info,
+                    state=state,
+                    flow_slug="skip",
+                    flow_client_parameters={},
+                    flow_server_parameters={},
+                    source=source,
+                    trusted=True,
+                    is_pop_trigger=is_pop_trigger,
+                )
+            else:
+                logger.warning(f"Skipping unknown rule effect: {rule.effect}")
+    logger.debug(
+        f"{len(flow.rules)} rule{'' if len(flow.rules) == 1 else 's'} checked for {flow.slug}, using version={client_info.version}"
+    )
     await simulate_trigger(
         itgs,
         client_info=client_info,
@@ -842,6 +919,14 @@ async def check_skip_preconditions(
                 f"Should skip because the flow screen {state.current.screen.slug} is not intended for users with Oseh+"
             )
             return True
+
+    if state.current.flow_screen.rules.peek is not None and check_flow_predicate(
+        state.current.flow_screen.rules.peek, version=client_info.version
+    ):
+        logger.debug(
+            f"Should skip because the peek rule for {state.current.screen.slug} passed"
+        )
+        return True
 
     return False
 

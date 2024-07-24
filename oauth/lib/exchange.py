@@ -1815,6 +1815,7 @@ async def _trigger_signup(
     ClientFlowStatsPreparer(simulator_state.stats).incr_triggered(
         unix_date=unix_dates.unix_timestamp_to_unix_date(now, tz=tz),
         platform="server",
+        version=None,
         slug=flow_slug,
         trusted=True
     )
@@ -1822,6 +1823,7 @@ async def _trigger_signup(
         itgs,
         state=simulator_state,
         source="server",
+        version=None,
         flow=flow,
         flow_client_parameters={},
         flow_server_parameters={},

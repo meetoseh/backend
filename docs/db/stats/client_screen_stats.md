@@ -16,7 +16,7 @@ See also: [client flows](../../concepts/client_flows/README.md)
   users client screens queue. Note that because of client flows that `replace`
   not all of these are expected to actually ever get peeked.
 - `queued_breakdown (text not null)`: goes to a json object breaking down
-  `queued` by the `{platform}:{slug}`, where platform is one of `ios`,
+  `queued` by the `{platform}:{version}:{slug}`, where platform is one of `ios`,
   `android`, `browser`, or `server`. This is `server` when we queue outside
   of a direct api request and the client platform otherwise. The slug is the
   slug of the screen that was queued.
@@ -26,7 +26,7 @@ See also: [client flows](../../concepts/client_flows/README.md)
   to remove ones that triggered a `skip` when popped. Note that the peek operation
   may have been part of a pop (all pops also peek, but not all peeks pop).
 - `peeked_breakdown (text not null)`: goes to a json object breaking down
-  `peeked` by the `{platform}:{slug}`, where platform is one of `ios`,
+  `peeked` by the `{platform}:{version}:{slug}`, where platform is one of `ios`,
   `android`, or `browser`. The slug is the slug of the screen that was
   peeked.
 - `popped (integer not null)`: the number of times a screen was popped by a
@@ -36,12 +36,12 @@ See also: [client flows](../../concepts/client_flows/README.md)
   generic background cleanup). only counts if the screen jwt was valid and
   it didn't result in desync
 - `popped_breakdown (text not null)`: goes to a json object breaking down
-  `popped` by the `{platform}:{slug}`, where platform is one of `ios`,
+  `popped` by the `{platform}:{version}:{slug}`, where platform is one of `ios`,
   `android`, or `browser`.
 - `traced (integer not null)`: the number of times a screen had a trace event
   associated with it
 - `traced_breakdown (text not null)`: goes to a json object breaking down
-  `traced` by the `{platform}:{slug}`, where platform is one of `ios`,
+  `traced` by the `{platform}:{version}:{slug}`, where platform is one of `ios`,
   `android`, or `browser`.
 
 ## Schema

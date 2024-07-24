@@ -767,6 +767,7 @@ async def execute_peek(
     *,
     user_sub: str,
     platform: ClientFlowSource,
+    version: Optional[int],
     trigger: Optional[TrustedTrigger],
     initial_read_consistency: Literal["none", "weak", "strong"] = "none",
 ) -> ClientScreenQueuePeekInfo:
@@ -775,7 +776,9 @@ async def execute_peek(
     being peeked by the given platform, then returns the state that the client
     needs to display the front of their queue.
     """
-    client_info = ClientFlowSimulatorClientInfo(user_sub=user_sub, platform=platform)
+    client_info = ClientFlowSimulatorClientInfo(
+        user_sub=user_sub, platform=platform, version=version
+    )
     expecting_bad_screens = False
     num_races = 0
     while True:
@@ -847,6 +850,7 @@ async def execute_peek(
         ClientScreenStatsPreparer(prepared_peek.state.stats).incr_peeked(
             unix_date=prepared_peek.state.unix_date,
             platform=platform,
+            version=version,
             slug=prepared_peek.state.current.screen.slug,
         )
 
@@ -892,6 +896,7 @@ async def execute_pop(
     *,
     user_sub: str,
     platform: VisitorSource,
+    version: Optional[int],
     expected_front_uid: str,
     trigger: Optional[Union[UntrustedTrigger, TrustedTrigger]],
 ) -> ClientScreenQueuePeekInfo:
@@ -916,7 +921,9 @@ async def execute_pop(
         ClientScreenQueuePeekInfo: the information required for the client to display the front
             of their screen queue
     """
-    client_info = ClientFlowSimulatorClientInfo(user_sub=user_sub, platform=platform)
+    client_info = ClientFlowSimulatorClientInfo(
+        user_sub=user_sub, platform=platform, version=version
+    )
     expecting_bad_screens = False
     num_races = 0
     while True:
@@ -974,6 +981,7 @@ async def execute_pop(
                 ClientScreenStatsPreparer(prepared_pop.state.stats).incr_popped(
                     unix_date=prepared_pop.state.unix_date,
                     platform=platform,
+                    version=version,
                     slug=prepared_pop.state.original.screen.slug,
                 )
                 if trigger is not None:
@@ -1085,6 +1093,7 @@ async def execute_pop(
         ClientScreenStatsPreparer(prepared_pop.state.stats).incr_peeked(
             unix_date=prepared_pop.state.unix_date,
             platform=platform,
+            version=version,
             slug=prepared_pop.state.current.screen.slug,
         )
         await prepared_pop.state.stats.store(itgs)
@@ -1109,6 +1118,7 @@ async def execute_pop(
                     itgs,
                     user_sub=user_sub,
                     platform=platform,
+                    version=version,
                     trigger=None,
                     initial_read_consistency="weak",
                 )

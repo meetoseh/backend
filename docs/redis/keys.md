@@ -3489,10 +3489,10 @@ via a share code. The UTM is:
 - `stats:client_flows:daily:{unix_date}:extra:{event}` goes to a hash
   breaking down the event key, where the keys in the breakdown depend on the event:
 
-  - `triggered` is broken down by `{platform}:{slug}:{verified}`, e.g.,
-    `ios:take_journey:True`
-  - `replaced` is broken down by `{platform}:[{screen_slug}]:{og_slug}:{new_slug}`,
-    e.g., `server::myCoolFlow:not_found` or `android:home:myIOSFlow:skip`
+  - `triggered` is broken down by `{platform}:{version}:{slug}:{verified}`, e.g.,
+    `ios:68:take_journey:True`
+  - `replaced` is broken down by `{platform}:{version}:[{screen_slug}]:{og_slug}:{new_slug}`,
+    e.g., `server:68::myCoolFlow:not_found` or `android:home:myIOSFlow:skip`
 
 - `stats:client_flows:daily:earliest` goes to the earliest unix date for which
   there might still be client flow statistics in redis
@@ -3510,10 +3510,10 @@ via a share code. The UTM is:
 - `stats:client_screens:daily:{unix_date}:extra:{event}` goes to a hash breaking
   down the event key, where the keys in the breakdown depend on the event:
 
-  - `queued` is broken down by `{platform}:{slug}` e.g., `ios:home`
-  - `peeked` is broken down by `{platform}:{slug}` e.g., `ios:home`
-  - `popped` is broken down by `{platform}:{slug}` e.g., `ios:home`
-  - `traced` is broken down by `{platform}:{slug}` e.g., `ios:home`
+  - `queued` is broken down by `{platform}:{version}:{slug}` e.g., `ios:68:home`
+  - `peeked` is broken down by `{platform}:{version}:{slug}` e.g., `ios:68:home`
+  - `popped` is broken down by `{platform}:{version}:{slug}` e.g., `ios:68:home`
+  - `traced` is broken down by `{platform}:{version}:{slug}` e.g., `ios:68:home`
 
 - `stats:client_screens:daily:earliest`: goes to the earliest unix date for which
   there might still be client screen statistics in redis

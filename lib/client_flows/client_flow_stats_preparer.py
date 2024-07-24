@@ -31,6 +31,7 @@ class ClientFlowStatsPreparer:
         *,
         unix_date: int,
         platform: ClientFlowSource,
+        version: Optional[int],
         slug: str,
         trusted: bool,
         amt: int = 1,
@@ -38,7 +39,7 @@ class ClientFlowStatsPreparer:
         self.incr_client_flow_stat(
             unix_date=unix_date,
             event="triggered",
-            event_extra=f"{platform}:{slug}:{trusted}".encode("utf-8"),
+            event_extra=f"{platform}:{version}:{slug}:{trusted}".encode("utf-8"),
             amt=amt,
         )
 
@@ -47,6 +48,7 @@ class ClientFlowStatsPreparer:
         *,
         unix_date: int,
         platform: ClientFlowSource,
+        version: Optional[int],
         screen_slug: Optional[str],
         original_flow_slug: str,
         replaced_flow_slug: str,
@@ -55,7 +57,7 @@ class ClientFlowStatsPreparer:
         self.incr_client_flow_stat(
             unix_date=unix_date,
             event="replaced",
-            event_extra=f"{platform}:{screen_slug if screen_slug is not None else ''}:{original_flow_slug}:{replaced_flow_slug}".encode(
+            event_extra=f"{platform}:{version}:{screen_slug if screen_slug is not None else ''}:{original_flow_slug}:{replaced_flow_slug}".encode(
                 "utf-8"
             ),
             amt=amt,

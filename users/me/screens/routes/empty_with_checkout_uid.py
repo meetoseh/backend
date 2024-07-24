@@ -39,6 +39,7 @@ router = APIRouter()
 async def empty_with_checkout_uid(
     args: FinishCheckoutStripeRequest,
     platform: VisitorSource,
+    version: Optional[int] = None,
     visitor: Annotated[Optional[str], Header()] = None,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
@@ -95,6 +96,7 @@ async def empty_with_checkout_uid(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=None,
             )
             return await _realize(screen)
@@ -125,6 +127,7 @@ async def empty_with_checkout_uid(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=None,
             )
             return await _realize(screen)
@@ -143,6 +146,7 @@ async def empty_with_checkout_uid(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=None,
             )
             return await _realize(screen)
@@ -163,6 +167,7 @@ async def empty_with_checkout_uid(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=None,
             )
             return await _realize(screen)
@@ -193,6 +198,7 @@ async def empty_with_checkout_uid(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=None,
             )
             return await _realize(screen)
@@ -215,6 +221,7 @@ async def empty_with_checkout_uid(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=None,
             )
             return await _realize(screen)
@@ -233,6 +240,7 @@ async def empty_with_checkout_uid(
             itgs,
             user_sub=std_auth_result.result.sub,
             platform=platform,
+            version=version,
             trigger=TrustedTrigger(
                 flow_slug=(
                     "post_checkout_success"

@@ -62,6 +62,7 @@ class EmptyWithConfirmMergeRequest(BaseModel):
 async def empty_with_confirm_merge(
     args: EmptyWithConfirmMergeRequest,
     platform: VisitorSource,
+    version: Optional[int] = None,
     visitor: Annotated[Optional[str], Header()] = None,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
@@ -157,7 +158,7 @@ async def empty_with_confirm_merge(
         initial_prepared_peek = await try_and_prepare_peek(
             itgs,
             client_info=ClientFlowSimulatorClientInfo(
-                platform=platform, user_sub=user_sub
+                platform=platform, version=version, user_sub=user_sub
             ),
             expecting_bad_screens=False,
             read_consistency="weak",
@@ -179,6 +180,7 @@ async def empty_with_confirm_merge(
                 itgs,
                 user_sub=user_sub,
                 platform=platform,
+                version=version,
                 trigger=TrustedTrigger(
                     flow_slug="desync", client_parameters={}, server_parameters={}
                 ),
@@ -197,6 +199,7 @@ async def empty_with_confirm_merge(
                 itgs,
                 user_sub=user_sub,
                 platform=platform,
+                version=version,
                 trigger=TrustedTrigger(
                     flow_slug="forbidden",
                     client_parameters={},
@@ -251,6 +254,7 @@ async def empty_with_confirm_merge(
             itgs,
             user_sub=user_sub,
             platform=platform,
+            version=version,
             trigger=TrustedTrigger(
                 flow_slug=args.trigger.slug, client_parameters={}, server_parameters={}
             ),

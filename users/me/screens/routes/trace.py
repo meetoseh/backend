@@ -35,6 +35,7 @@ tz = pytz.timezone("America/Los_Angeles")
 async def trace_screen(
     req: Request,
     platform: VisitorSource,
+    version: Optional[int] = None,
     authorization: Annotated[Optional[str], Header()] = None,
     content_type: Annotated[Optional[str], Header(include_in_schema=False)] = None,
 ):
@@ -111,6 +112,7 @@ WHERE
             ClientScreenStatsPreparer(stats).incr_traced(
                 unix_date=unix_date,
                 platform=platform,
+                version=version,
                 slug=auth_result.result.screen_slug,
             )
 

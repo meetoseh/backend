@@ -46,6 +46,21 @@ class ClientFlowSimulatorClientInfo:
     screens which will definitely be unsupported
     """
 
+    version: Optional[int]
+    """If None, compares as lower than all other version codes. The client-provided
+    value that indicates the highest version code of the android app whose functionality
+    the client meets or exceeds.
+    """
+
+    def compare_version_with(self, target: int) -> int:
+        """Returns a positive number if the clients version is higher than the target,
+        a negative number if the clients version is lower than the target, and 0 if the
+        clients version is equal to the target.
+        """
+        if self.version is None:
+            return -1
+        return self.version - target
+
 
 @dataclass
 class ClientFlowSimulatorScreen:
@@ -236,6 +251,7 @@ async def simulate_add_screens(
     *,
     state: ClientFlowSimulatorState,
     source: ClientFlowSource,
+    version: Optional[int],
     flow: ClientFlow,
     flow_client_parameters: dict,
     flow_server_parameters: dict,
@@ -278,7 +294,10 @@ async def simulate_add_screens(
         )
 
         screen_stats.incr_queued(
-            unix_date=state.unix_date, platform=source, slug=screen.slug
+            unix_date=state.unix_date,
+            platform=source,
+            version=version,
+            slug=screen.slug,
         )
 
         user_client_screen_uid = f"oseh_ucs_{secrets.token_urlsafe(16)}"
@@ -509,11 +528,13 @@ async def simulate_trigger(
             flow_client_parameters=flow_client_parameters,
             flow_server_parameters=flow_server_parameters,
             source=source,
+            version=client_info.version,
         )
         logger.info(f"Triggered {flow.slug}")
         ClientFlowStatsPreparer(state.stats).incr_triggered(
             unix_date=state.unix_date,
             platform=source,
+            version=client_info.version,
             slug=flow.slug,
             trusted=trusted,
         )
@@ -532,6 +553,7 @@ async def simulate_trigger(
         ClientFlowStatsPreparer(state.stats).incr_replaced(
             unix_date=state.unix_date,
             platform=source,
+            version=client_info.version,
             screen_slug=_replaced_screen_slug(state, is_pop_trigger),
             original_flow_slug=flow.slug,
             replaced_flow_slug="error_screen_missing",
@@ -587,6 +609,7 @@ async def fetch_and_simulate_trigger(
         stats.incr_replaced(
             unix_date=state.unix_date,
             platform=source,
+            version=client_info.version,
             screen_slug=_replaced_screen_slug(state, is_pop_trigger),
             original_flow_slug=flow_slug,
             replaced_flow_slug="not_found",
@@ -608,6 +631,7 @@ async def fetch_and_simulate_trigger(
         stats.incr_replaced(
             unix_date=state.unix_date,
             platform=source,
+            version=client_info.version,
             screen_slug=_replaced_screen_slug(state, is_pop_trigger),
             original_flow_slug=flow_slug,
             replaced_flow_slug="wrong_platform",
@@ -658,6 +682,7 @@ async def fetch_and_simulate_trigger(
             stats.incr_replaced(
                 unix_date=state.unix_date,
                 platform=source,
+                version=client_info.version,
                 screen_slug=_replaced_screen_slug(state, is_pop_trigger),
                 original_flow_slug=flow_slug,
                 replaced_flow_slug="error_flow_schema",

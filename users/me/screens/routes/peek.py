@@ -19,11 +19,17 @@ router = APIRouter()
 )
 async def peek_screen(
     platform: VisitorSource,
+    version: Optional[int] = None,
     authorization: Annotated[Optional[str], Header()] = None,
     visitor: Annotated[Optional[str], Header()] = None,
 ):
     """Peeks the screen queue to determine which screen to show on the given
     platform.
+
+    A version code should be included in the query parameter which corresponds
+    to the highest version code of the android app whose functionality the
+    client meets or exceeds. Omitting this value will be treated as the highest
+    version before version codes were introduced (67).
 
     Requires standard authorization for a user.
     """
@@ -33,7 +39,11 @@ async def peek_screen(
             return auth_result.error_response
 
         screen = await execute_peek(
-            itgs, user_sub=auth_result.result.sub, platform=platform, trigger=None
+            itgs,
+            user_sub=auth_result.result.sub,
+            platform=platform,
+            version=version,
+            trigger=None,
         )
         result = await realize_screens(
             itgs,

@@ -58,6 +58,7 @@ class PopToHistoryClassRequest(BaseModel):
 async def pop_screen_to_history_class(
     args: PopToHistoryClassRequest,
     platform: VisitorSource,
+    version: Optional[int] = None,
     visitor: Annotated[Optional[str], Header()] = None,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
@@ -111,6 +112,7 @@ async def pop_screen_to_history_class(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=TrustedTrigger(
                     flow_slug="error_bad_auth",
                     client_parameters={},
@@ -184,6 +186,7 @@ WHERE
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=TrustedTrigger(
                     flow_slug="error_bad_auth",
                     client_parameters={},
@@ -206,6 +209,7 @@ WHERE
             itgs,
             user_sub=std_auth_result.result.sub,
             platform=platform,
+            version=version,
             expected_front_uid=screen_auth_result.result.user_client_screen_uid,
             trigger=(
                 TrustedTrigger(

@@ -14,8 +14,9 @@ See also: [client flows](../../concepts/client_flows/README.md)
   stats in seconds since the unix epoch.
 - `triggered (integer not null)`: the number of client flows triggered
 - `triggered_breakdown (text not null)`: goes to a json object breaking down
-  `triggered` by the `{platform}:{slug}:{verified}`, where platform is one of `ios`,
-  `android`, `browser`, or `server`. The slug is the slug of the flow that was
+  `triggered` by the `{platform}:{version}:{slug}:{verified}`, where platform is one of `ios`,
+  `android`, `browser`, or `server`. The version is the android app version code the
+  client wants to emulate (where applicable). The slug is the slug of the flow that was
   triggered. `verified` is either `True` or `False` and is False for the standard
   endpoint and True for endpoints which perform semantic validation of the flow
   parameters before triggering the flow.
@@ -25,14 +26,15 @@ See also: [client flows](../../concepts/client_flows/README.md)
   `triggered` number.
 
 - `replaced_breakdown (text not null)`: goes to a json object breaking down
-  `replaced` by the `{platform}:[{screen_slug}]:{og_slug}:{new_slug}`, where
-  platform is one of `ios`, `android`, `browser`, or `server`. The `og_slug`
+  `replaced` by the `{platform}:{version}:[{screen_slug}]:{og_slug}:{new_slug}`, where
+  platform is one of `ios`, `android`, `browser`, or `server`. `version` is the
+  android app version code the client wants to emulate (where applicable). The `og_slug`
   is the slug of the trigger that was attempted and replaced. `new_slug` is
   the slug of the trigger that was used instead. `screen_slug` is the slug
   of the screen that was being popped when the trigger occurred and is
   blank if the trigger did not occur during a pop.
 
-  Ex: `ios:home:StacyFakename:not_found` means that the home screen tried
+  Ex: `ios:68:home:StacyFakename:not_found` means that the home screen tried
   to trigger StacyFakename but that was replaced with `not_found`.
 
 ## Schema

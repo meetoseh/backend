@@ -40,6 +40,7 @@ class EmptyWithMergeTokenRequest(BaseModel):
 async def empty_with_merge_token(
     args: EmptyWithMergeTokenRequest,
     platform: VisitorSource,
+    version: Optional[int] = None,
     visitor: Annotated[Optional[str], Header()] = None,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
@@ -121,6 +122,7 @@ async def empty_with_merge_token(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=TrustedTrigger(
                     flow_slug="merge_no_change_required",
                     client_parameters={},
@@ -138,6 +140,7 @@ async def empty_with_merge_token(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=TrustedTrigger(
                     flow_slug="merge_created_and_attached",
                     client_parameters={},
@@ -155,6 +158,7 @@ async def empty_with_merge_token(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=TrustedTrigger(
                     flow_slug="merge_trivial",
                     client_parameters={},
@@ -175,6 +179,7 @@ async def empty_with_merge_token(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=TrustedTrigger(
                     flow_slug="merge_confirmation_required",
                     client_parameters={},

@@ -31,13 +31,14 @@ class ClientScreenStatsPreparer:
         *,
         unix_date: int,
         platform: ClientFlowSource,
+        version: Optional[int],
         slug: str,
         amt: int = 1,
     ):
         self.incr_client_screen_stat(
             unix_date=unix_date,
             event="queued",
-            event_extra=f"{platform}:{slug}".encode("utf-8"),
+            event_extra=f"{platform}:{version}:{slug}".encode("utf-8"),
             amt=amt,
         )
 
@@ -46,13 +47,14 @@ class ClientScreenStatsPreparer:
         *,
         unix_date: int,
         platform: ClientFlowSource,
+        version: Optional[int],
         slug: str,
         amt: int = 1,
     ):
         self.incr_client_screen_stat(
             unix_date=unix_date,
             event="peeked",
-            event_extra=f"{platform}:{slug}".encode("utf-8"),
+            event_extra=f"{platform}:{version}:{slug}".encode("utf-8"),
             amt=amt,
         )
 
@@ -61,13 +63,14 @@ class ClientScreenStatsPreparer:
         *,
         unix_date: int,
         platform: ClientFlowSource,
+        version: Optional[int],
         slug: str,
         amt: int = 1,
     ):
         self.incr_client_screen_stat(
             unix_date=unix_date,
             event="popped",
-            event_extra=f"{platform}:{slug}".encode("utf-8"),
+            event_extra=f"{platform}:{version}:{slug}".encode("utf-8"),
             amt=amt,
         )
 
@@ -76,12 +79,13 @@ class ClientScreenStatsPreparer:
         *,
         unix_date: int,
         platform: ClientFlowSource,
+        version: Optional[int],
         slug: str,
         amt: int = 1,
     ):
         self.incr_client_screen_stat(
             unix_date=unix_date,
             event="traced",
-            event_extra=f"{platform}:{slug}".encode("utf-8"),
+            event_extra=f"{platform}:{version}:{slug}".encode("utf-8"),
             amt=amt,
         )

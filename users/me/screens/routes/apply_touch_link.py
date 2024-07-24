@@ -44,6 +44,7 @@ class ApplyTouchLinkRequest(BaseModel):
 async def apply_touch_link(
     args: ApplyTouchLinkRequest,
     platform: VisitorSource,
+    version: Optional[int] = None,
     visitor: Annotated[Optional[str], Header()] = None,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
@@ -86,6 +87,7 @@ async def apply_touch_link(
                     itgs,
                     user_sub=std_auth_result.result.sub,
                     platform=platform,
+                    version=version,
                     trigger=None,
                 )
                 return await _realize(screen)
@@ -129,6 +131,7 @@ async def apply_touch_link(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 trigger=None,
             )
             return await _realize(screen)
@@ -141,6 +144,7 @@ async def apply_touch_link(
             itgs,
             user_sub=std_auth_result.result.sub,
             platform=platform,
+            version=version,
             trigger=TrustedTrigger(
                 flow_slug=trigger,
                 client_parameters={},

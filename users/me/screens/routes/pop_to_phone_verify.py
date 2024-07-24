@@ -50,6 +50,7 @@ class PopToPhoneVerifyRequest(BaseModel):
 async def pop_screen_to_phone_verify(
     args: PopToPhoneVerifyRequest,
     platform: VisitorSource,
+    version: Optional[int] = None,
     visitor: Annotated[Optional[str], Header()] = None,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
@@ -114,6 +115,7 @@ async def pop_screen_to_phone_verify(
                     itgs,
                     user_sub=std_auth_result.result.sub,
                     platform=platform,
+                    version=version,
                     trigger=TrustedTrigger(
                         flow_slug="error_bad_auth",
                         client_parameters={},
@@ -139,6 +141,7 @@ async def pop_screen_to_phone_verify(
                 itgs,
                 user_sub=std_auth_result.result.sub,
                 platform=platform,
+                version=version,
                 expected_front_uid=screen_auth_result.result.user_client_screen_uid,
                 trigger=(
                     TrustedTrigger(

@@ -22,12 +22,16 @@ router = APIRouter()
 
 
 class Name(BaseModel):
-    first_name: str = Field(description="The users first name", alias="firstName")
-    last_name: str = Field(description="The users last name", alias="lastName")
+    first_name: str = Field(
+        "Anonymous", description="The users first name", alias="firstName"
+    )
+    last_name: str = Field("", description="The users last name", alias="lastName")
 
 
 class User(BaseModel):
-    name: Name = Field(description="The users name")
+    name: Name = Field(
+        default_factory=lambda: Name.model_validate({}), description="The users name"
+    )
     email: str = Field(description="The users email")
 
 

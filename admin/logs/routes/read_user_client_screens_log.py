@@ -19,8 +19,8 @@ from visitors.lib.get_or_create_visitor import VisitorSource
 
 class User(BaseModel):
     sub: str = Field(description="The sub of the user")
-    given_name: str = Field(description="The given name of the user")
-    family_name: str = Field(description="The family name of the user")
+    given_name: Optional[str] = Field(description="The given name of the user")
+    family_name: Optional[str] = Field(description="The family name of the user")
     created_at: float = Field(
         description="The time the user was created in seconds since the epoch"
     )

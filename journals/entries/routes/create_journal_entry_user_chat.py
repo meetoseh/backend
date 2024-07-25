@@ -194,7 +194,7 @@ async def create_journal_entry_user_chat(
         if journal_client_key.type != "success":
             await handle_warning(
                 f"{__name__}:unusable_client_key",
-                f"User `{std_auth_result.result.sub}` tried to respond to a jouranl entry using the journal client "
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using the journal client "
                 f"key `{args.journal_client_key_uid}` for platform `{args.platform}`, but we failed to fetch that "
                 f"key: `{journal_client_key.type}`",
             )
@@ -202,7 +202,7 @@ async def create_journal_entry_user_chat(
         if journal_client_key.platform != args.platform:
             await handle_warning(
                 f"{__name__}:wrong_platform",
-                f"User `{std_auth_result.result.sub}` tried to respond to a jouranl entry using the journal client "
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using the journal client "
                 f"key `{args.journal_client_key_uid}` for platform `{args.platform}`, but that isn't the platform "
                 f"that created that key (`{journal_client_key.platform}`).",
             )
@@ -213,10 +213,19 @@ async def create_journal_entry_user_chat(
                 args.encrypted_user_message, ttl=120
             )
         except cryptography.fernet.InvalidToken:
+            is_ttl_issue = False
+            try:
+                journal_client_key.journal_client_key.decrypt(
+                    args.encrypted_user_message
+                )
+                is_ttl_issue = True
+            except cryptography.fernet.InvalidToken:
+                pass
             await handle_warning(
                 f"{__name__}:invalid_token",
-                f"User `{std_auth_result.result.sub}` tried to respond to a jouranl entry using the journal client "
-                f"key `{args.journal_client_key_uid}` for platform `{args.platform}`, but the token was invalid.",
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using the journal client "
+                f"key `{args.journal_client_key_uid}` for platform `{args.platform}`, but the token failed to decrypt "
+                f"their message. `{is_ttl_issue=}`",
             )
             return ERROR_BAD_ENCRYPTION
 
@@ -225,7 +234,7 @@ async def create_journal_entry_user_chat(
         except UnicodeDecodeError as e:
             await handle_warning(
                 f"{__name__}:invalid_token",
-                f"User `{std_auth_result.result.sub}` tried to respond to a jouranl entry using the journal client "
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using the journal client "
                 f"key `{args.journal_client_key_uid}` for platform `{args.platform}`, but the decrypted data was "
                 f"not valid ({str(e)})",
             )
@@ -237,7 +246,7 @@ async def create_journal_entry_user_chat(
         if journal_master_key.type != "success":
             await handle_warning(
                 f"{__name__}:no_master_key",
-                f"User `{std_auth_result.result.sub}` tried to respond to a jouranl entry with a valid "
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
                 f"request but we could not fetch a journal master key to use: {journal_master_key.type}",
             )
             return Response(
@@ -250,7 +259,7 @@ async def create_journal_entry_user_chat(
         if not paragraphs:
             await handle_warning(
                 f"{__name__}:no_message",
-                f"User `{std_auth_result.result.sub}` tried to respond to a jouranl entry with a valid "
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
                 f"request but the message was empty after stripping whitespace",
             )
             return ERROR_BAD_ENCRYPTION
@@ -405,7 +414,7 @@ WHERE
             ), response
             await handle_warning(
                 f"{__name__}:no_master_key",
-                f"User `{std_auth_result.result.sub}` tried to respond to a jouranl entry with a valid "
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
                 f"request but the journal master key we wanted to use did not have metadata in the database",
             )
             return Response(status_code=500)
@@ -419,7 +428,7 @@ WHERE
         if response[4].rows_affected is None or response[4].rows_affected < 1:
             await handle_warning(
                 f"{__name__}:no_insert",
-                f"User `{std_auth_result.result.sub}` tried to respond to a jouranl entry with a valid "
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
                 f"request but the insert failed",
             )
             return Response(status_code=500)

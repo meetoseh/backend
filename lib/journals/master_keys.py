@@ -228,11 +228,13 @@ WHERE
         assert (
             response[2].rows_affected is None or response[2].rows_affected < 1
         ), response
+        existing_master_key_uid = cast(str, response[0].results[0][0])
+        existing_s3_key = cast(str, response[0].results[0][1])
         return await get_journal_master_key_from_s3(
             itgs,
-            user_journal_master_key_uid=new_key_uid,
+            user_journal_master_key_uid=existing_master_key_uid,
             user_sub=user_sub,
-            s3_key=new_s3_key,
+            s3_key=existing_s3_key,
         )
 
     assert (

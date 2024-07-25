@@ -22,16 +22,12 @@ router = APIRouter()
 
 
 class Name(BaseModel):
-    first_name: str = Field(
-        "Anonymous", description="The users first name", alias="firstName"
-    )
-    last_name: str = Field("", description="The users last name", alias="lastName")
+    first_name: str = Field(description="The users first name", alias="firstName")
+    last_name: str = Field(description="The users last name", alias="lastName")
 
 
 class User(BaseModel):
-    name: Name = Field(
-        default_factory=lambda: Name.model_validate({}), description="The users name"
-    )
+    name: Name = Field(description="The users name")
     email: str = Field(description="The users email")
 
 
@@ -54,7 +50,13 @@ async def callback(
     """
     user_info: Optional[User] = None
     if user is not None:
-        user_info = User.model_validate_json(user)
+        try:
+            user_info = User.model_validate_json(user)
+        except Exception as e:
+            await handle_error(
+                e,
+                extra_info=f"Ignoring user information from apple (failed to parse):\n\n```\n{user}\n```",
+            )
 
     std_redirect_url = os.environ["ROOT_FRONTEND_URL"]
 

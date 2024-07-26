@@ -5,7 +5,8 @@ from resources.filter_item import FilterItemModel
 
 class ClientFlowPredicate(BaseModel):
     version: Optional[FilterItemModel[int]] = Field(
-        None, description="the client-provided android version code they want to match"
+        None,
+        description="the client-provided android version code they want to match",
     )
     time_in_queue: Optional[FilterItemModel[int]] = Field(
         None,

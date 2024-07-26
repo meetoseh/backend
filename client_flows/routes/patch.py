@@ -927,10 +927,15 @@ def check_preconditions(
         *simple(
             "rules",
             (
-                json.dumps(client_flow_rules_adapter.dump_python(preconditions.rules), sort_keys=True)
+                json.dumps(
+                    client_flow_rules_adapter.dump_python(
+                        preconditions.rules, exclude_unset=True
+                    ),
+                    sort_keys=True,
+                )
                 if preconditions.rules is not NotSetEnum.NOT_SET
                 else NotSetEnum.NOT_SET
-            )
+            ),
         ),
         *simple("flags", preconditions.flags),
         *simple("created_at", preconditions.created_at),
@@ -1087,7 +1092,12 @@ def _checked_client_flows(
     if precondition.rules is not NotSetEnum.NOT_SET:
         result.write(" AND rules = ?")
         qargs.append(
-            json.dumps(client_flow_rules_adapter.dump_python(precondition.rules), sort_keys=True)
+            json.dumps(
+                client_flow_rules_adapter.dump_python(
+                    precondition.rules, exclude_unset=True
+                ),
+                sort_keys=True,
+            )
         )
 
     if precondition.flags is not NotSetEnum.NOT_SET:
@@ -1149,7 +1159,10 @@ def do_patch(
     if patch.rules is not NotSetEnum.NOT_SET:
         updates.append("rules = ?")
         update_qargs.append(
-            json.dumps(client_flow_rules_adapter.dump_python(patch.rules), sort_keys=True)
+            json.dumps(
+                client_flow_rules_adapter.dump_python(patch.rules, exclude_unset=True),
+                sort_keys=True,
+            )
         )
 
     if patch.flags is not NotSetEnum.NOT_SET:

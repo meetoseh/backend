@@ -122,7 +122,10 @@ WHERE
                 int(flow.replaces),
                 encode_flow_screens(flow.screens),
                 json.dumps(
-                    client_flow_rules_adapter.dump_python(flow.rules), sort_keys=True
+                    client_flow_rules_adapter.dump_python(
+                        flow.rules, exclude_unset=True
+                    ),
+                    sort_keys=True,
                 ),
                 flow.flags,
                 flow.created_at,

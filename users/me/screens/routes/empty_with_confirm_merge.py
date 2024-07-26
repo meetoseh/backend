@@ -158,7 +158,10 @@ async def empty_with_confirm_merge(
         initial_prepared_peek = await try_and_prepare_peek(
             itgs,
             client_info=ClientFlowSimulatorClientInfo(
-                platform=platform, version=version, user_sub=user_sub
+                platform=platform,
+                version=version,
+                user_sub=user_sub,
+                user_created_at=-1,
             ),
             expecting_bad_screens=False,
             read_consistency="weak",

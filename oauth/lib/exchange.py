@@ -1827,6 +1827,7 @@ async def _trigger_signup(
         flow=flow,
         flow_client_parameters={},
         flow_server_parameters={},
+        user_created_at=int(now),
     )
 
     result: List[_CreateQuery] = []

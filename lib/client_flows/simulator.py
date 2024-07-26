@@ -42,6 +42,9 @@ class ClientFlowSimulatorClientInfo:
     user_sub: str
     """The sub of the user who is requesting a screen"""
 
+    user_created_at: int
+    """When the users account was created in seconds since the unix epoch"""
+
     platform: ClientFlowSource
     """Which platform the client is using, to speed up screen negotiation for
     screens which will definitely be unsupported
@@ -84,6 +87,9 @@ class ClientFlowSimulatorScreen:
     """The value of `outer_counter` on the corresponding `user_client_screen` row, where
     higher values are earlier in the queue
     """
+
+    queued_at: float
+    """When this flow screen was canonically added to the users queue"""
 
 
 @dataclass
@@ -253,6 +259,7 @@ async def simulate_add_screens(
     state: ClientFlowSimulatorState,
     source: ClientFlowSource,
     version: Optional[int],
+    user_created_at: int,
     flow: ClientFlow,
     flow_client_parameters: dict,
     flow_server_parameters: dict,
@@ -276,7 +283,10 @@ async def simulate_add_screens(
     assigned_current = False
     for idx, raw_flow_screen in enumerate(flow.screens):
         if raw_flow_screen.rules.trigger is not None and check_flow_predicate(
-            raw_flow_screen.rules.trigger, version=version
+            raw_flow_screen.rules.trigger,
+            version=version,
+            time_in_queue=0,
+            account_age=int(state.created_at) - user_created_at,
         ):
             logger.info(
                 f"Skipping {flow.slug} screen {idx + 1} of {len(flow.screens)} (a {raw_flow_screen.screen.slug} screen) - trigger predicate passed"
@@ -340,6 +350,7 @@ async def simulate_add_screens(
             outer_counter=outer_counter,
             flow_client_parameters=flow_client_parameters,
             flow_server_parameters=transformation.transformed_server_parameters,
+            queued_at=state.created_at,
         )
 
         if not assigned_current:
@@ -349,12 +360,13 @@ async def simulate_add_screens(
         if queue_prepend is not None:
             queue_prepend.append(simulator_screen)
 
-    state.mutations.append(
-        ClientFlowSimulatorMutationPrepend(
-            type="prepend",
-            screens=user_client_screens,
+    if user_client_screens:
+        state.mutations.append(
+            ClientFlowSimulatorMutationPrepend(
+                type="prepend",
+                screens=user_client_screens,
+            )
         )
-    )
 
     if state.queue is not None and queue_prepend is not None:
         state.queue = queue_prepend + state.queue
@@ -419,6 +431,7 @@ ORDER BY user_client_screens.outer_counter DESC, user_client_screens.inner_count
                     outer_counter=row[2],
                     flow_client_parameters=json.loads(row[3]),
                     flow_server_parameters=json.loads(row[4]),
+                    queued_at=state.created_at,
                 )
             )
     else:
@@ -445,6 +458,7 @@ ORDER BY user_client_screens.outer_counter DESC, user_client_screens.inner_count
                         outer_counter=to_prepend.outer_counter,
                         flow_client_parameters=to_prepend.flow_client_parameters_obj,
                         flow_server_parameters=to_prepend.flow_server_parameters_obj,
+                        queued_at=state.created_at,
                     )
                 )
             fetched_queue = prepended + fetched_queue
@@ -541,6 +555,7 @@ async def simulate_trigger(
             flow_server_parameters=flow_server_parameters,
             source=source,
             version=client_info.version,
+            user_created_at=client_info.user_created_at,
         )
         logger.info(f"Triggered {flow.slug}")
         ClientFlowStatsPreparer(state.stats).incr_triggered(
@@ -715,7 +730,12 @@ async def fetch_and_simulate_trigger(
             )
 
     for rule in flow.rules:
-        if check_flow_predicate(rule.condition, version=client_info.version):
+        if check_flow_predicate(
+            rule.condition,
+            version=client_info.version,
+            time_in_queue=0,
+            account_age=int(state.created_at) - client_info.user_created_at,
+        ):
             logger.debug(
                 f"Applying rule for {flow.slug}, checked with version={client_info.version}: {rule.model_dump_json()}"
             )
@@ -921,7 +941,10 @@ async def check_skip_preconditions(
             return True
 
     if state.current.flow_screen.rules.peek is not None and check_flow_predicate(
-        state.current.flow_screen.rules.peek, version=client_info.version
+        state.current.flow_screen.rules.peek,
+        version=client_info.version,
+        time_in_queue=int(state.created_at - state.current.queued_at),
+        account_age=int(state.created_at) - client_info.user_created_at,
     ):
         logger.debug(
             f"Should skip because the peek rule for {state.current.screen.slug} passed"

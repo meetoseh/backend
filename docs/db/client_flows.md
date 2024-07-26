@@ -209,6 +209,9 @@ See also: [client flows](../concepts/clients_flows/README.md)
     `None gt 5` is False, and so is `None lt 5`, and so is `None eq 5`.
     Generally you should never compare this with `lt`, instead, use `ltn` (less
     than or null)
+  - `time_in_queue (int)`: how many seconds this screen has been in the users
+    screen queue. Always 0 at trigger time.
+  - `account_age (int)`: the age of the account in seconds
 
 - `flags (integer not null)`: a bitfield for configuring this flow. The flags are,
   from least significant to most significant bit:

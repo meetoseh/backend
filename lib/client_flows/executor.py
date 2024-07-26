@@ -142,6 +142,8 @@ async def try_and_store_simulation_result(
                 )
             )
         elif mutation.type == "prepend":
+            if not mutation.screens:
+                continue
             sql = io.StringIO()
             sql.write(target_user_cte)
             qargs = target_user_cte_qargs.copy()
@@ -226,7 +228,8 @@ async def try_and_store_simulation_result(
             " user_client_screens.outer_counter,"
             " user_client_screens.screen,"
             " user_client_screens.flow_client_parameters,"
-            " user_client_screens.flow_server_parameters "
+            " user_client_screens.flow_server_parameters,"
+            " user_client_screens.added_at "
             "FROM users, user_client_screens "
             "WHERE"
             " users.sub = ?"
@@ -271,6 +274,7 @@ async def try_and_store_simulation_result(
                 outer_counter=row[1],
                 flow_client_parameters=json.loads(row[3]),
                 flow_server_parameters=json.loads(row[4]),
+                queued_at=row[5],
             )
         )
 
@@ -288,6 +292,7 @@ class TryAndPreparePopResultSuccess:
     """
 
     type: Literal["success"]
+    user_created_at: float
     state: ClientFlowSimulatorState
 
 
@@ -316,6 +321,7 @@ class TryAndPreparePopResultDesync:
     """
 
     type: Literal["desync"]
+    user_created_at: float
     state: ClientFlowSimulatorState
 
 
@@ -360,7 +366,7 @@ async def try_and_prepare_pop(
     response = await cursor.executeunified3(
         (
             (
-                "SELECT 1 FROM users WHERE sub=?",
+                "SELECT created_at FROM users WHERE sub=?",
                 [client_info.user_sub],
             ),
             (
@@ -369,7 +375,8 @@ async def try_and_prepare_pop(
                 " user_client_screens.outer_counter,"
                 " user_client_screens.screen,"
                 " user_client_screens.flow_client_parameters,"
-                " user_client_screens.flow_server_parameters "
+                " user_client_screens.flow_server_parameters,"
+                " user_client_screens.added_at "
                 "FROM users, user_client_screens "
                 "WHERE"
                 " users.sub = ?"
@@ -383,6 +390,8 @@ async def try_and_prepare_pop(
 
     if not response[0].results:
         return TryAndPreparePopResultUserNotFound(type="user_not_found")
+
+    user_created_at = cast(float, response[0].results[0][0])
 
     queue: List[ClientFlowSimulatorScreen] = []
     for row in response[1].results or []:
@@ -407,12 +416,14 @@ async def try_and_prepare_pop(
                 outer_counter=row[1],
                 flow_client_parameters=json.loads(row[3]),
                 flow_server_parameters=json.loads(row[4]),
+                queued_at=row[5],
             )
         )
 
     if not queue or queue[0].user_client_screen_uid != expected_front_uid:
         return TryAndPreparePopResultDesync(
             type="desync",
+            user_created_at=user_created_at,
             state=init_simulator_from_peek(
                 front=queue[0] if queue else None,
                 queue=queue if expecting_bad_screens else None,
@@ -421,6 +432,7 @@ async def try_and_prepare_pop(
 
     return TryAndPreparePopResultSuccess(
         type="success",
+        user_created_at=user_created_at,
         state=init_simulator_from_pop(
             to_pop=queue[0],
             second=queue[1] if len(queue) > 1 else None,
@@ -434,6 +446,7 @@ class TryAndPreparePeekResultSuccess:
     """We successfully initialized a simulator"""
 
     type: Literal["success"]
+    user_created_at: float
     state: ClientFlowSimulatorState
 
 
@@ -492,7 +505,7 @@ async def try_and_prepare_peek(
     response = await cursor.executeunified3(
         (
             (
-                "SELECT 1 FROM users WHERE sub=?",
+                "SELECT created_at FROM users WHERE sub=?",
                 [client_info.user_sub],
             ),
             (
@@ -501,7 +514,8 @@ async def try_and_prepare_peek(
                 " user_client_screens.outer_counter,"
                 " user_client_screens.screen,"
                 " user_client_screens.flow_client_parameters,"
-                " user_client_screens.flow_server_parameters "
+                " user_client_screens.flow_server_parameters,"
+                " user_client_screens.added_at "
                 "FROM users, user_client_screens "
                 "WHERE"
                 " users.sub = ?"
@@ -515,6 +529,8 @@ async def try_and_prepare_peek(
 
     if not response[0].results:
         return TryAndPreparePeekResultUserNotFound(type="user_not_found")
+
+    user_created_at = cast(float, response[0].results[0][0])
 
     queue: List[ClientFlowSimulatorScreen] = []
     for row in response[1].results or []:
@@ -539,11 +555,13 @@ async def try_and_prepare_peek(
                 outer_counter=row[1],
                 flow_client_parameters=json.loads(row[3]),
                 flow_server_parameters=json.loads(row[4]),
+                queued_at=row[5],
             )
         )
 
     return TryAndPreparePeekResultSuccess(
         type="success",
+        user_created_at=user_created_at,
         state=init_simulator_from_peek(
             front=queue[0] if queue else None,
             queue=queue if expecting_bad_screens else None,
@@ -626,6 +644,7 @@ def get_prefetch_screens_from_state(
                         outer_counter=screen.outer_counter,
                         flow_client_parameters=screen.flow_client_parameters_obj,
                         flow_server_parameters=screen.flow_server_parameters_obj,
+                        queued_at=state.created_at,
                     )
                 )
             return GetPrefetchScreensResultSuccess(type="success", prefetch=result)
@@ -681,7 +700,8 @@ async def get_prefetch_screens(
                 " user_client_screens.outer_counter,"
                 " user_client_screens.screen,"
                 " user_client_screens.flow_client_parameters,"
-                " user_client_screens.flow_server_parameters "
+                " user_client_screens.flow_server_parameters,"
+                " user_client_screens.added_at "
                 "FROM users, user_client_screens "
                 "WHERE"
                 " users.sub = ?"
@@ -734,6 +754,7 @@ async def get_prefetch_screens(
                 outer_counter=row[1],
                 flow_client_parameters=json.loads(row[3]),
                 flow_server_parameters=json.loads(row[4]),
+                queued_at=row[5],
             )
         )
 
@@ -777,7 +798,7 @@ async def execute_peek(
     needs to display the front of their queue.
     """
     client_info = ClientFlowSimulatorClientInfo(
-        user_sub=user_sub, platform=platform, version=version
+        user_sub=user_sub, platform=platform, version=version, user_created_at=-1
     )
     expecting_bad_screens = False
     num_races = 0
@@ -802,6 +823,7 @@ async def execute_peek(
             continue
 
         assert prepared_peek.type == "success"
+        client_info.user_created_at = int(prepared_peek.user_created_at)
 
         for _ in range(5):
             if trigger is not None:
@@ -833,6 +855,7 @@ async def execute_peek(
             read_consistency = "weak"
             prepared_peek = TryAndPreparePeekResultSuccess(
                 type="success",
+                user_created_at=client_info.user_created_at,
                 state=init_simulator_from_peek(
                     front=store_result.first,
                 ),
@@ -922,7 +945,7 @@ async def execute_pop(
             of their screen queue
     """
     client_info = ClientFlowSimulatorClientInfo(
-        user_sub=user_sub, platform=platform, version=version
+        user_sub=user_sub, platform=platform, version=version, user_created_at=-1
     )
     expecting_bad_screens = False
     num_races = 0
@@ -956,6 +979,7 @@ async def execute_pop(
             continue
 
         assert prepared_pop.type in ("success", "desync"), prepared_pop
+        client_info.user_created_at = int(prepared_pop.user_created_at)
 
         for _ in range(5):
             logger.debug(
@@ -1066,6 +1090,7 @@ async def execute_pop(
                 )
                 prepared_pop = TryAndPreparePopResultSuccess(
                     type="success",
+                    user_created_at=client_info.user_created_at,
                     state=init_simulator_from_pop(
                         to_pop=store_result.first,
                         second=store_result.second,
@@ -1076,6 +1101,7 @@ async def execute_pop(
                 logger.info(f"Pop for {user_sub=} is desync after failed store")
                 prepared_pop = TryAndPreparePopResultDesync(
                     type="desync",
+                    user_created_at=client_info.user_created_at,
                     state=init_simulator_from_peek(
                         front=store_result.first,
                     ),

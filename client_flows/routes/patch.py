@@ -929,7 +929,7 @@ def check_preconditions(
             (
                 json.dumps(
                     client_flow_rules_adapter.dump_python(
-                        preconditions.rules, exclude_unset=True
+                        preconditions.rules, exclude_none=True
                     ),
                     sort_keys=True,
                 )
@@ -1094,7 +1094,7 @@ def _checked_client_flows(
         qargs.append(
             json.dumps(
                 client_flow_rules_adapter.dump_python(
-                    precondition.rules, exclude_unset=True
+                    precondition.rules, exclude_none=True
                 ),
                 sort_keys=True,
             )
@@ -1160,7 +1160,7 @@ def do_patch(
         updates.append("rules = ?")
         update_qargs.append(
             json.dumps(
-                client_flow_rules_adapter.dump_python(patch.rules, exclude_unset=True),
+                client_flow_rules_adapter.dump_python(patch.rules, exclude_none=True),
                 sort_keys=True,
             )
         )

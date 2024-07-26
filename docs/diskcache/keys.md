@@ -495,6 +495,9 @@ the keys we store locally on backend instances via diskcache
   (it is an EmailImageLookupResult). Always set to expire about 8 hours after it was last
   checked.
 
+- `sticky_random_group_number:{name}` goes to a string containing the 256-bit random number
+  associated with the group with the given name, as bytes. See `lib/sticky_random_groups.py`
+
 ## Personalization
 
 This contains keys for the personalization subspace

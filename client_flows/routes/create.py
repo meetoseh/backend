@@ -123,7 +123,7 @@ WHERE
                 encode_flow_screens(flow.screens),
                 json.dumps(
                     client_flow_rules_adapter.dump_python(
-                        flow.rules, exclude_unset=True
+                        flow.rules, exclude_none=True
                     ),
                     sort_keys=True,
                 ),

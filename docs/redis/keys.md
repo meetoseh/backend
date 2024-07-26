@@ -3972,6 +3972,7 @@ These are regular keys used by the personalization module
 
 - `ps:journal_chats:{uid}:events` is used by the journal chat websocket endpoint
   for streaming events to clients. Messages are formatted as (uint32, blob, uint64, blob) where the parts are:
+
   - size of the first blob
   - journal master key uid
   - size of the second blob
@@ -3992,3 +3993,15 @@ These are regular keys used by the personalization module
         - `event`: the event to forward, which is enum-discriminated by type, where type is one of
           `thinking-bar`, `thinking-spinner`, or `error`, and the rest can be found by reading the
           websocket documentation for `/api/2/journals/chat` (specifically the events there)
+
+- `ps:sticky_random_group_numbers` is used by `lib/sticky_random_groups.py` to keep
+  sticky random numbers associated with group names in sync, since the name of the
+  group is allowed to change. Messages are formatted as `(uint32, blob, uint8[, 256 bit blob])`
+  where the parts are:
+  - length of the group name
+  - the group name
+  - either `0x00` to indicate the group should be purged, or `0x01` to indicate the group
+    should be set to the given random number
+  - the 256 bit random number to associate with the group name (only if the previous byte
+    is `0x01`)
+    all numbers are big-endian encoded.

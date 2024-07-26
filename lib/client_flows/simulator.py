@@ -260,6 +260,7 @@ async def simulate_add_screens(
     source: ClientFlowSource,
     version: Optional[int],
     user_created_at: int,
+    user_sub: str,
     flow: ClientFlow,
     flow_client_parameters: dict,
     flow_server_parameters: dict,
@@ -282,11 +283,13 @@ async def simulate_add_screens(
     screen_stats = ClientScreenStatsPreparer(state.stats)
     assigned_current = False
     for idx, raw_flow_screen in enumerate(flow.screens):
-        if raw_flow_screen.rules.trigger is not None and check_flow_predicate(
+        if raw_flow_screen.rules.trigger is not None and await check_flow_predicate(
+            itgs,
             raw_flow_screen.rules.trigger,
             version=version,
             time_in_queue=0,
             account_age=int(state.created_at) - user_created_at,
+            user_sub=user_sub,
         ):
             logger.info(
                 f"Skipping {flow.slug} screen {idx + 1} of {len(flow.screens)} (a {raw_flow_screen.screen.slug} screen) - trigger predicate passed"
@@ -555,6 +558,7 @@ async def simulate_trigger(
             flow_server_parameters=flow_server_parameters,
             source=source,
             version=client_info.version,
+            user_sub=client_info.user_sub,
             user_created_at=client_info.user_created_at,
         )
         logger.info(f"Triggered {flow.slug}")
@@ -730,9 +734,11 @@ async def fetch_and_simulate_trigger(
             )
 
     for rule in flow.rules:
-        if check_flow_predicate(
+        if await check_flow_predicate(
+            itgs,
             rule.condition,
             version=client_info.version,
+            user_sub=client_info.user_sub,
             time_in_queue=0,
             account_age=int(state.created_at) - client_info.user_created_at,
         ):
@@ -940,9 +946,11 @@ async def check_skip_preconditions(
             )
             return True
 
-    if state.current.flow_screen.rules.peek is not None and check_flow_predicate(
+    if state.current.flow_screen.rules.peek is not None and await check_flow_predicate(
+        itgs,
         state.current.flow_screen.rules.peek,
         version=client_info.version,
+        user_sub=client_info.user_sub,
         time_in_queue=int(state.created_at - state.current.queued_at),
         account_age=int(state.created_at) - client_info.user_created_at,
     ):

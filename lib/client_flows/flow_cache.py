@@ -158,7 +158,7 @@ def convert_to_raw(client_flow: ClientFlow) -> bytes:
             "screens": encode_flow_screens(client_flow.screens),
             "flags": int(client_flow.flags),
             "rules": client_flow_rules_adapter.dump_python(
-                client_flow.rules, exclude_unset=True
+                client_flow.rules, exclude_none=True
             ),
         }
     ).encode("utf-8")

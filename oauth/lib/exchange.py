@@ -611,9 +611,14 @@ async def initialize_user_from_info(
                 channel="oseh_bot",
             )
 
-        if interpreted_claims.given_name is not None and 'anon' not in interpreted_claims.given_name.lower():
-            await send_welcome_email(itgs, user_sub=user.user_sub, name=interpreted_claims.given_name)
-            
+        if (
+            interpreted_claims.given_name is not None
+            and "anon" not in interpreted_claims.given_name.lower()
+        ):
+            await send_welcome_email(
+                itgs, user_sub=user.user_sub, name=interpreted_claims.given_name
+            )
+
         return user
 
     raise OauthInternalException(
@@ -1801,7 +1806,9 @@ async def _trigger_signup(
     interpreted_claims: InterpretedClaims,
     now: float,
 ) -> List[_CreateQuery]:
-    flow_slug = "signup"  # todo: could be based on visitor information, if any can be found
+    flow_slug = (
+        "signup"  # todo: could be based on visitor information, if any can be found
+    )
 
     flow = await get_client_flow(itgs, slug=flow_slug)
     if flow is None:
@@ -1817,7 +1824,7 @@ async def _trigger_signup(
         platform="server",
         version=None,
         slug=flow_slug,
-        trusted=True
+        trusted=True,
     )
     await simulate_add_screens(
         itgs,
@@ -1828,6 +1835,7 @@ async def _trigger_signup(
         flow_client_parameters={},
         flow_server_parameters={},
         user_created_at=int(now),
+        user_sub=user_sub,
     )
 
     result: List[_CreateQuery] = []
@@ -1836,9 +1844,9 @@ async def _trigger_signup(
             mutation.screens
             result.append(
                 _prepend_screens(
-                    mutation.screens, 
-                    now=now, 
-                    user_sub=user_sub, 
+                    mutation.screens,
+                    now=now,
+                    user_sub=user_sub,
                     stats=simulator_state.stats if idx == 0 else RedisStatsPreparer(),
                     identity_uid=identity_uid,
                     provider=provider,

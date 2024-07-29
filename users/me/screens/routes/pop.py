@@ -1,16 +1,19 @@
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
+from interactive_prompts.events.routes.join import get_user_created_at
 from lib.client_flows.executor import (
     UntrustedTrigger,
     TrustedTrigger,
     execute_peek,
     execute_pop,
 )
-from models import STANDARD_ERRORS_BY_CODE
+from models import AUTHORIZATION_UNKNOWN_TOKEN, STANDARD_ERRORS_BY_CODE
 from typing import Annotated, Any, Optional
 from itgs import Itgs
 import auth as std_auth
+from users.lib.stats import on_user_is_active
 import users.me.screens.auth
 
 from users.me.screens.lib.realize_screens import realize_screens
@@ -72,6 +75,19 @@ async def pop_screen(
         std_auth_result = await std_auth.auth_any(itgs, authorization)
         if std_auth_result.result is None:
             return std_auth_result.error_response
+
+        user_created_at = await get_user_created_at(
+            itgs, sub=std_auth_result.result.sub
+        )
+        if user_created_at is None:
+            return AUTHORIZATION_UNKNOWN_TOKEN
+        await on_user_is_active(
+            itgs,
+            std_auth_result.result.sub,
+            user_created_at=user_created_at,
+            active_at=time.time(),
+        )
+
         screen_auth_result = await users.me.screens.auth.auth_any(
             itgs, args.screen_jwt, prefix=None
         )

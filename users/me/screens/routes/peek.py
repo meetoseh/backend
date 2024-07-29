@@ -1,9 +1,12 @@
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Annotated, Optional
+from interactive_prompts.events.routes.join import get_user_created_at
 from lib.client_flows.executor import execute_peek
+from users.lib.stats import on_user_is_active
 from users.me.screens.lib.realize_screens import realize_screens
-from models import STANDARD_ERRORS_BY_CODE
+from models import AUTHORIZATION_UNKNOWN_TOKEN, STANDARD_ERRORS_BY_CODE
 from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
 from itgs import Itgs
@@ -37,6 +40,16 @@ async def peek_screen(
         auth_result = await auth.auth_any(itgs, authorization)
         if auth_result.result is None:
             return auth_result.error_response
+
+        user_created_at = await get_user_created_at(itgs, sub=auth_result.result.sub)
+        if user_created_at is None:
+            return AUTHORIZATION_UNKNOWN_TOKEN
+        await on_user_is_active(
+            itgs,
+            auth_result.result.sub,
+            user_created_at=user_created_at,
+            active_at=time.time(),
+        )
 
         screen = await execute_peek(
             itgs,

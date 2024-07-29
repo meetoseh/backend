@@ -103,11 +103,11 @@ async def join_interactive_prompt(
         if result.result is None:
             return result.error_response
 
-        await users.lib.stats.on_interactive_prompt_session_started(
+        await users.lib.stats.on_user_is_active(
             itgs,
             auth_result.result.user_sub,
             user_created_at=user_created_at,
-            started_at=result.result.created_at,
+            active_at=result.result.created_at,
         )
         await interactive_prompts.lib.stats.on_interactive_prompt_session_started(
             itgs,

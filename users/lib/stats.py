@@ -4,6 +4,7 @@ rqlite, since that is done by the jobs repo.
 
 This is not an exhausitive list of callbacks: see also interactive_prompts/lib/stats.py
 """
+
 from itgs import Itgs
 from redis_helpers.set_if_lower import set_if_lower, ensure_set_if_lower_script_exists
 import pytz
@@ -57,12 +58,12 @@ async def on_user_created(itgs: Itgs, sub: str, created_at: float) -> None:
         await pipe.execute()
 
 
-async def on_interactive_prompt_session_started(
-    itgs: Itgs, sub: str, *, user_created_at: float, started_at: float
+async def on_user_is_active(
+    itgs: Itgs, sub: str, *, user_created_at: float, active_at: float
 ) -> None:
     """Updates user-related statistics as a result of a user with the given
-    sub starting an interactive prompt session at the given time, which is assumed to be
-    near the current clock time.
+    sub being active at the given time, which is assumed to be near the current
+    clock time.
 
     This impacts the following keys, which are described in docs/redis/keys.md
 
@@ -78,9 +79,9 @@ async def on_interactive_prompt_session_started(
 
     Args:
         itgs (Itgs): The integrations for networked services
-        sub (str): The sub of the user that started a interactive prompt session
+        sub (str): The sub of the user that was active
         user_created_at (float): The time the user was created
-        started_at (float): The time the interactive prompt session started
+        active_at (float): The time the user was active
     """
     redis = await itgs.redis()
 
@@ -88,10 +89,10 @@ async def on_interactive_prompt_session_started(
         user_created_at, tz=STATS_TIMEZONE
     )
     started_at_unix_date = unix_dates.unix_timestamp_to_unix_date(
-        started_at, tz=STATS_TIMEZONE
+        active_at, tz=STATS_TIMEZONE
     )
     started_at_unix_month = unix_dates.unix_timestamp_to_unix_month(
-        started_at, tz=STATS_TIMEZONE
+        active_at, tz=STATS_TIMEZONE
     )
 
     await ensure_set_if_lower_script_exists(redis)

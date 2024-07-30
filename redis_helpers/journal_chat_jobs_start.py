@@ -20,7 +20,7 @@ local first_event = ARGV[8]
 local user_queued = redis.call("GET", "journals:count_queued_journal_chat_jobs_by_user:" .. user_sub)
 if user_queued ~= false then
     local num_user_queued = tonumber(user_queued)
-    local limit = is_user_pro and 3 or 1
+    local limit = is_user_pro and 4 or 2
     if num_user_queued >= limit then
         return {-1, num_user_queued, limit}
     end

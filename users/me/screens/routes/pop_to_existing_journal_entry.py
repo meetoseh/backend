@@ -7,6 +7,7 @@ from lib.client_flows.executor import (
     ClientScreenQueuePeekInfo,
     TrustedTrigger,
     execute_peek,
+    execute_pop,
 )
 from models import STANDARD_ERRORS_BY_CODE
 from users.me.screens.lib.realize_screens import realize_screens
@@ -130,8 +131,9 @@ WHERE
             )
             return await _realize(screen)
 
-        screen = await execute_peek(
+        screen = await execute_pop(
             itgs,
+            expected_front_uid=screen_auth_result.result.user_client_screen_uid,
             user_sub=std_auth_result.result.sub,
             platform=platform,
             version=version,

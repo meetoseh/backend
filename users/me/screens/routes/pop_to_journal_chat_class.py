@@ -71,7 +71,7 @@ class PopToJournalChatClassRequest(BaseModel):
     screen_jwt: str = Field(description="The JWT which lets you pop the screen")
     trigger: PopToJournalChatClassParametersTriggerRequest = Field(
         description=(
-            "The client flow to trigger with server parameters set with the journey"
+            "The client flow to trigger with server parameters set with the journey and journal entry"
         ),
     )
 
@@ -141,6 +141,7 @@ async def pop_screen_to_journal_chat_class(
             entry_auth_result.result is None
             or entry_auth_result.result.journal_entry_uid
             != args.trigger.parameters.journal_entry_uid
+            or entry_auth_result.result.user_sub != user_sub
         ):
             logger.warning(
                 f"journal chat class pop: journal entry auth failed ({entry_auth_result})"
@@ -271,6 +272,7 @@ async def pop_screen_to_journal_chat_class(
                     client_parameters={},
                     server_parameters={
                         "journey": lookup_result.journey_uid,
+                        "journal_entry": args.trigger.parameters.journal_entry_uid,
                     },
                 )
             ),

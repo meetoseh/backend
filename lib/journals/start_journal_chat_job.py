@@ -10,7 +10,7 @@ from lib.journals.journal_chat_redis_packet import (
 )
 from lib.journals.journal_chat_task import JournalChatTask
 from lib.journals.journal_entry_item_data import JournalEntryItemData
-from lib.journals.journal_stats import JournalStats
+from lib.journals.journal_chat_job_stats import JournalChatJobStats
 from lib.journals.master_keys import (
     GetJournalMasterKeyForDecryptionResult,
     GetJournalMasterKeyForDecryptionResultSuccess,
@@ -27,6 +27,17 @@ import unix_dates
 from users.lib.entitlements import get_entitlement
 from users.lib.timezones import get_user_timezone
 import pytz
+
+
+@dataclass
+class StartJournalChatJobResultLocked:
+    type: Literal["locked"]
+    """
+    - `locked`: for the journal entry with the given uid there is already a
+      journal chat job responsible for streaming and/or modifying the items
+    """
+    journal_chat_uid: str
+    """The UID of the journal chat job that is locking the journal entry"""
 
 
 @dataclass
@@ -143,6 +154,16 @@ class RefreshJournalEntryItemSuccess:
     """The journal chat uid that was created"""
 
 
+@dataclass
+class SyncJournalEntrySuccess:
+    type: Literal["success"]
+    """
+    - `success`: the job was successfully started
+    """
+    journal_chat_uid: str
+    """The journal chat uid that was created"""
+
+
 system_timezone = pytz.timezone("America/Los_Angeles")
 
 
@@ -153,6 +174,7 @@ async def create_journal_entry_with_greeting(
     user_sub: str,
     now: float,
 ) -> Union[
+    StartJournalChatJobResultLocked,
     StartJournalChatJobResultRatelimited,
     StartJournalChatJobResultUserNotFound,
     StartJournalChatJobResultEncryptionFailed,
@@ -171,8 +193,8 @@ async def create_journal_entry_with_greeting(
         now (float): the current time in seconds since the unix epoch
     """
     system_unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=system_timezone)
-    stats = JournalStats(RedisStatsPreparer())
-    stats.incr_greetings_requested(unix_date=system_unix_date)
+    stats = JournalChatJobStats(RedisStatsPreparer())
+    stats.incr_requested(type=b"greeting", unix_date=system_unix_date)
 
     conn = await itgs.conn()
     cursor = conn.cursor()
@@ -182,8 +204,10 @@ async def create_journal_entry_with_greeting(
 
     pro_entitlement = await get_entitlement(itgs, user_sub=user_sub, identifier="pro")
     if pro_entitlement is None:
-        stats.incr_greetings_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:user_not_found"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"greeting",
+            reason=b"user_not_found",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultUserNotFound(
@@ -194,8 +218,10 @@ async def create_journal_entry_with_greeting(
         itgs, user_sub=user_sub, now=now
     )
     if journal_master_key.type != "success":
-        stats.incr_greetings_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:encryption_failed"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"greeting",
+            reason=b"encryption_failed",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultEncryptionFailed(
@@ -229,8 +255,10 @@ FROM users WHERE users.sub=?
     )
 
     if response.rows_affected is None or response.rows_affected < 1:
-        stats.incr_greetings_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:user_not_found"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"greeting",
+            reason=b"user_not_found",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultUserNotFound(
@@ -240,7 +268,11 @@ FROM users WHERE users.sub=?
 
     encrypted_task_base64url = journal_master_key.journal_master_key.encrypt_at_time(
         JournalChatTask.__pydantic_serializer__.to_json(
-            JournalChatTask(type="greeting", conversation=[], replace_index=None)
+            JournalChatTask(
+                type="greeting",
+                include_previous_history=True,
+                replace_entry_item_uid=None,
+            )
         ),
         int(now),
     )
@@ -283,13 +315,12 @@ FROM users WHERE users.sub=?
         )
 
     if result.type == "backpressure":
-        stats.incr_greetings_failed_before_queued(
-            unix_date=system_unix_date,
-            extra=(
-                b"queue:backpressure:pro"
-                if pro_entitlement.is_active
-                else b"queue:backpressure:free"
-            ),
+        stats.incr_failed_to_queue_ratelimited(
+            requested_at_unix_date=system_unix_date,
+            type=b"greeting",
+            resource=b"total_queued_jobs",
+            at=result.at,
+            limit=result.limit,
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultRatelimited(
@@ -299,13 +330,12 @@ FROM users WHERE users.sub=?
             limit=result.limit,
         )
     if result.type == "ratelimited":
-        stats.incr_greetings_failed_before_queued(
-            unix_date=system_unix_date,
-            extra=(
-                b"queue:ratelimited:pro"
-                if pro_entitlement.is_active
-                else b"queue:ratelimited:free"
-            ),
+        stats.incr_failed_to_queue_ratelimited(
+            requested_at_unix_date=system_unix_date,
+            type=b"greeting",
+            resource=b"user_queued_jobs",
+            at=result.at,
+            limit=result.limit,
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultRatelimited(
@@ -314,7 +344,18 @@ FROM users WHERE users.sub=?
             at=result.at,
             limit=result.limit,
         )
+    if result.type == "locked":
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date, type=b"greeting", reason=b"locked"
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultLocked(
+            type="locked",
+            journal_chat_uid=result.locked_by_journal_chat_uid.decode("utf-8"),
+        )
+
     assert result.type == "succeeded"
+    stats.incr_queued(requested_at_unix_date=system_unix_date, type=b"greeting")
     await stats.stats.store(itgs)
     return CreateJournalEntryWithGreetingSuccess(
         type="success",
@@ -332,6 +373,7 @@ async def refresh_journal_entry_greeting(
     journal_entry_item_uid: str,
     now: float,
 ) -> Union[
+    StartJournalChatJobResultLocked,
     StartJournalChatJobResultRatelimited,
     StartJournalChatJobResultJournalEntryNotFound,
     StartJournalChatJobResultJournalEntryItemNotFound,
@@ -343,8 +385,15 @@ async def refresh_journal_entry_greeting(
 
 
 async def add_journal_entry_chat(
-    itgs: Itgs, /, *, user_sub: str, journal_entry_uid: str, now: float
+    itgs: Itgs,
+    /,
+    *,
+    user_sub: str,
+    journal_entry_uid: str,
+    now: float,
+    include_previous_history: bool,
 ) -> Union[
+    StartJournalChatJobResultLocked,
     StartJournalChatJobResultRatelimited,
     StartJournalChatJobResultUserNotFound,
     StartJournalChatJobResultJournalEntryNotFound,
@@ -367,18 +416,23 @@ async def add_journal_entry_chat(
         journal_entry_uid (str): the uid of the journal entry to add a system
             message to
         now (float): the current time in seconds since the unix epoch
+        include_previous_history (bool): Generally, false for clients with version
+            73 or lower, true otherwise. Determines if we will include the greeting
+            and user message in the chat state.
 
     Returns:
         Either that this succeeded, or why it failed
     """
     system_unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=system_timezone)
-    stats = JournalStats(RedisStatsPreparer())
-    stats.incr_system_chats_requested(unix_date=system_unix_date, extra=b"initial")
+    stats = JournalChatJobStats(RedisStatsPreparer())
+    stats.incr_requested(unix_date=system_unix_date, type=b"system_chat")
 
     pro_entitlement = await get_entitlement(itgs, user_sub=user_sub, identifier="pro")
     if pro_entitlement is None:
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:user_not_found"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            reason=b"user_not_found",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultUserNotFound(
@@ -426,8 +480,10 @@ ORDER BY journal_entry_items.entry_counter ASC
     if not response[0].results:
         assert not response[1].results, response
         assert not response[2].results, response
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:user_not_found"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            reason=b"user_not_found",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultUserNotFound(
@@ -437,8 +493,10 @@ ORDER BY journal_entry_items.entry_counter ASC
 
     if not response[1].results:
         assert not response[2].results, response
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:journal_entry_not_found"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            reason=b"journal_entry_not_found",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultJournalEntryNotFound(
@@ -447,8 +505,10 @@ ORDER BY journal_entry_items.entry_counter ASC
         )
 
     if not response[2].results:
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:bad_state"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            reason=b"bad_state",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultBadState(
@@ -474,8 +534,10 @@ ORDER BY journal_entry_items.entry_counter ASC
                 journal_master_key_uid=row_user_journal_master_key_uid,
             )
             if row_journal_master_key_raw.type != "success":
-                stats.incr_system_chats_failed_before_queued(
-                    unix_date=system_unix_date, extra=b"queue:decryption_failed"
+                stats.incr_failed_to_queue_simple(
+                    requested_at_unix_date=system_unix_date,
+                    type=b"system_chat",
+                    reason=b"decryption_failed",
                 )
                 await stats.stats.store(itgs)
                 return StartJournalChatJobResultDecryptionFailed(
@@ -499,8 +561,10 @@ ORDER BY journal_entry_items.entry_counter ASC
     del journal_master_keys_for_decr_by_uid
 
     if conversation[-1].type != "chat":
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:bad_state"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            reason=b"bad_state",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultBadState(
@@ -509,21 +573,26 @@ ORDER BY journal_entry_items.entry_counter ASC
         )
 
     if conversation[-1].display_author != "self":
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:bad_state"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            reason=b"bad_state",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultBadState(
             type="bad_state",
             detail="last chat in journal entry was not from the user",
         )
+    del conversation
 
     journal_master_key = await get_journal_master_key_for_encryption(
         itgs, user_sub=user_sub, now=now
     )
     if journal_master_key.type != "success":
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date, extra=b"queue:encryption_failed"
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            reason=b"encryption_failed",
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultEncryptionFailed(
@@ -533,10 +602,13 @@ ORDER BY journal_entry_items.entry_counter ASC
 
     encrypted_task_base64url = journal_master_key.journal_master_key.encrypt(
         JournalChatTask.__pydantic_serializer__.to_json(
-            JournalChatTask(type="chat", conversation=conversation, replace_index=None)
+            JournalChatTask(
+                type="chat",
+                replace_entry_item_uid=None,
+                include_previous_history=include_previous_history,
+            )
         )
     )
-    del conversation
 
     journal_chat_uid = f"oseh_jc_{secrets.token_urlsafe(16)}"
     first_event = serialize_journal_chat_event(
@@ -573,13 +645,12 @@ ORDER BY journal_entry_items.entry_counter ASC
     )
 
     if result.type == "backpressure":
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date,
-            extra=(
-                b"queue:backpressure:pro"
-                if pro_entitlement.is_active
-                else b"queue:backpressure:free"
-            ),
+        stats.incr_failed_to_queue_ratelimited(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            resource=b"total_queued_jobs",
+            at=result.at,
+            limit=result.limit,
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultRatelimited(
@@ -589,13 +660,12 @@ ORDER BY journal_entry_items.entry_counter ASC
             limit=result.limit,
         )
     if result.type == "ratelimited":
-        stats.incr_system_chats_failed_before_queued(
-            unix_date=system_unix_date,
-            extra=(
-                b"queue:ratelimited:pro"
-                if pro_entitlement.is_active
-                else b"queue:ratelimited:free"
-            ),
+        stats.incr_failed_to_queue_ratelimited(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            resource=b"user_queued_jobs",
+            at=result.at,
+            limit=result.limit,
         )
         await stats.stats.store(itgs)
         return StartJournalChatJobResultRatelimited(
@@ -604,7 +674,20 @@ ORDER BY journal_entry_items.entry_counter ASC
             at=result.at,
             limit=result.limit,
         )
+    if result.type == "locked":
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"system_chat",
+            reason=b"locked",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultLocked(
+            type="locked",
+            journal_chat_uid=result.locked_by_journal_chat_uid.decode("utf-8"),
+        )
+
     assert result.type == "succeeded"
+    stats.incr_queued(requested_at_unix_date=system_unix_date, type=b"system_chat")
     await stats.stats.store(itgs)
     return AddJournalEntryItemSuccess(
         type="success",
@@ -621,6 +704,7 @@ async def refresh_journal_entry_chat(
     journal_entry_item_uid: str,
     now: float,
 ) -> Union[
+    StartJournalChatJobResultLocked,
     StartJournalChatJobResultRatelimited,
     StartJournalChatJobResultJournalEntryNotFound,
     StartJournalChatJobResultJournalEntryItemNotFound,
@@ -639,6 +723,7 @@ async def add_journal_entry_reflection_question(
     journal_entry_uid: str,
     now: float,
 ) -> Union[
+    StartJournalChatJobResultLocked,
     StartJournalChatJobResultRatelimited,
     StartJournalChatJobResultJournalEntryNotFound,
     StartJournalChatJobResultDecryptionFailed,
@@ -657,6 +742,7 @@ async def refresh_journal_entry_reflection_question(
     journal_entry_item_uid: str,
     now: float,
 ) -> Union[
+    StartJournalChatJobResultLocked,
     StartJournalChatJobResultRatelimited,
     StartJournalChatJobResultJournalEntryNotFound,
     StartJournalChatJobResultJournalEntryItemNotFound,
@@ -665,3 +751,142 @@ async def refresh_journal_entry_reflection_question(
     StartJournalChatJobResultEncryptionFailed,
     RefreshJournalEntryItemSuccess,
 ]: ...
+
+
+async def sync_journal_entry(
+    itgs: Itgs, /, *, user_sub: str, journal_entry_uid: str, now: float
+) -> Union[
+    StartJournalChatJobResultLocked,
+    StartJournalChatJobResultRatelimited,
+    StartJournalChatJobResultUserNotFound,
+    StartJournalChatJobResultEncryptionFailed,
+    SyncJournalEntrySuccess,
+]:
+    """Creates a new journal chat job which just echoes the current contents
+    of the journal entry with the given uid.
+
+    Args:
+        itgs (Itgs): the integrations to (re)use
+        user_sub (str): the sub of the user to sync the journal entry for
+        journal_entry_uid (str): the uid of the journal entry to sync
+        now (float): the current time in seconds since the unix epoch
+    """
+    system_unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=system_timezone)
+    stats = JournalChatJobStats(RedisStatsPreparer())
+    stats.incr_requested(unix_date=system_unix_date, type=b"sync")
+
+    pro_entitlement = await get_entitlement(itgs, user_sub=user_sub, identifier="pro")
+    if pro_entitlement is None:
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"sync",
+            reason=b"user_not_found",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultUserNotFound(
+            type="user_not_found", user_sub=user_sub
+        )
+
+    journal_master_key = await get_journal_master_key_for_encryption(
+        itgs, user_sub=user_sub, now=now
+    )
+    if journal_master_key.type != "success":
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"sync",
+            reason=b"encryption_failed",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultEncryptionFailed(
+            type="encryption_failed",
+            master_key=journal_master_key,
+        )
+
+    journal_chat_uid = f"oseh_jc_{secrets.token_urlsafe(16)}"
+    encrypted_task_base64url = journal_master_key.journal_master_key.encrypt_at_time(
+        JournalChatTask.__pydantic_serializer__.to_json(
+            JournalChatTask(
+                type="sync", replace_entry_item_uid=None, include_previous_history=True
+            )
+        ),
+        int(now),
+    )
+    first_event = serialize_journal_chat_event(
+        journal_master_key=journal_master_key,
+        event=JournalChatRedisPacketPassthrough(
+            counter=0,
+            type="passthrough",
+            event=EventBatchPacketDataItemDataThinkingSpinner(
+                type="thinking-spinner",
+                message="Waiting in the "
+                + ("priority" if pro_entitlement.is_active else "regular")
+                + " queue",
+                detail=(
+                    "Upgrade to Oseh+ to access the priority queue"
+                    if not pro_entitlement.is_active
+                    else None
+                ),
+            ),
+        ),
+        now=now,
+    )
+
+    result = await safe_journal_chat_jobs_start(
+        itgs,
+        user_sub=user_sub.encode("utf-8"),
+        is_user_pro=pro_entitlement.is_active,
+        journal_chat_uid=journal_chat_uid.encode("utf-8"),
+        journal_entry_uid=journal_entry_uid.encode("utf-8"),
+        journal_master_key_uid=journal_master_key.journal_master_key_uid.encode(
+            "utf-8"
+        ),
+        encrypted_task_base64url=encrypted_task_base64url,
+        queued_at=int(now),
+        first_event=first_event,
+    )
+    if result.type == "backpressure":
+        stats.incr_failed_to_queue_ratelimited(
+            requested_at_unix_date=system_unix_date,
+            type=b"sync",
+            resource=b"total_queued_jobs",
+            at=result.at,
+            limit=result.limit,
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultRatelimited(
+            type="ratelimited",
+            resource="total_queued_jobs",
+            at=result.at,
+            limit=result.limit,
+        )
+    if result.type == "ratelimited":
+        stats.incr_failed_to_queue_ratelimited(
+            requested_at_unix_date=system_unix_date,
+            type=b"sync",
+            resource=b"user_queued_jobs",
+            at=result.at,
+            limit=result.limit,
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultRatelimited(
+            type="ratelimited",
+            resource="user_queued_jobs",
+            at=result.at,
+            limit=result.limit,
+        )
+    if result.type == "locked":
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date, type=b"sync", reason=b"locked"
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultLocked(
+            type="locked",
+            journal_chat_uid=result.locked_by_journal_chat_uid.decode("utf-8"),
+        )
+
+    assert result.type == "succeeded"
+    await stats.stats.store(itgs)
+    return SyncJournalEntrySuccess(
+        type="success",
+        journal_chat_uid=journal_chat_uid,
+    )

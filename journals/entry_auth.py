@@ -23,9 +23,12 @@ class SuccessfulAuthResult:
     journal_entry_uid: str
     """The UID of the journal entry the user can respond to"""
 
-    journal_client_key_uid: str
+    journal_client_key_uid: Optional[str]
     """The UID of the journal client key that will be used as an additional layer
     of encryption when communicating between the server and the client
+
+    DEPRECATED: Prefer to send the client key uid separately; it does not need to be
+    verified, and it is helpful to have this JWT be client-independent.
     """
 
     user_sub: str
@@ -95,7 +98,6 @@ async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult
                     "exp",
                     "aud",
                     "iat",
-                    "oseh:journal_client_key_uid",
                     "oseh:user_sub",
                 ]
             },
@@ -114,7 +116,7 @@ async def auth_presigned(itgs: Itgs, authorization: Optional[str]) -> AuthResult
     return AuthResult(
         result=SuccessfulAuthResult(
             journal_entry_uid=claims["sub"],
-            journal_client_key_uid=claims["oseh:journal_client_key_uid"],
+            journal_client_key_uid=claims.get("oseh:journal_client_key_uid"),
             user_sub=claims["oseh:user_sub"],
             claims=claims,
         ),
@@ -145,7 +147,7 @@ async def create_jwt(
     /,
     *,
     journal_entry_uid: str,
-    journal_client_key_uid: str,
+    journal_client_key_uid: Optional[str] = None,
     user_sub: str,
     audience: Literal["oseh-journal-entry"],
     duration: int = 1800,
@@ -156,7 +158,8 @@ async def create_jwt(
     Args:
         itgs (Itgs): The integrations to use to connect to networked services
         journal_entry_uid (str): The uid of the journal entry to create a JWT for
-        journal_client_key_uid (str): The uid of the journal client key to create a JWT for
+        journal_client_key_uid (str, None): The uid of the journal client key to create a JWT for.
+            DEPRECATED. Prefer to always send the journal client key uid separately.
         user_sub (str): The sub of the user who owns the journal entry
         audience (Literal["oseh-journal-entry"]): The audience of the JWT
         duration (int, optional): The duration of the JWT in seconds. Defaults to 1800.
@@ -169,12 +172,16 @@ async def create_jwt(
     return jwt.encode(
         {
             "sub": journal_entry_uid,
-            "oseh:journal_client_key_uid": journal_client_key_uid,
             "oseh:user_sub": user_sub,
             "iss": "oseh",
             "aud": audience,
             "iat": now - 1,
             "exp": now + duration,
+            **(
+                {"oseh:journal_client_key_uid": journal_client_key_uid}
+                if journal_client_key_uid is not None
+                else {}
+            ),
         },
         os.environ["OSEH_JOURNAL_JWT_SECRET"],
         algorithm="HS256",

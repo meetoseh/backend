@@ -21,6 +21,7 @@ import interactive_prompts.auth
 from image_files.routes.playlist import PlaylistResponse
 from itgs import Itgs
 import journeys.lib.read_one_external
+import journals.entry_auth
 from courses.lib.get_external_course_from_row import (
     ExternalCourseRow,
     create_standard_external_course_query,
@@ -36,6 +37,7 @@ UNSAFE_SCREEN_SCHEMA_TYPES: Set[Tuple[str, str]] = {
     ("string", "journey_uid"),
     ("string", "course_uid"),
     ("string", "interactive_prompt_uid"),
+    ("string", "journal_entry_uid"),
 }
 KNOWN_COPY_STRING_FORMATS: Set[str] = {
     "date",
@@ -320,12 +322,13 @@ class ScreenSchemaRealizer:
                     state.given, dict
                 ), f"expected dict, got {state.given} @ {pretty_path(state.path)}"
 
-                val = dict()
-                state.setter(val)
-
                 properties = state.schema.get("properties")
                 if properties is None:
+                    state.setter(state.given)
                     continue
+
+                val = dict()
+                state.setter(val)
 
                 assert isinstance(
                     properties, dict
@@ -468,6 +471,13 @@ class ScreenSchemaRealizer:
                         await convert_interactive_prompt_uid(
                             itgs, state.given, for_user_sub
                         )
+                    )
+                elif fmt == "journal_entry_uid":
+                    assert isinstance(
+                        state.given, str
+                    ), f"expected str, got {state.given} @ {pretty_path(state.path)}"
+                    state.setter(
+                        await convert_journal_entry_uid(itgs, state.given, for_user_sub)
                     )
                 else:
                     assert (
@@ -1007,3 +1017,30 @@ WHERE
     ), f"no interactive prompt found for {interactive_prompt_uid=}"
     result_bytes = await response_to_bytes(result_as_response)
     return json.loads(result_bytes)
+
+
+async def convert_journal_entry_uid(
+    itgs: Itgs, journal_entry_uid: str, user_sub: str
+) -> Any:
+    """Converts the journal entry UID to the expected format for the client. If it
+    does not exist or does not belong to the user, logs an error and returns None
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+    response = await cursor.execute(
+        "SELECT 1 FROM journal_entries, users WHERE journal_entries.uid=? AND users.sub=? AND journal_entries.user_id=users.id",
+        (journal_entry_uid, user_sub),
+    )
+    if not response.results:
+        await handle_contextless_error(
+            extra_info=f"failed to convert journal entry `{journal_entry_uid!r}` for user `{user_sub}` because it does not exist or does not belong to the user"
+        )
+        return None
+
+    entry_jwt = await journals.entry_auth.create_jwt(
+        itgs,
+        journal_entry_uid=journal_entry_uid,
+        user_sub=user_sub,
+        audience="oseh-journal-entry",
+    )
+    return {"uid": journal_entry_uid, "jwt": entry_jwt}

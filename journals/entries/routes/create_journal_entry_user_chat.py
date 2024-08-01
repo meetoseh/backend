@@ -34,6 +34,9 @@ router = APIRouter()
 
 class CreateJournalEntryUserChatRequest(BaseModel):
     platform: VisitorSource = Field(description="the platform the client is running on")
+    version: Optional[int] = Field(
+        None, description="the screen version code of the client; for compatibility"
+    )
     journal_entry_uid: str = Field(
         description="The UID of the journal entry the user is responding to"
     )
@@ -172,6 +175,12 @@ async def create_journal_entry_user_chat(
             return AUTHORIZATION_UNKNOWN_TOKEN
 
         if entry_auth_result.result.journal_entry_uid != args.journal_entry_uid:
+            return AUTHORIZATION_UNKNOWN_TOKEN
+
+        if entry_auth_result.result.journal_client_key_uid is not None and (
+            entry_auth_result.result.journal_client_key_uid
+            != args.journal_client_key_uid
+        ):
             return AUTHORIZATION_UNKNOWN_TOKEN
 
         user_tz = await get_user_timezone(itgs, user_sub=std_auth_result.result.sub)
@@ -440,6 +449,9 @@ WHERE
                 user_sub=std_auth_result.result.sub,
                 journal_entry_uid=args.journal_entry_uid,
                 now=queue_job_at,
+                include_previous_history=(
+                    args.version is not None and args.version > 73
+                ),
             )
         )
         if queue_job_result.type != "success":

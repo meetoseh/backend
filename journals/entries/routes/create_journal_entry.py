@@ -80,6 +80,7 @@ ERROR_RATELIMITED_RESPONSE = Response(
         },
         **STANDARD_ERRORS_BY_CODE,
     },
+    deprecated=True,
 )
 async def create_journal_entry(
     args: CreateJournalEntryRequest,
@@ -128,6 +129,11 @@ async def create_journal_entry(
     message within a day) are also kept, though even with attempts to disaggregate,
     this would not expose significantly more granularity than is already available
     as described before.
+
+    DEPRECATED: prefer the pop endpoint which behaves similarly but reduces the odds
+    of blank journal entries being created: `POST /api/1/users/me/screens/pop_to_new_journal_entry`
+    combined with the sync endpoint `POST /api/1/journals/entries/sync` to get or create
+    the current chat job
     """
     async with Itgs() as itgs:
         auth_result = await auth_any(itgs, authorization)

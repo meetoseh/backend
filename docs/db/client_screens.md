@@ -129,6 +129,12 @@ See also: [client flows](../concepts/client_flows/README.md)
     from the input parameter. Used as a hint to the admin area that this is going to be
     used for the pop trigger on the screen.
 
+  - `journal_entry_uid`: the input parameter must be a string. The output parameter is
+    a journal entry reference (`{"uid": "string", "jwt": "string"}`) which the client
+    is expected to use another api call (which will include which journal client key
+    they want to use for encryption) to get a journal chat JWT to stream the entries
+    contents
+
   For object instances (those where `{"type": "object"}`), where `"oneOf"` is included,
   we support and require an `x-enum-discriminator` extension property. This is a string
   which will match a required, non-nullable, string property in each `oneOf` object, which

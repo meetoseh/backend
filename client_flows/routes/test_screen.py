@@ -389,6 +389,25 @@ async def test_screen(
                             ).model_dump_json(),
                             headers={"Content-Type": "application/json; charset=utf-8"},
                         )
+                elif output_fmt == "journal_entry_uid":
+                    if value is None:
+                        continue
+
+                    conn = await itgs.conn()
+                    cursor = conn.cursor()
+                    response = await cursor.execute(
+                        "SELECT 1 FROM journal_entries, users WHERE journal_entries.uid=? AND users.sub=? AND users.id=journal_entries.user_id",
+                        (value, auth_result.result.sub),
+                    )
+                    if not response.results:
+                        return Response(
+                            status_code=409,
+                            content=StandardErrorResponse[ERROR_409_TYPES](
+                                type="screen_input_parameters_wont_match",
+                                message=f"fixed parameter {pretty_path(path)} for screen {screen.slug} is a string with format journal_entry_uid, but no journal entry with that uid exists for the current user",
+                            ).model_dump_json(),
+                            headers={"Content-Type": "application/json; charset=utf-8"},
+                        )
 
         for req_param in iter_flow_screen_required_parameters(args.flow_screen):
             input_schema = _get_input_schema(
@@ -999,7 +1018,9 @@ def _get_output_schema(
                 current = oneof[discriminated_to_index]
                 continue
 
-            properties = current.get("properties", dict())
+            properties = current.get("properties", None)
+            if properties is None:
+                return FindSchemaSuccess(type="success", safe=False, schema={})
             assert isinstance(properties, dict)
 
             nxt = properties.get(remaining[0])

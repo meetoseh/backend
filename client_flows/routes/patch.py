@@ -855,11 +855,7 @@ def _get_param_schema_from_schema(
                 current = matching_oneof
                 continue
 
-            raise PreconditionFailedException(
-                src,
-                f"to reference a valid parameter (at level {level})",
-                f"{param} (no properties or x-enum-discriminator @ {param[:level]})",
-            )
+            return dict()
 
         if not isinstance(properties, dict):
             raise PreconditionFailedException(

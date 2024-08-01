@@ -614,6 +614,9 @@ metrics/analysis easier.
 
 Queueing a journal chat job is done by:
 
+- reserving the active journal chat job for the journal entry uid
+  (`journals:journal_entry_to_chat_job:{journal_entry_uid}`), failing out if
+  it's already reserved
 - incrementing the number of queued jobs by the user, possibly failing out if it's
   too high (`journals:count_queued_journal_chat_jobs_by_user:{sub}`)
 - writing the request information to the data hash key
@@ -646,11 +649,12 @@ channel (`ps:journal_chats:{uid}:events`).
 Finally, when the job completes (successfully or not), the entry is removed from
 the purgatory sorted set (`journals:journal_chat_jobs:purgatory`), delete the
 data hash key (`journals:journal_chat_jobs:{journal_chat_uid}`), write the last
-message to the events list and update its expiry (`journal_chats:{uid}:events`)
-and publish that message to the events pubsub channel
-(`ps:journal_chats:{uid}:events`), and decrement the number of queued jobs by the
+message to the events list and update its expiry (`journal_chats:{uid}:events`),
+publish that message to the events pubsub channel
+(`ps:journal_chats:{uid}:events`), decrement the number of queued jobs by the
 user (`journals:count_queued_journal_chat_jobs_by_user:{sub}`), deleting the key
-if the new value is 0 or lower.
+if the new value is 0 or lower, and unreserve the active journal chat job for
+the journal entry uid (`journals:journal_entry_to_chat_job:{journal_entry_uid}`).
 
 Documentation by key:
 
@@ -676,15 +680,12 @@ The core queues:
   - `journal_entry_uid (string)`: the uid of the journal entry that is being edited
   - `journal_master_key_uid (string)`: the uid of the journal master key used to encrypt `encrypted_task`
   - `encrypted_task (string, json)`: a json object, stringified, Fernet encrypted with the journal
-    master key, then base64url encoded. Has the following keys:
+    master key, which includes being base64url encoded. Has the following keys:
     - `type (string, enum)`: one of:
       - `greeting`: generate a conversation starter
       - `chat`: continue the conversation and suggest activities
       - `reflection-question`: generate an open-ended question the user can use
         to write something for themself
-    - `conversation (array)` The current state of the conversation, as a json array.
-      Each object in the array is the same type of json blob found in
-      `journal_entry_items` `master_encrypted_data`
     - `replace_index (int, null)` is either `null` if the task is to generate a new chat message at
       the end of the conversation, otherwise an integer `0 <= index < len(conversation)`
       for the message to regenerate
@@ -699,6 +700,16 @@ Used for security / rate limiting:
   matches the given sub and are in either the high or normal queues or the purgatory. Generally,
   Oseh+ users should be blocked from having more than 3 queued and free users should be blocked
   from having more than 1 queued.
+
+Used for integrity / correctness
+
+- `journals:journal_entry_to_chat_job:{journal_entry_uid}` goes to the uid of
+  the journal chat job which is currently queued to modify and/or read the journal
+  entry with the given uid. It only ever makes sense to have one journal chat
+  job actively modifying a journal entry at a time, and it usually only makes
+  sense to have 1 job just for reading the contents of a journal entry at a
+  time. Hence, for simplicity, we enforce at most one journal chat job related
+  to a journal entry at a time.
 
 Used for transferring between the jobs server and the websocket server:
 
@@ -3518,122 +3529,28 @@ via a share code. The UTM is:
 - `stats:client_screens:daily:earliest`: goes to the earliest unix date for which
   there might still be client screen statistics in redis
 
-- `stats:journals:daily:{unix_date}` goes to a hash describing the different parts
-  of creating and editing journal entries, mostly focused on the health of system
-  responses
+- `stats:journal_chat_jobs:daily:{unix_date}` goes to a hash describing what journal
+  chat jobs have been requested, queued, and completed
 
-  - `greetings_requested`: when creating a journal entry the first step is the system
-    prompting the user with a greeting in the form of a question like "How are you feeling?".
-    This is the number of greetings requested by users as measured in the earliest point
-    in the backend http request.
-  - `greetings_succeeded`: of the greetings requested, how many were successfully
-    responded to with a greeting, as measured as close as possible to storing the response
-    in the database
-  - `greetings_failed`: of the greetings requested, how many were not responded to with
-    a greeting, as measured as close as possible to the error being detected
-  - `user_chats`: how many chats were received by users. When a user sends us a chat message
-    that always results in a system chat being requested, however, they can also request
-    system chats through other means (e.g., the "refresh" button to get a new response),
-    so the system may be healthy if this is less than or equal to the number of system chats
-    requested
-  - `system_chats_requested`: how many system chats were requested by users, i.e., they
-    requested the system respond to the end of a chat. If the previous response was from
-    the system, they can request to replace it with a new response, otherwise they can
-    to add on a new response.
-  - `system_chats_succeeded`: how many system chats did we successfully produce, as measured as
-    close as possible to storing (or updating) the response in the database
-  - `user_chat_actions`: how many times users interacted with something within a system chat,
-    like a journey link.
-  - `reflection_questions_requested`: at the end of a journal entry we ask the user a reflection
-    question, to which they are expected to write a longer response for themself to keep in their
-    journal (and to which we do not provide a system response). this is the number of such questions
-    requested by users as measured in the earliest point in the backend http request.
-  - `reflection_questions_succeeded`: of the reflection questions requested, how many were
-    successfully responded to with a reflection question, as measured as close as possible to
-    storing the response in the database
-  - `reflection_questions_failed`: of the reflection questions requested, how many were not
-    responded to with a reflection question, as measured as close as possible to the error
-    being detected
-  - `reflection_questions_edited`: how many users edited (possibly by deleting and rewriting
-    from scratch) their reflection question
-  - `reflection_responses`: how many users responded to their reflection question
+  - `requested`: number of journal chat jobs requested
+  - `failed_to_queue`: of those requested, how many failed before entering the queue
+  - `queued`: of those requested, how many made it to the queue
+  - `started`: of those queued, how many were assigned a worker
+  - `completed`: of those started, how many were completed
+  - `failed`: of those started, how many failed
+  
+- `stats:journal_chat_jobs:daily:{unix_date}:extra:{event}` goes to a hash breaking
+  down the event key, where the keys in the breakdown depend on the event:
 
-- `stats:journals:daily:{unix_date}:extra:{event}` goes to a hash breaking down the event key,
-  where the keys in the breakdown depend on the event:
+  - `requested`: `{type}`, one of `greeting`, `system_chat`, `sync`
+  - `failed_to_queue`: `{type}:{reason}`, e.g., `system_chat:locked`
+  - `queued`: `{type}`, e.g., `greeting`
+  - `started`: `{type}`, e.g., `greeting`
+  - `completed`: `{type}`, e.g., `greeting`
+  - `failed`: `{type}:{reason}`, e.g., `system_chat:timed_out`
 
-  - `greetings_succeeded` is broken down by technique, where technique is one of:
-    - `fixed-{version}`: we used the given version of the fixed greeting, where the
-      version is a simple counter, with the first version being `1`
-  - `greetings_failed` is broken down by `{technique}:{reason}` if the failure occurred
-    after the job was queued, otherwise:
-    - `queue:ratelimited:pro`: the user had too many jobs already processing or in the queue,
-      using the pro limits
-    - `queue:ratelimited:free`: the user had too many jobs already processing or in the queue,
-      using the free limits
-    - `queue:backpressure:pro`: there were too many jobs in the queue in total, using the pro limits
-    - `queue:backpressure:free`: there were too many jobs in the queue in total, using the free limits
-    - `queue:user_not_found`: the user did not appear to exist when we went to queue the job
-    - `queue:encryption_failed`: we failed to get a master key for encryption
-
-- `user_chats (integer not null)`: number of user chats, where technique is
-  as in `greetings_succeeded` and reason is one of:
-
-  - `internal_error`: an unexpected error occurred
-  - `user_chats` is broken down by the length of the message written by the user,
-    where the options are `1-9 words`, `10-19 words`, `20-99 words`, `100-499 words`, `500+ words`
-  - `system_chats_requested` is broken down by `initial`, `refresh`
-  - `system_chats_succeeded` is broken down by technique, where technique is one of:
-    - `llm-{platform}-{model}-{prompt identifier}` where platform is always `openai` and model is the
-      model used, e.g., `gpt-3.5-turbo` or `gpt-4.0-turbo`. The prompt identifier is typically
-      of the form `{slug}:{version}`, e.g., `journals:1.0.0`
-  - `system_chats_failed` is broken down by `{technique}:{reason}`, where technique is
-    as in `system_chats_succeeded` and reason is one of:
-
-    - `net:{status_code}` - provider returned a non-200 status code (e.g., openai:404)
-    - `net:timeout` - provider timed out
-    - `net:unknown:{error name}` - some kind of network error occurred connecting to openai, such as
-      a connection error or bad TLS. the error name is literally `e.__class__.__name__` or the
-      nearest equivalent
-    - `llm:{detail}`: an issue occurred parsing the LLM response. may be further broken down, but
-      the breakdown will be very dependent on the technique
-    - `internal`: an unexpected error occurred
-    - `encryption`: something went wrong related to encryption
-
-    unless the error occurred while trying to queue the request, in which the reason is one of:
-
-    - any of the options for `greeting_failed` with the `queue:` prefix,
-    - `queue:journal_entry_not_found` the journal entry that was being mutated didn't exist
-    - `queue:journal_entry_item_not_found` the journal entry item that was being refreshed didn't exist
-    - `queue:decryption_failed` failed to decrypt the conversation so far
-    - `queue:bad_state` the conversation was not in a state that could be processed, e.g., they
-      hadn't responded yet
-
-  - `user_chat_actions` is broken down by the type of thing interacted with, roughly of the form
-    `{link_type}:{action_taken}`, but specifically:
-    - `journey:free:regular` they clicked on a free journey link and we took them through a client flow
-      for that journey
-    - `journey:pro:regular` they clicked on a paywalled journey link that they had access to through
-      Oseh+ and we took them through a client flow for that journey
-    - `journey:pro:paywall` they clicked on a paywalled journey link that they did not have access to
-      through Oseh+ and we took them through a client flow to purchase oseh+
-  - `reflection_questions_requested` is broken down by `initial`, `refresh`, referring to if its the
-    first reflection question or if they requested a new one
-  - `reflection_questions_succeeded` is broken down by technique, where technique is the same as in
-    the `system_chats_succeeded` breakdown, i.e., `llm-{platform}-{model}-{prompt identifier}`
-  - `reflection_questions_failed` is broken down either by one of the pre-queue failure reasons like in
-    `greetings_failed`, or is broken down by `{technique}:{reason}`, just as in system chats failed
-    unless the error occurred while trying to queue the request, in which the reason is any of the
-    options for `greeting_failed` with the `queue:` prefix
-  - `reflection_responses` is broken down by length:
-    - `skip`: they didn't write anything
-    - `1-9 words`
-    - `10-19 words`
-    - `20-99 words`
-    - `100-499 words`
-    - `500+ words`
-
-- `stats:journals:daily:earliest` goes to the earliest unix date for which there might still be
-  journal statistics in redis
+- `stats:journal_chat_jobs:daily:earliest`: goes to the earliest unix date for which
+  there might still be journal chat job statistics in redis
 
 ### Personalization subspace
 
@@ -3950,6 +3867,7 @@ These are regular keys used by the personalization module
   `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
   `length_bytes` of data to write to the corresponding local cache key. All
   numbers are big-endian encoded.
+  
 - `ps:stats:client_flows:daily` is used to optimistically send
   compressed client flow statistics. messages are formatted as
   (uint32, uint32, uint64, blob) where the ints mean, in order:

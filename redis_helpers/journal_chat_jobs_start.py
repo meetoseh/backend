@@ -17,6 +17,11 @@ local encrypted_task_base64url = ARGV[6]
 local queued_at_str = ARGV[7]
 local first_event = ARGV[8]
 
+local locked_by_journal_chat_uid = redis.call("GET", "journals:journal_entry_to_chat_job:" .. journal_entry_uid)
+if locked_by_journal_chat_uid ~= false then
+    return {-3, locked_by_journal_chat_uid, false}
+end
+
 local user_queued = redis.call("GET", "journals:count_queued_journal_chat_jobs_by_user:" .. user_sub)
 if user_queued ~= false then
     local num_user_queued = tonumber(user_queued)
@@ -35,6 +40,7 @@ if total_queued >= limit_total_queued then
     return {-2, total_queued, limit_total_queued}
 end
 
+redis.call("SET", "journals:journal_entry_to_chat_job:" .. journal_entry_uid, journal_chat_uid)
 redis.call("INCR", "journals:count_queued_journal_chat_jobs_by_user:" .. user_sub)
 redis.call(
     "HSET",
@@ -113,6 +119,16 @@ async def ensure_journal_chat_jobs_start_script_exists(
 
 
 @dataclass
+class JournalChatJobsStartLocked:
+    type: Literal["locked"]
+    """There is already a journal chat job running for the journal entry with the
+    indicated uid. Perhaps you want to sync with it?
+    """
+    locked_by_journal_chat_uid: bytes
+    """The journal chat uid that is locking the journal entry"""
+
+
+@dataclass
 class JournalChatJobsStartRatelimited:
     type: Literal["ratelimited"]
     at: int
@@ -132,6 +148,7 @@ class JournalChatJobsStartSucceeded:
 
 
 JournalChatJobsStartResult = Union[
+    JournalChatJobsStartLocked,
     JournalChatJobsStartRatelimited,
     JournalChatJobsStartBackpressure,
     JournalChatJobsStartSucceeded,
@@ -257,6 +274,12 @@ def parse_journal_chat_jobs_start_result(raw: Any) -> JournalChatJobsStartResult
         limit = int(raw[2])
         assert at >= limit, raw
         return JournalChatJobsStartBackpressure(type="backpressure", at=at, limit=limit)
+    elif type_ == -3:
+        assert len(raw) >= 2, raw
+        assert isinstance(raw[1], bytes), raw
+        return JournalChatJobsStartLocked(
+            type="locked", locked_by_journal_chat_uid=raw[1]
+        )
     elif type_ == 1:
         return JournalChatJobsStartSucceeded(type="succeeded")
 

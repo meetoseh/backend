@@ -34,6 +34,7 @@ See also: [client flows](../concepts/clients_flows/README.md)
   - `error_bad_auth`: the client tried to trigger a flow with invalid auth parameters,
     where those auth parameters were part of the trigger
   - `error_contact_support`: something went wrong and the client should contact support
+  - `error_ratelimited`: the client was ratelimited; generic
   - `upgrade_longer_classes`: the client tried to take a premium class without oseh+
   - `merge_no_change_required`: see `empty_with_merge_token`
   - `merge_created_and_attached`: see `empty_with_merge_token`

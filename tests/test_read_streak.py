@@ -1,3 +1,5 @@
+# type: ignore
+
 try:
     import helper  # type: ignore
 except:

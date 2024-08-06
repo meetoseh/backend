@@ -71,6 +71,9 @@ async def pop_screen(
 
     Requires standard authorization for a user.
     """
+    if args.trigger is not None and args.trigger.parameters is None:
+        args.trigger.parameters = {}
+
     async with Itgs() as itgs:
         std_auth_result = await std_auth.auth_any(itgs, authorization)
         if std_auth_result.result is None:

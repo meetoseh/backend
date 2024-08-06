@@ -10,13 +10,13 @@ import socket
 from loguru import logger
 
 
-async def handle_request_error(request: Request, exc: Exception) -> Response:
+async def handle_request_error(request: Request, exc: BaseException) -> Response:
     """Handles an error while processing a request"""
     await handle_error(exc)
     return PlainTextResponse(content="internal server error", status_code=500)
 
 
-async def handle_error(exc: Exception, *, extra_info: Optional[str] = None) -> None:
+async def handle_error(exc: BaseException, *, extra_info: Optional[str] = None) -> None:
     """Handles a generic error"""
     long_message = "\n".join(
         traceback.format_exception(type(exc), exc, exc.__traceback__)
@@ -81,7 +81,10 @@ MAX_WARNINGS_PER_INTERVAL = 5
 
 
 async def handle_warning(
-    identifier: str, text: str, exc: Optional[Exception] = None, is_urgent: bool = False
+    identifier: str,
+    text: str,
+    exc: Optional[BaseException] = None,
+    is_urgent: bool = False,
 ) -> bool:
     """Sends a warning to slack, with basic ratelimiting
 

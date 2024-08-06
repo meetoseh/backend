@@ -19,7 +19,8 @@ we'd drop requests much sooner).
 - `requested_breakdown (text not null)`: A json object breaking down `jobs_requested`
   by the type of job:
   - `greeting`: add the first message to the entry and stream that message
-  - `system_chat`: stream the entry entry, then add a system response to the user and stream that
+  - `system_chat`: stream the entry, then add a system response to the user and stream that
+  - `reflection_question`: stream the entry then add a reflection question and stream that
   - `sync`: a basic job that just streams the entry unchanged
 - `failed_to_queue (integer not null)`: Of the jobs requested, how many did we fail to
   queue

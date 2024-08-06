@@ -16,8 +16,8 @@ async def check_client(
     itgs: Itgs,
     *,
     client_id: str,
-    client_secret: Union[str, Literal[NOT_SET]] = NOT_SET,
-    redirect_uri: Union[str, Literal[NOT_SET]] = NOT_SET
+    client_secret: Union[str, Literal[_NotSetEnum.NotSet]] = NOT_SET,
+    redirect_uri: Union[str, Literal[_NotSetEnum.NotSet]] = NOT_SET
 ) -> Tuple[bool, Optional[Literal["secret", "url", "unknown"]]]:
     """Checks if the given client id is valid and matches the given secret (if
     provided) and redirect uri (if provided)

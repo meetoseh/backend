@@ -96,7 +96,6 @@ ERROR_RATELIMITED_RESPONSE = Response(
         },
         **STANDARD_ERRORS_BY_CODE,
     },
-    deprecated=True,
 )
 async def sync_journal_entry(
     args: SyncJournalEntryRequest,

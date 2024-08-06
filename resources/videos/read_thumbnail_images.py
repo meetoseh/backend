@@ -44,7 +44,9 @@ class VideoThumbnailFrameSource(BaseModel):
 
 VideoThumbnailSource = Union[VideoThumbnailUserSource, VideoThumbnailFrameSource]
 
-source_validator: TypeAdapter[VideoThumbnailSource] = TypeAdapter(VideoThumbnailSource)
+source_validator = cast(
+    TypeAdapter[VideoThumbnailSource], TypeAdapter(VideoThumbnailSource)
+)
 
 
 class VideoThumbnail(BaseModel):

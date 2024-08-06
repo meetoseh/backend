@@ -3542,7 +3542,7 @@ via a share code. The UTM is:
 - `stats:journal_chat_jobs:daily:{unix_date}:extra:{event}` goes to a hash breaking
   down the event key, where the keys in the breakdown depend on the event:
 
-  - `requested`: `{type}`, one of `greeting`, `system_chat`, `sync`
+  - `requested`: `{type}`, one of `greeting`, `system_chat`, `reflection_question`, `sync`
   - `failed_to_queue`: `{type}:{reason}`, e.g., `system_chat:locked`
   - `queued`: `{type}`, e.g., `greeting`
   - `started`: `{type}`, e.g., `greeting`

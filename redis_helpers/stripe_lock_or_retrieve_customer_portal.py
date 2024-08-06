@@ -1,4 +1,4 @@
-from typing import Any, Literal, Optional, List, Union
+from typing import Any, Literal, Optional, List, Union, cast
 from pydantic import BaseModel, Field, TypeAdapter
 import hashlib
 import time
@@ -92,8 +92,8 @@ StripeCustomerPortalState = Union[
     StripeCustomerPortalStateUnavailable,
     StripeCustomerPortalStateAvailable,
 ]
-stripe_customer_portal_state_adapter: TypeAdapter[StripeCustomerPortalState] = (
-    TypeAdapter(StripeCustomerPortalState)
+stripe_customer_portal_state_adapter = cast(
+    TypeAdapter[StripeCustomerPortalState], TypeAdapter(StripeCustomerPortalState)
 )
 
 

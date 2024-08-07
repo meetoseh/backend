@@ -28,7 +28,7 @@ See also: [client flows](../concepts/clients_flows/README.md)
     untrusted input would become a screen input with a custom format, e.g., `image_uid`,
     that could turn untrusted input into a sensitive object (usually a JWT)
   - `not_found`: the client tried to trigger a flow that was in the allowed triggers
-    but didn't exist or doesn't accept triggers from that platform
+    but didn't exist or doesn't accept triggers from that platform. Also used when a resource is referenced that doesn't exist, such as trying to view a journal entry but that journal entry does not exist or is not owned by that user.
   - `desync`: the client tried to pop a screen that was no longer the front of
     the queue.
   - `error_bad_auth`: the client tried to trigger a flow with invalid auth parameters,

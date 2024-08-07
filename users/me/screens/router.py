@@ -9,6 +9,7 @@ import users.me.screens.routes.pop_to_emotion_class
 import users.me.screens.routes.pop_to_existing_journal_entry
 import users.me.screens.routes.pop_to_history_class
 import users.me.screens.routes.pop_to_journal_chat_class
+import users.me.screens.routes.pop_to_journal_reflection
 import users.me.screens.routes.pop_to_new_journal_entry
 import users.me.screens.routes.pop_to_phone_verify
 
@@ -28,6 +29,7 @@ router.include_router(users.me.screens.routes.pop_to_emotion_class.router)
 router.include_router(users.me.screens.routes.pop_to_existing_journal_entry.router)
 router.include_router(users.me.screens.routes.pop_to_history_class.router)
 router.include_router(users.me.screens.routes.pop_to_journal_chat_class.router)
+router.include_router(users.me.screens.routes.pop_to_journal_reflection.router)
 router.include_router(users.me.screens.routes.pop_to_new_journal_entry.router)
 router.include_router(users.me.screens.routes.pop_to_phone_verify.router)
 

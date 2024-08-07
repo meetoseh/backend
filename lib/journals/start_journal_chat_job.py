@@ -120,6 +120,23 @@ class StartJournalChatJobResultBadState:
 
 
 @dataclass
+class StartJournalChatJobResultBadStateAddReflectionQuestion:
+    type: Literal["bad_state"]
+    """
+    - `bad_state`: the journal entry is not in the correct state for the desired operation
+    """
+    detail: str
+    """More information"""
+    subtype: Literal[
+        "already-has-reflection-question", "cannot-add-reflection-question"
+    ]
+    """
+    - `already-has-reflection-question`: the journal entry already has a reflection question
+    - `cannot-add-reflection-question`: the journal entry is not in the correct state to add a reflection question
+    """
+
+
+@dataclass
 class CreateJournalEntryWithGreetingSuccess:
     type: Literal["success"]
     """
@@ -641,7 +658,7 @@ async def add_journal_entry_reflection_question(
     StartJournalChatJobResultUserNotFound,
     StartJournalChatJobResultJournalEntryNotFound,
     StartJournalChatJobResultDecryptionFailed,
-    StartJournalChatJobResultBadState,
+    StartJournalChatJobResultBadStateAddReflectionQuestion,
     StartJournalChatJobResultEncryptionFailed,
     AddJournalEntryItemSuccess,
 ]:
@@ -696,9 +713,10 @@ async def add_journal_entry_reflection_question(
             reason=b"bad_state",
         )
         await stats.stats.store(itgs)
-        return StartJournalChatJobResultBadState(
+        return StartJournalChatJobResultBadStateAddReflectionQuestion(
             type="bad_state",
             detail="failed to find greeting",
+            subtype="cannot-add-reflection-question"
         )
 
     user_chat = await stream.load_next_item(timeout=5)
@@ -710,9 +728,10 @@ async def add_journal_entry_reflection_question(
             reason=b"bad_state",
         )
         await stats.stats.store(itgs)
-        return StartJournalChatJobResultBadState(
+        return StartJournalChatJobResultBadStateAddReflectionQuestion(
             type="bad_state",
             detail="failed to find user chat",
+            subtype="cannot-add-reflection-question"
         )
 
     system_chat = await stream.load_next_item(timeout=5)
@@ -724,9 +743,10 @@ async def add_journal_entry_reflection_question(
             reason=b"bad_state",
         )
         await stats.stats.store(itgs)
-        return StartJournalChatJobResultBadState(
+        return StartJournalChatJobResultBadStateAddReflectionQuestion(
             type="bad_state",
             detail="failed to find system chat",
+            subtype="cannot-add-reflection-question"
         )
 
     while True:
@@ -739,9 +759,10 @@ async def add_journal_entry_reflection_question(
                 reason=b"bad_state",
             )
             await stats.stats.store(itgs)
-            return StartJournalChatJobResultBadState(
+            return StartJournalChatJobResultBadStateAddReflectionQuestion(
                 type="bad_state",
                 detail="failed to find journey",
+                subtype="cannot-add-reflection-question"
             )
 
         if (
@@ -749,6 +770,34 @@ async def add_journal_entry_reflection_question(
             and ui_entry_raw.item.data.data.conceptually.type == "user_journey"
         ):
             break
+
+        if ui_entry_raw.item.data.type == 'reflection-question':
+            await stream.cancel()
+            stats.incr_failed_to_queue_simple(
+                requested_at_unix_date=system_unix_date,
+                type=b"reflection_question",
+                reason=b"bad_state",
+            )
+            await stats.stats.store(itgs)
+            return StartJournalChatJobResultBadStateAddReflectionQuestion(
+                type="bad_state",
+                detail="already has reflection question",
+                subtype="already-has-reflection-question"
+            )
+        
+        if ui_entry_raw.item.data.data.type != 'ui':
+            await stream.cancel()
+            stats.incr_failed_to_queue_simple(
+                requested_at_unix_date=system_unix_date,
+                type=b"reflection_question",
+                reason=b"bad_state",
+            )
+            await stats.stats.store(itgs)
+            return StartJournalChatJobResultBadStateAddReflectionQuestion(
+                type="bad_state",
+                detail="expected all extra items are ui entries",
+                subtype="cannot-add-reflection-question"
+            )
 
     while True:
         extra_entry_raw = await stream.load_next_item(timeout=5)
@@ -762,9 +811,10 @@ async def add_journal_entry_reflection_question(
                 reason=b"bad_state",
             )
             await stats.stats.store(itgs)
-            return StartJournalChatJobResultBadState(
+            return StartJournalChatJobResultBadStateAddReflectionQuestion(
                 type="bad_state",
                 detail="failed to find end of conversation stream",
+                subtype="cannot-add-reflection-question"
             )
 
         if extra_entry_raw.item.data.data.type != "ui":
@@ -775,9 +825,16 @@ async def add_journal_entry_reflection_question(
                 reason=b"bad_state",
             )
             await stats.stats.store(itgs)
-            return StartJournalChatJobResultBadState(
+            if extra_entry_raw.item.data.type == 'reflection-question':
+                return StartJournalChatJobResultBadStateAddReflectionQuestion(
+                    type="bad_state",
+                    detail="expected all extra trailing items are ui entries",
+                    subtype="already-has-reflection-question"
+                )
+            return StartJournalChatJobResultBadStateAddReflectionQuestion(
                 type="bad_state",
                 detail="expected all extra trailing items are ui entries",
+                subtype="cannot-add-reflection-question"
             )
 
     journal_master_key = await get_journal_master_key_for_encryption(

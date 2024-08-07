@@ -101,7 +101,13 @@ async def sync_journal_entry(
     args: SyncJournalEntryRequest,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
-    """ """
+    """Returns the required information to stream the contents of the journal
+    entry with the given uid, unchanged. This will use a journal client key as
+    an additional encryption layer.
+
+    Requires standard authorization for the user that the journal entry belongs to,
+    plus an additional JWT authorizing viewing that journal entry.
+    """
     async with Itgs() as itgs:
         std_auth_result = await auth_any(itgs, authorization)
         if std_auth_result.result is None:

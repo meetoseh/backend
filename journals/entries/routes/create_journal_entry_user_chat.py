@@ -235,6 +235,7 @@ async def create_journal_entry_user_chat(
                 f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using the journal client "
                 f"key `{args.journal_client_key_uid}` for platform `{args.platform}`, but the token failed to decrypt "
                 f"their message. `{is_ttl_issue=}` `{args.encrypted_user_message=}`",
+                is_urgent=True,
             )
             return ERROR_BAD_ENCRYPTION
 

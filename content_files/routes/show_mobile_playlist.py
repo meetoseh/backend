@@ -212,15 +212,23 @@ async def show_android_playlist(
     uid: str,
     jwt: Optional[str] = None,
     presign: Optional[bool] = None,
-    w: Optional[int] = None,
-    h: Optional[int] = None,
+    w: Optional[float] = None,
+    h: Optional[float] = None,
     pr: Optional[str] = None,
     bmin: Optional[int] = None,
     bmax: Optional[int] = None,
     authorization: Optional[str] = Header(None),
 ):
     return await show_ios_playlist(
-        uid, jwt, presign, w, h, pr, bmin, bmax, authorization
+        uid,
+        jwt,
+        presign,
+        w,
+        h,
+        pr,
+        bmin,
+        bmax,
+        authorization,
     )
 
 
@@ -242,13 +250,17 @@ async def show_ios_playlist(
     uid: str,
     jwt: Optional[str] = None,
     presign: Optional[bool] = None,
-    w: Optional[int] = None,
-    h: Optional[int] = None,
+    w: Optional[float] = None,
+    h: Optional[float] = None,
     pr: Optional[str] = None,
     bmin: Optional[int] = None,
     bmax: Optional[int] = None,
     authorization: Optional[str] = Header(None),
 ):
+    if w is not None and not isinstance(w, int):
+        w = math.ceil(w)
+    if h is not None and not isinstance(h, int):
+        h = math.ceil(h)
     try:
         filters = M3U8VODFilters(
             size=(

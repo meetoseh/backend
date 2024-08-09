@@ -1,5 +1,6 @@
+import gzip
 import secrets
-from typing import Literal, Union
+from typing import Literal, Union, cast
 from itgs import Itgs
 from dataclasses import dataclass
 
@@ -10,10 +11,11 @@ from lib.journals.journal_chat_redis_packet import (
 )
 from lib.journals.journal_chat_task import JournalChatTask
 from lib.journals.journal_chat_job_stats import JournalChatJobStats
+from lib.journals.journal_entry_item_data import JournalEntryItemData
 from lib.journals.master_keys import (
-    GetJournalMasterKeyForDecryptionResult,
     GetJournalMasterKeyForEncryptionResult,
     get_journal_master_key_for_encryption,
+    get_journal_master_key_from_s3,
 )
 from lib.journals.serialize_journal_chat_event import serialize_journal_chat_event
 from lib.redis_stats_preparer import RedisStatsPreparer
@@ -93,8 +95,10 @@ class StartJournalChatJobResultJournalEntryItemNotFound:
     """
     - `journal_entry_item_not_found`: the journal entry item could not be found
     """
-    journal_entry_item_uid: str
-    """The journal entry item uid that was not found"""
+    journal_entry_uid: str
+    """The journal entry uid the item was supposed to be in"""
+    entry_counter: int
+    """The entry counter of the item that was not found"""
 
 
 @dataclass
@@ -102,10 +106,6 @@ class StartJournalChatJobResultDecryptionFailed:
     type: Literal["decryption_failed"]
     """
     - `decryption_failed`: something went wrong related to journey decryption
-    """
-    master_key: GetJournalMasterKeyForDecryptionResult
-    """
-    The result from trying to get the master key for decryption
     """
 
 
@@ -716,7 +716,7 @@ async def add_journal_entry_reflection_question(
         return StartJournalChatJobResultBadStateAddReflectionQuestion(
             type="bad_state",
             detail="failed to find greeting",
-            subtype="cannot-add-reflection-question"
+            subtype="cannot-add-reflection-question",
         )
 
     user_chat = await stream.load_next_item(timeout=5)
@@ -731,7 +731,7 @@ async def add_journal_entry_reflection_question(
         return StartJournalChatJobResultBadStateAddReflectionQuestion(
             type="bad_state",
             detail="failed to find user chat",
-            subtype="cannot-add-reflection-question"
+            subtype="cannot-add-reflection-question",
         )
 
     system_chat = await stream.load_next_item(timeout=5)
@@ -746,7 +746,7 @@ async def add_journal_entry_reflection_question(
         return StartJournalChatJobResultBadStateAddReflectionQuestion(
             type="bad_state",
             detail="failed to find system chat",
-            subtype="cannot-add-reflection-question"
+            subtype="cannot-add-reflection-question",
         )
 
     while True:
@@ -762,7 +762,7 @@ async def add_journal_entry_reflection_question(
             return StartJournalChatJobResultBadStateAddReflectionQuestion(
                 type="bad_state",
                 detail="failed to find journey",
-                subtype="cannot-add-reflection-question"
+                subtype="cannot-add-reflection-question",
             )
 
         if (
@@ -771,7 +771,7 @@ async def add_journal_entry_reflection_question(
         ):
             break
 
-        if ui_entry_raw.item.data.type == 'reflection-question':
+        if ui_entry_raw.item.data.type == "reflection-question":
             await stream.cancel()
             stats.incr_failed_to_queue_simple(
                 requested_at_unix_date=system_unix_date,
@@ -782,10 +782,10 @@ async def add_journal_entry_reflection_question(
             return StartJournalChatJobResultBadStateAddReflectionQuestion(
                 type="bad_state",
                 detail="already has reflection question",
-                subtype="already-has-reflection-question"
+                subtype="already-has-reflection-question",
             )
-        
-        if ui_entry_raw.item.data.data.type != 'ui':
+
+        if ui_entry_raw.item.data.data.type != "ui":
             await stream.cancel()
             stats.incr_failed_to_queue_simple(
                 requested_at_unix_date=system_unix_date,
@@ -796,7 +796,7 @@ async def add_journal_entry_reflection_question(
             return StartJournalChatJobResultBadStateAddReflectionQuestion(
                 type="bad_state",
                 detail="expected all extra items are ui entries",
-                subtype="cannot-add-reflection-question"
+                subtype="cannot-add-reflection-question",
             )
 
     while True:
@@ -814,7 +814,7 @@ async def add_journal_entry_reflection_question(
             return StartJournalChatJobResultBadStateAddReflectionQuestion(
                 type="bad_state",
                 detail="failed to find end of conversation stream",
-                subtype="cannot-add-reflection-question"
+                subtype="cannot-add-reflection-question",
             )
 
         if extra_entry_raw.item.data.data.type != "ui":
@@ -825,16 +825,16 @@ async def add_journal_entry_reflection_question(
                 reason=b"bad_state",
             )
             await stats.stats.store(itgs)
-            if extra_entry_raw.item.data.type == 'reflection-question':
+            if extra_entry_raw.item.data.type == "reflection-question":
                 return StartJournalChatJobResultBadStateAddReflectionQuestion(
                     type="bad_state",
                     detail="expected all extra trailing items are ui entries",
-                    subtype="already-has-reflection-question"
+                    subtype="already-has-reflection-question",
                 )
             return StartJournalChatJobResultBadStateAddReflectionQuestion(
                 type="bad_state",
                 detail="expected all extra trailing items are ui entries",
-                subtype="cannot-add-reflection-question"
+                subtype="cannot-add-reflection-question",
             )
 
     journal_master_key = await get_journal_master_key_for_encryption(
@@ -949,15 +949,16 @@ async def add_journal_entry_reflection_question(
     )
 
 
-async def refresh_journal_entry_reflection_question(
+async def regenerate_journal_entry_reflection_question(
     itgs: Itgs,
     /,
     *,
     user_sub: str,
     journal_entry_uid: str,
-    journal_entry_item_uid: str,
+    entry_counter: int,
     now: float,
 ) -> Union[
+    StartJournalChatJobResultUserNotFound,
     StartJournalChatJobResultLocked,
     StartJournalChatJobResultRatelimited,
     StartJournalChatJobResultJournalEntryNotFound,
@@ -966,7 +967,274 @@ async def refresh_journal_entry_reflection_question(
     StartJournalChatJobResultBadState,
     StartJournalChatJobResultEncryptionFailed,
     RefreshJournalEntryItemSuccess,
-]: ...
+]:
+    """Regenerates the reflection question at the given entry item within the
+    given journal entry owned by the user with the given sub.
+
+    Args:
+        itgs (Itgs): the integrations to (re)use
+        user_sub (str): the sub of the user to regenerate the reflection question for
+        journal_entry_uid (str): the uid of the journal entry to regenerate the
+            reflection question for
+        entry_counter (int): the counter of the entry item to regenerate the reflection
+            question for
+        now (float): the current time in seconds since the unix epoch
+    """
+
+    system_unix_date = unix_dates.unix_timestamp_to_unix_date(now, tz=system_timezone)
+    stats = JournalChatJobStats(RedisStatsPreparer())
+    stats.incr_requested(unix_date=system_unix_date, type=b"reflection_question")
+
+    pro_entitlement = await get_entitlement(itgs, user_sub=user_sub, identifier="pro")
+    if pro_entitlement is None:
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"sync",
+            reason=b"user_not_found",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultUserNotFound(
+            type="user_not_found", user_sub=user_sub
+        )
+
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+
+    response = await cursor.executeunified3(
+        (
+            (
+                "SELECT 1 FROM users WHERE sub=?",
+                (user_sub,),
+            ),
+            (
+                """
+SELECT 1
+FROM users, journal_entries
+WHERE
+    users.sub=?
+    AND journal_entries.uid=?
+    AND journal_entries.user_id = users.id
+                """,
+                (user_sub, journal_entry_uid),
+            ),
+            (
+                """
+SELECT
+    user_journal_master_keys.uid,
+    s3_files.key,
+    journal_entry_items.master_encrypted_data,
+    journal_entry_items.uid
+FROM users, journal_entries, journal_entry_items, user_journal_master_keys, s3_files
+WHERE
+    users.sub = ?
+    AND journal_entries.user_id = users.id
+    AND journal_entries.uid = ?
+    AND journal_entry_items.journal_entry_id = journal_entries.id
+    AND journal_entry_items.entry_counter = ?
+    AND user_journal_master_keys.user_id = users.id
+    AND user_journal_master_keys.id = journal_entry_items.user_journal_master_key_id
+    AND s3_files.id = user_journal_master_keys.s3_file_id
+                """,
+                (user_sub, journal_entry_uid, entry_counter),
+            ),
+        )
+    )
+
+    if not response[0].results:
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            reason=b"user_not_found",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultUserNotFound(
+            type="user_not_found", user_sub=user_sub
+        )
+
+    if not response[1].results:
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            reason=b"journal_entry_not_found",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultJournalEntryNotFound(
+            type="journal_entry_not_found",
+            journal_entry_uid=journal_entry_uid,
+        )
+
+    if not response[2].results:
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            reason=b"journal_entry_item_not_found",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultJournalEntryItemNotFound(
+            type="journal_entry_item_not_found",
+            journal_entry_uid=journal_entry_uid,
+            entry_counter=entry_counter,
+        )
+
+    existing_journal_master_key_uid = cast(str, response[2].results[0][0])
+    existing_journal_master_key_s3_key = cast(str, response[2].results[0][1])
+    existing_master_encrypted_data = cast(str, response[2].results[0][2])
+    existing_journal_entry_item_uid = cast(str, response[2].results[0][3])
+
+    existing_journal_master_key = await get_journal_master_key_from_s3(
+        itgs,
+        user_journal_master_key_uid=existing_journal_master_key_uid,
+        user_sub=user_sub,
+        s3_key=existing_journal_master_key_s3_key,
+    )
+    if existing_journal_master_key.type != "success":
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            reason=b"decryption_failed",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultDecryptionFailed(type="decryption_failed")
+
+    try:
+        existing_entry_item_data = JournalEntryItemData.model_validate_json(
+            gzip.decompress(
+                existing_journal_master_key.journal_master_key.decrypt(
+                    existing_master_encrypted_data, ttl=None
+                )
+            )
+        )
+    except Exception:
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            reason=b"decryption_failed",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultDecryptionFailed(type="decryption_failed")
+
+    if existing_entry_item_data.type != "reflection-question":
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            reason=b"bad_state",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultBadState(
+            type="bad_state",
+            detail="expected reflection question",
+        )
+
+    journal_master_key = await get_journal_master_key_for_encryption(
+        itgs, user_sub=user_sub, now=now
+    )
+    if journal_master_key.type != "success":
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            reason=b"encryption_failed",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultEncryptionFailed(
+            type="encryption_failed",
+            master_key=journal_master_key,
+        )
+
+    encrypted_task_base64url = journal_master_key.journal_master_key.encrypt(
+        JournalChatTask.__pydantic_serializer__.to_json(
+            JournalChatTask(
+                type="reflection-question",
+                replace_entry_item_uid=existing_journal_entry_item_uid,
+                include_previous_history=True,
+            )
+        )
+    )
+
+    journal_chat_uid = f"oseh_jc_{secrets.token_urlsafe(16)}"
+    first_event = serialize_journal_chat_event(
+        journal_master_key=journal_master_key,
+        event=JournalChatRedisPacketPassthrough(
+            counter=0,
+            type="passthrough",
+            event=EventBatchPacketDataItemDataThinkingSpinner(
+                type="thinking-spinner",
+                message="Waiting in the "
+                + ("priority" if pro_entitlement.is_active else "regular")
+                + " queue",
+                detail=(
+                    "Upgrade to Oseh+ to access the priority queue"
+                    if not pro_entitlement.is_active
+                    else None
+                ),
+            ),
+        ),
+        now=now,
+    )
+    result = await safe_journal_chat_jobs_start(
+        itgs,
+        user_sub=user_sub.encode("utf-8"),
+        is_user_pro=pro_entitlement.is_active,
+        journal_chat_uid=journal_chat_uid.encode("utf-8"),
+        journal_entry_uid=journal_entry_uid.encode("utf-8"),
+        journal_master_key_uid=journal_master_key.journal_master_key_uid.encode(
+            "utf-8"
+        ),
+        encrypted_task_base64url=encrypted_task_base64url,
+        queued_at=int(now),
+        first_event=first_event,
+    )
+
+    if result.type == "backpressure":
+        stats.incr_failed_to_queue_ratelimited(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            resource=b"total_queued_jobs",
+            at=result.at,
+            limit=result.limit,
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultRatelimited(
+            type="ratelimited",
+            resource="total_queued_jobs",
+            at=result.at,
+            limit=result.limit,
+        )
+    if result.type == "ratelimited":
+        stats.incr_failed_to_queue_ratelimited(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            resource=b"user_queued_jobs",
+            at=result.at,
+            limit=result.limit,
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultRatelimited(
+            type="ratelimited",
+            resource="user_queued_jobs",
+            at=result.at,
+            limit=result.limit,
+        )
+    if result.type == "locked":
+        stats.incr_failed_to_queue_simple(
+            requested_at_unix_date=system_unix_date,
+            type=b"reflection_question",
+            reason=b"locked",
+        )
+        await stats.stats.store(itgs)
+        return StartJournalChatJobResultLocked(
+            type="locked",
+            journal_chat_uid=result.locked_by_journal_chat_uid.decode("utf-8"),
+        )
+
+    assert result.type == "succeeded"
+    stats.incr_queued(
+        requested_at_unix_date=system_unix_date, type=b"reflection_question"
+    )
+    await stats.stats.store(itgs)
+    return RefreshJournalEntryItemSuccess(
+        type="success",
+        journal_chat_uid=journal_chat_uid,
+    )
 
 
 async def sync_journal_entry(

@@ -26,7 +26,7 @@ class SyncJournalEntryRequest(BaseModel):
     journal_client_key_uid: str = Field(
         description=(
             "the UID identifying which journal client key to use an "
-            "additional layer of encryption when sending back the systems greeting"
+            "additional layer of encryption"
         )
     )
     journal_entry_uid: str = Field(
@@ -131,74 +131,15 @@ async def sync_journal_entry(
             )
             return AUTHORIZATION_UNKNOWN_TOKEN
 
-        # Verify the client key at least appears reasonable, without unnecessarily
-        # fetching it from s3
-
-        conn = await itgs.conn()
-        cursor = conn.cursor("weak")
-        response = await cursor.executeunified3(
-            (
-                (
-                    """
-SELECT
-    user_journal_client_keys.s3_file_id IS NOT NULL AS we_have_key,
-    user_journal_client_keys.platform = ? AS platform_matches
-FROM users, user_journal_client_keys
-WHERE
-    users.sub = ?
-    AND users.id = user_journal_client_keys.user_id
-    AND user_journal_client_keys.uid = ?
-            """,
-                    (
-                        args.platform,
-                        std_auth_result.result.sub,
-                        args.journal_client_key_uid,
-                    ),
-                ),
-                (
-                    "SELECT 1 FROM users, journal_entries WHERE users.sub = ? AND journal_entries.uid = ? AND journal_entries.user_id = users.id",
-                    (std_auth_result.result.sub, args.journal_entry_uid),
-                ),
-            )
+        precheck = await journal_entry_sanity_precheck(
+            itgs,
+            user_sub=std_auth_result.result.sub,
+            journal_entry_uid=args.journal_entry_uid,
+            journal_client_key_uid=args.journal_client_key_uid,
+            platform=args.platform,
         )
-        if not response[0].results:
-            await handle_warning(
-                f"{__name__}:unknown_client_key",
-                f"User {std_auth_result.result.sub} tried to sync a journal entry using the journal client "
-                f"key {args.journal_client_key_uid} for platform {args.platform}, but either the user has been deleted, "
-                "we have never seen such a key, or it is for a different user",
-            )
-            return ERROR_KEY_UNAVAILABLE_RESPONSE
-
-        we_have_key = bool(response[0].results[0][0])
-        platform_matches = bool(response[0].results[0][1])
-
-        if not we_have_key:
-            await handle_warning(
-                f"{__name__}:lost_client_key",
-                f"User {std_auth_result.result.sub} tried to sync a journal entry using the journal client "
-                f"key {args.journal_client_key_uid} for platform {args.platform}, but we have "
-                "deleted that key.",
-            )
-            return ERROR_KEY_UNAVAILABLE_RESPONSE
-
-        if not platform_matches:
-            await handle_warning(
-                f"{__name__}:wrong_platform",
-                f"User {std_auth_result.result.sub} tried to sync a journal entry using the journal client "
-                f"key {args.journal_client_key_uid} for platform {args.platform}, but that isn't the platform "
-                "that created that key.",
-            )
-            return ERROR_KEY_UNAVAILABLE_RESPONSE
-
-        journal_entry_exists = bool(response[1].results)
-        if not journal_entry_exists:
-            await handle_warning(
-                f"{__name__}:journal_entry_not_found",
-                f"User {std_auth_result.result.sub} tried to sync a journal entry with uid {args.journal_entry_uid}, "
-                "but we couldn't find it despite a valid jwt being provided",
-            )
-            return ERROR_JOURNAL_ENTRY_NOT_FOUND_RESPONSE
+        if precheck is not None:
+            return precheck
 
         queue_job_at = time.time()
         queue_job_result = await lib.journals.start_journal_chat_job.sync_journal_entry(
@@ -238,3 +179,85 @@ WHERE
             headers={"Content-Type": "application/json; charset=utf-8"},
             status_code=200,
         )
+
+
+async def journal_entry_sanity_precheck(
+    itgs: Itgs,
+    /,
+    *,
+    user_sub: str,
+    journal_entry_uid: str,
+    journal_client_key_uid: str,
+    platform: str,
+) -> Optional[Response]:
+    """
+    Verify the client key at least appears reasonable, without unnecessarily
+    fetching it from s3. Returns None if it appears to be valid, or a Response
+    if it is not.
+    """
+
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+    response = await cursor.executeunified3(
+        (
+            (
+                """
+SELECT
+user_journal_client_keys.s3_file_id IS NOT NULL AS we_have_key,
+user_journal_client_keys.platform = ? AS platform_matches
+FROM users, user_journal_client_keys
+WHERE
+users.sub = ?
+AND users.id = user_journal_client_keys.user_id
+AND user_journal_client_keys.uid = ?
+        """,
+                (
+                    platform,
+                    user_sub,
+                    journal_client_key_uid,
+                ),
+            ),
+            (
+                "SELECT 1 FROM users, journal_entries WHERE users.sub = ? AND journal_entries.uid = ? AND journal_entries.user_id = users.id",
+                (user_sub, journal_entry_uid),
+            ),
+        )
+    )
+    if not response[0].results:
+        await handle_warning(
+            f"{__name__}:unknown_client_key",
+            f"User {user_sub} tried to retrieve a journal entry using the journal client "
+            f"key {journal_client_key_uid} for platform {platform}, but either the user has been deleted, "
+            "we have never seen such a key, or it is for a different user",
+        )
+        return ERROR_KEY_UNAVAILABLE_RESPONSE
+
+    we_have_key = bool(response[0].results[0][0])
+    platform_matches = bool(response[0].results[0][1])
+
+    if not we_have_key:
+        await handle_warning(
+            f"{__name__}:lost_client_key",
+            f"User {user_sub} tried to retrieve a journal entry using the journal client "
+            f"key {journal_client_key_uid} for platform {platform}, but we have "
+            "deleted that key.",
+        )
+        return ERROR_KEY_UNAVAILABLE_RESPONSE
+
+    if not platform_matches:
+        await handle_warning(
+            f"{__name__}:wrong_platform",
+            f"User {user_sub} tried to sync a journal entry using the journal client "
+            f"key {journal_client_key_uid} for platform {platform}, but that isn't the platform "
+            "that created that key.",
+        )
+        return ERROR_KEY_UNAVAILABLE_RESPONSE
+
+    journal_entry_exists = bool(response[1].results)
+    if not journal_entry_exists:
+        await handle_warning(
+            f"{__name__}:journal_entry_not_found",
+            f"User {user_sub} tried to sync a journal entry with uid {journal_entry_uid}, "
+            "but we couldn't find it despite a valid jwt being provided",
+        )
+        return ERROR_JOURNAL_ENTRY_NOT_FOUND_RESPONSE

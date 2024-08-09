@@ -69,11 +69,22 @@ class GetJournalMasterKeyForEncryptionResultParseError:
     """The exception that occurred while parsing the journal master key"""
 
 
+@dataclass
+class GetJournalMasterKeyForEncryptionResultUserNotFound:
+    type: Literal["user_not_found"]
+    """
+    - `user_not_found`: There is no user with the given sub
+    """
+    user_sub: str
+    """The sub of the user for whom we wanted the journal master key"""
+
+
 GetJournalMasterKeyForEncryptionResult = Union[
     GetJournalMasterKeyForEncryptionResultSuccess,
     GetJournalMasterKeyForEncryptionResultS3Error,
     GetJournalMasterKeyForEncryptionResultParseError,
     GetJournalMasterKeyForEncryptionResultLost,
+    GetJournalMasterKeyForEncryptionResultUserNotFound,
 ]
 
 
@@ -148,6 +159,7 @@ LIMIT 1
 
     response = await cursor.executeunified3(
         (
+            ("SELECT 1 FROM users WHERE sub=?", (user_sub,)),
             (
                 """
 SELECT
@@ -170,13 +182,15 @@ INSERT INTO s3_files (
 )
 SELECT
     ?, ?, ?, ?, ?
-WHERE NOT EXISTS (
-    SELECT 1 FROM users, user_journal_master_keys
-    WHERE
-        users.sub = ?
-        AND users.id = user_journal_master_keys.user_id
-        AND user_journal_master_keys.created_at > ?
-)
+WHERE 
+    EXISTS (SELECT 1 FROM users WHERE users.sub = ?)
+    AND NOT EXISTS (
+        SELECT 1 FROM users, user_journal_master_keys
+        WHERE
+            users.sub = ?
+            AND users.id = user_journal_master_keys.user_id
+            AND user_journal_master_keys.created_at > ?
+    )
                 """,
                 (
                     new_s3_uid,
@@ -184,6 +198,7 @@ WHERE NOT EXISTS (
                     len(new_key_data),
                     "application/octet-stream",
                     now,
+                    user_sub,
                     user_sub,
                     minimum_key_created_at,
                 ),
@@ -215,21 +230,33 @@ WHERE
                     minimum_key_created_at,
                 ),
             ),
-        )
+        ),
+        read_consistency="strong",
     )
 
-    if response[2].rows_affected is None or response[2].rows_affected < 1:
-        assert (
-            response[1].rows_affected is None or response[1].rows_affected < 1
-        ), response
-        await files.delete(bucket=files.default_bucket, key=new_s3_key)
-
-    if response[0].results:
+    if response[3].rows_affected is None or response[3].rows_affected < 1:
         assert (
             response[2].rows_affected is None or response[2].rows_affected < 1
         ), response
-        existing_master_key_uid = cast(str, response[0].results[0][0])
-        existing_s3_key = cast(str, response[0].results[0][1])
+        await files.delete(bucket=files.default_bucket, key=new_s3_key)
+
+    if not response[0].results:
+        assert (
+            response[2].rows_affected is None or response[2].rows_affected < 1
+        ), response
+        assert (
+            response[3].rows_affected is None or response[3].rows_affected < 1
+        ), response
+        return GetJournalMasterKeyForEncryptionResultUserNotFound(
+            type="user_not_found", user_sub=user_sub
+        )
+
+    if response[1].results:
+        assert (
+            response[3].rows_affected is None or response[3].rows_affected < 1
+        ), response
+        existing_master_key_uid = cast(str, response[1].results[0][0])
+        existing_s3_key = cast(str, response[1].results[0][1])
         return await get_journal_master_key_from_s3(
             itgs,
             user_journal_master_key_uid=existing_master_key_uid,
@@ -238,7 +265,7 @@ WHERE
         )
 
     assert (
-        response[1].rows_affected is not None and response[1].rows_affected > 0
+        response[2].rows_affected is not None and response[2].rows_affected > 0
     ), response
     return GetJournalMasterKeyForEncryptionResultSuccess(
         type="success",

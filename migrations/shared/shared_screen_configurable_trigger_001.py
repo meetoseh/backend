@@ -19,7 +19,14 @@ def shared_screen_configurable_trigger_001(
                         "enum": ["pop"],
                         "description": "Just pop the screen without any trigger",
                         "example": "pop",
-                    }
+                    },
+                    "endpoint": {
+                        "type": "string",
+                        "nullable": True,
+                        "default": None,
+                        "description": "The endpoint to use for the trigger",
+                        "example": "/api/1/users/me/screens/pop",
+                    },
                 },
             },
             {
@@ -45,7 +52,7 @@ def shared_screen_configurable_trigger_001(
                         "nullable": True,
                         "default": None,
                         "description": "The endpoint to use for the trigger",
-                        "example": None,
+                        "example": "/api/1/users/me/screens/pop",
                     },
                     "parameters": {
                         "type": "object",

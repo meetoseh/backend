@@ -443,7 +443,9 @@ async def add_journal_entry_chat(
     stats.incr_requested(unix_date=system_unix_date, type=b"system_chat")
 
     stream = JournalChatJobConversationStream(
-        journal_entry_uid=journal_entry_uid, user_sub=user_sub
+        journal_entry_uid=journal_entry_uid,
+        user_sub=user_sub,
+        pending_moderation="ignore",
     )
     await stream.start()
 
@@ -687,7 +689,9 @@ async def add_journal_entry_reflection_question(
     stats.incr_requested(unix_date=system_unix_date, type=b"reflection_question")
 
     stream = JournalChatJobConversationStream(
-        journal_entry_uid=journal_entry_uid, user_sub=user_sub
+        journal_entry_uid=journal_entry_uid,
+        user_sub=user_sub,
+        pending_moderation="ignore",
     )
     await stream.start()
 

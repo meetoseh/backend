@@ -1,7 +1,7 @@
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from typing import Annotated, Optional, Literal
+from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
 from auth import auth_any
@@ -13,6 +13,11 @@ from journals.entries.routes.sync_journal_entry import (
     ERROR_KEY_UNAVAILABLE_RESPONSE,
     ERROR_RATELIMITED_RESPONSE,
     SyncJournalEntryResponse,
+)
+from journals.entries.routes.edit_reflection_question import (
+    ERROR_404_TYPES,
+    ERROR_500_TYPES,
+    ERROR_BAD_STATE_RESPONSE,
 )
 from lib.journals.edit_entry_item import edit_entry_item
 from models import (
@@ -27,7 +32,7 @@ import journals.entry_auth
 from visitors.lib.get_or_create_visitor import VisitorSource
 
 
-class EditReflectionQuestionRequest(BaseModel):
+class EditReflectionResponseRequest(BaseModel):
     platform: VisitorSource = Field(description="the platform the client is running on")
     journal_client_key_uid: str = Field(
         description=(
@@ -44,33 +49,16 @@ class EditReflectionQuestionRequest(BaseModel):
     entry_counter: int = Field(
         description="The entry counter of the item within the journal to edit"
     )
-    encrypted_reflection_question: str = Field(
-        description="The new value of the reflection question, encrypted with the client key"
+    encrypted_reflection_response: str = Field(
+        description="The new value of the reflection response, encrypted with the client key"
     )
 
 
 router = APIRouter()
 
 
-ERROR_404_TYPES = Literal[
-    "key_unavailable", "journal_entry_not_found", "journal_entry_item_not_found"
-]
-
-ERROR_409_TYPES = Literal["bad_state"]
-ERROR_BAD_STATE_RESPONSE = Response(
-    content=StandardErrorResponse[ERROR_409_TYPES](
-        type="bad_state",
-        message="The provided journal entry is not in the correct state for this operation",
-    ).model_dump_json(),
-    headers={"Content-Type": "application/json; charset=utf-8"},
-    status_code=409,
-)
-
-ERROR_500_TYPES = Literal["contact_support"]
-
-
 @router.post(
-    "/edit_reflection_question",
+    "/edit_reflection_response",
     response_model=SyncJournalEntryResponse,
     responses={
         "404": {
@@ -90,14 +78,14 @@ ERROR_500_TYPES = Literal["contact_support"]
         **STANDARD_ERRORS_BY_CODE,
     },
 )
-async def edit_reflection_question(
-    args: EditReflectionQuestionRequest,
+async def edit_reflection_response(
+    args: EditReflectionResponseRequest,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
-    """Edits the indicated reflection question and returns the JWT required to stream
+    """Edits the indicated reflection response and returns the JWT required to stream
     the new state of the entry. The client MAY skip streaming the entry and instead choose
     to update the entry client-side after a successful response, but only if they are careful
-    to trim the reflection question and break paragraphs.
+    to trim the reflection response and break paragraphs.
 
     Requires standard authorization for the user that the journal entry belongs to,
     plus an additional JWT authorizing viewing that journal entry.
@@ -132,8 +120,8 @@ async def edit_reflection_question(
             entry_counter=args.entry_counter,
             journal_client_key_uid=args.journal_client_key_uid,
             platform=args.platform,
-            encrypted_text=args.encrypted_reflection_question,
-            expected_type="reflection-question",
+            encrypted_text=args.encrypted_reflection_response,
+            expected_type="reflection-response",
         )
         if edit_result.type == "user_not_found":
             return AUTHORIZATION_UNKNOWN_TOKEN

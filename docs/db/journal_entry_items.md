@@ -79,8 +79,18 @@ it gets too large.
         parameters here.
 
   - `display_author (string, enum)`: one of
+
     - `"self"`: display as if the user wrote this content
     - `"other"`: display as if the system wrote this content
+
+  - `processing_block (optional, object)`: If None, no restrictions on processing are present
+    for this item. If present, this object should be skipped for all automated processing (e.g.,
+    summarization, sentiment analysis, etc.). The object has the following fields:
+    - `reasons (array of string, enum)`: the reasons why processing is forbidden. Only unique
+      items, not empty. The following values are allowed:
+      - `flagged`: OpenAI's moderation endpoint flagged the content as potentially harmful.
+      - `unchecked`: We haven't checked this content for moderation purposes yet. You can
+        remove this flag by checking the content via OpenAI's moderation endpoint.
 
 - `created_at (real not null)`: unix timestamp when this entry was created. Note that this
   should not be used for ordering; use `entry_counter` instead.

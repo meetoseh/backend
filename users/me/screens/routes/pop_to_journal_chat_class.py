@@ -567,6 +567,7 @@ WHERE
                 JournalEntryItemData(
                     display_author="self",
                     type="ui",
+                    processing_block=None,
                     data=JournalEntryItemDataDataUI(
                         conceptually=(
                             JournalEntryItemUIConceptualUserJourney(

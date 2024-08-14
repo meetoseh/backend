@@ -4,11 +4,21 @@ import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from typing import Annotated, Optional, Literal
+
 from auth import auth_any
 from error_middleware import handle_warning
 from itgs import Itgs
+from journals.entries.routes.sync_journal_entry import (
+    ERROR_404_TYPES,
+    ERROR_429_TYPES,
+    ERROR_JOURNAL_ENTRY_NOT_FOUND_RESPONSE,
+    ERROR_KEY_UNAVAILABLE_RESPONSE,
+    ERROR_RATELIMITED_RESPONSE,
+    SyncJournalEntryResponse,
+)
 import journals.entry_auth
 from lib.journals.client_keys import get_journal_client_key
+from lib.journals.conversation_stream import JournalChatJobConversationStream
 from lib.journals.journal_entry_item_data import (
     JournalEntryItemData,
     JournalEntryItemDataDataTextual,
@@ -16,6 +26,7 @@ from lib.journals.journal_entry_item_data import (
     JournalEntryItemTextualPartParagraph,
 )
 from lib.journals.master_keys import get_journal_master_key_for_encryption
+from lib.journals.paragraphs import break_paragraphs
 from models import (
     AUTHORIZATION_UNKNOWN_TOKEN,
     STANDARD_ERRORS_BY_CODE,
@@ -33,11 +44,8 @@ import cryptography.fernet
 router = APIRouter()
 
 
-class CreateJournalEntryUserChatRequest(BaseModel):
+class CreateReflectionResponseRequest(BaseModel):
     platform: VisitorSource = Field(description="the platform the client is running on")
-    version: Optional[int] = Field(
-        None, description="the screen version code of the client; for compatibility"
-    )
     journal_entry_uid: str = Field(
         description="The UID of the journal entry the user is responding to"
     )
@@ -50,116 +58,54 @@ class CreateJournalEntryUserChatRequest(BaseModel):
             "the users message"
         )
     )
-    encrypted_user_message: str = Field(
-        description="the Fernet-encrypted user message, which is base64url encoded"
+    encrypted_reflection_response: str = Field(
+        description="the Fernet-encrypted reflection response, which is base64url encoded"
     )
 
 
-class CreateJournalEntryUserChatResponse(BaseModel):
-    journal_chat_jwt: str = Field(
-        description=(
-            "the JWT to provide to the websocket endpoint /api/2/journals/chat to "
-            "retrieve the systems response"
-        )
-    )
-    journal_entry_uid: str = Field(
-        description="the same journal entry UID that was provided, for consistency of response format with the greeting endpoint"
-    )
-    journal_entry_jwt: str = Field(
-        description="a new, refreshed JWT that allows the user to respond to the journal entry"
-    )
-
-
-ERROR_400_TYPES = Literal["bad_encryption"]
-ERROR_BAD_ENCRYPTION = Response(
-    content=StandardErrorResponse[ERROR_400_TYPES](
-        type="bad_encryption",
-        message="The provided encrypted message was invalid",
-    ).model_dump_json(),
-    headers={"Content-Type": "application/json; charset=utf-8"},
-    status_code=400,
-)
-
-
-ERROR_404_TYPES = Literal["key_unavailable", "journal_entry_not_found"]
-ERROR_KEY_UNAVAILABLE_RESPONSE = Response(
-    content=StandardErrorResponse[ERROR_404_TYPES](
-        type="key_unavailable",
-        message="The provided journal client key is not available or is not acceptable for this transfer. Generate a new one.",
-    ).model_dump_json(),
-    headers={"Content-Type": "application/json; charset=utf-8"},
-    status_code=404,
-)
-ERROR_JOURNAL_ENTRY_NOT_FOUND = Response(
-    content=StandardErrorResponse[ERROR_404_TYPES](
-        type="journal_entry_not_found",
-        message="The provided journal entry was not found",
-    ).model_dump_json(),
-    headers={"Content-Type": "application/json; charset=utf-8"},
-    status_code=404,
-)
-
-
-ERROR_409_TYPES = Literal["journal_entry_bad_state"]
-ERROR_JOURNAL_ENTRY_BAD_STATE = Response(
+ERROR_409_TYPES = Literal["bad_state"]
+ERROR_BAD_STATE_RESPONSE = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
-        type="journal_entry_bad_state",
+        type="bad_state",
         message="The provided journal entry is not in the correct state for this operation",
     ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
 
-ERROR_429_TYPES = Literal["system_response_ratelimited"]
-ERROR_RATELIMITED_RESPONSE = Response(
-    content=StandardErrorResponse[ERROR_429_TYPES](
-        type="system_response_ratelimited",
-        message="You have been rate limited. Your response has been stored, but no system message is coming. Please try again later. Oseh+ users have less stringent limits",
-    ).model_dump_json(),
-    headers={"Content-Type": "application/json; charset=utf-8"},
-    status_code=429,
-)
-
 
 @router.post(
-    "/chat/",
-    response_model=CreateJournalEntryUserChatResponse,
+    "/reflection/",
+    response_model=SyncJournalEntryResponse,
     responses={
         "404": {
+            "description": """Further distinguished using `type`:
+
+- `key_unavailable`: the provided journal client key is not available or is not acceptable for this transfer. Generate a new one.
+- `journal_entry_not_found`: there is no journal entry with that uid despite valid authorization; it has been deleted.
+""",
             "model": StandardErrorResponse[ERROR_404_TYPES],
-            "description": "Either the provided journal client key is not available or is not acceptable for this transfer, or the journal entry could not be found.",
         },
         "409": {
-            "model": StandardErrorResponse[ERROR_409_TYPES],
             "description": "The provided journal entry is not in the correct state for this operation",
+            "model": StandardErrorResponse[ERROR_409_TYPES],
         },
         "429": {
+            "description": "You have been rate limited. Please try again later. Oseh+ users have less stringent limits",
             "model": StandardErrorResponse[ERROR_429_TYPES],
-            "description": (
-                "The user has been rate limited. The response has been stored, "
-                "but no system message is coming. Oseh+ users have less stringent limits.\n\n"
-                "You should wait a bit and use POST /api/1/journals/chat/retry_system_response to try and "
-                "get a response from the system"
-            ),
         },
         **STANDARD_ERRORS_BY_CODE,
     },
 )
-async def create_journal_entry_user_chat(
-    args: CreateJournalEntryUserChatRequest,
+async def create_reflection_response(
+    args: CreateReflectionResponseRequest,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
-    """Adds a new user message to the journal entry with the indicated uid,
-    as authorized by the given JWT, so long as the journal entry is in the
-    correct state for the operation (i.e., the last message was a greeting
-    from the system).
+    """Adds a reflection response to a journal entry, provided it is in an appropriate
+    state to accept one (i.e., it has a reflection question without a corresponding
+    reflection response)
 
-    The client must connect over TLS as well as encrypt the message with a
-    journal client key, whose UID is indicated in the request (see the
-    greeting endpoint for the motivation)
-
-    Requires standard authorization for the same user as in the journal entry
-    JWT to prevent indirectly extending user JWTs via journal entry JWTs.
+    Requires standard authorization for the user who owns the given journal entry.
     """
     async with Itgs() as itgs:
         std_auth_result = await auth_any(itgs, authorization)
@@ -219,8 +165,8 @@ async def create_journal_entry_user_chat(
             return ERROR_KEY_UNAVAILABLE_RESPONSE
 
         try:
-            user_message_bytes = journal_client_key.journal_client_key.decrypt(
-                args.encrypted_user_message, ttl=120
+            reflection_response_bytes = journal_client_key.journal_client_key.decrypt(
+                args.encrypted_reflection_response, ttl=120
             )
         except cryptography.fernet.InvalidToken:
             await handle_warning(
@@ -230,10 +176,12 @@ async def create_journal_entry_user_chat(
                 f"their message.",
                 is_urgent=True,
             )
-            return ERROR_BAD_ENCRYPTION
+            return Response(status_code=500)
 
         try:
-            user_message = user_message_bytes.decode("utf-8", errors="strict")
+            reflection_response = reflection_response_bytes.decode(
+                "utf-8", errors="strict"
+            )
         except UnicodeDecodeError as e:
             await handle_warning(
                 f"{__name__}:invalid_token",
@@ -241,7 +189,7 @@ async def create_journal_entry_user_chat(
                 f"key `{args.journal_client_key_uid}` for platform `{args.platform}`, but the decrypted data was "
                 f"not valid ({str(e)})",
             )
-            return ERROR_BAD_ENCRYPTION
+            return Response(status_code=500)
 
         journal_master_key = await get_journal_master_key_for_encryption(
             itgs, user_sub=std_auth_result.result.sub, now=time.time()
@@ -256,8 +204,7 @@ async def create_journal_entry_user_chat(
                 status_code=503 if journal_master_key.type == "s3_error" else 500
             )
 
-        paragraphs = [p.strip() for p in user_message.split("\n")]
-        paragraphs = [p for p in paragraphs if p]
+        paragraphs = break_paragraphs(reflection_response)
 
         if not paragraphs:
             await handle_warning(
@@ -265,13 +212,13 @@ async def create_journal_entry_user_chat(
                 f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
                 f"request but the message was empty after stripping whitespace",
             )
-            return ERROR_BAD_ENCRYPTION
+            return Response(status_code=500)
 
         master_encrypted_data = journal_master_key.journal_master_key.encrypt_at_time(
             gzip.compress(
                 JournalEntryItemData.__pydantic_serializer__.to_json(
                     JournalEntryItemData(
-                        type="chat",
+                        type="reflection-response",
                         data=JournalEntryItemDataDataTextual(
                             type="textual",
                             parts=[
@@ -282,7 +229,7 @@ async def create_journal_entry_user_chat(
                             ],
                         ),
                         processing_block=JournalEntryItemProcessingBlockedReason(
-                            reasons=['unchecked']
+                            reasons=["unchecked"]
                         ),
                         display_author="self",
                     )
@@ -291,18 +238,68 @@ async def create_journal_entry_user_chat(
             ),
             int(time.time()),
         ).decode("ascii")
-        del user_message_bytes
-        del user_message
+
         del paragraphs
+        del reflection_response
+        del reflection_response_bytes
+
+        stream = JournalChatJobConversationStream(
+            journal_entry_uid=args.journal_entry_uid,
+            user_sub=std_auth_result.result.sub,
+            pending_moderation="ignore",
+        )
+        await stream.start()
+
+        have_reflection_question = False
+        while True:
+            next_item = await stream.load_next_item(timeout=5)
+            if next_item.type == "timeout":
+                await stream.cancel()
+                await handle_warning(
+                    f"{__name__}:timeout",
+                    f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
+                    f"request but we timed out waiting for the next item in the conversation stream",
+                )
+                return Response(status_code=503)
+
+            if next_item.type == "finished":
+                break
+
+            if next_item.type != "item":
+                await stream.cancel()
+                await handle_warning(
+                    f"{__name__}:bad_stream_item",
+                    f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
+                    f"request but we failed to load the items in their stream: {next_item.type}",
+                    exc=next_item.error,
+                )
+                return Response(status_code=500)
+
+            if next_item.item.data.type == "reflection-question":
+                have_reflection_question = True
+            elif next_item.item.data.type == "reflection-response":
+                have_reflection_question = False
+
+        if not have_reflection_question:
+            await handle_warning(
+                f"{__name__}:bad_state",
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
+                f"request but the journal entry was not in the correct state to accept a reflection response",
+            )
+            return ERROR_BAD_STATE_RESPONSE
 
         conn = await itgs.conn()
         cursor = conn.cursor()
 
         new_journal_entry_item_uid = f"oseh_jei_{secrets.token_urlsafe(16)}"
+        new_journal_entry_item_entry_counter = len(stream.loaded) + 1
         new_journal_entry_created_at = time.time()
         new_journal_entry_created_unix_date = unix_dates.unix_timestamp_to_unix_date(
             new_journal_entry_created_at, tz=user_tz
         )
+
+        del stream
+
         response = await cursor.executeunified3(
             (
                 (  # user_not_found
@@ -339,13 +336,24 @@ WHERE
     users.sub = ?
     AND users.id = journal_entries.user_id
     AND journal_entries.uid = ?
-    AND 1 = (
+    AND ? = (
         SELECT COUNT(*) FROM journal_entry_items
         WHERE
             journal_entry_items.journal_entry_id = journal_entries.id
     )
+    AND NOT EXISTS (
+        SELECT 1 FROM journal_entry_items
+        WHERE
+            journal_entry_items.journal_entry_id = journal_entries.id
+            AND journal_entry_items.entry_counter >= ?
+    )
                     """,
-                    (std_auth_result.result.sub, args.journal_entry_uid),
+                    (
+                        std_auth_result.result.sub,
+                        args.journal_entry_uid,
+                        new_journal_entry_item_entry_counter - 1,
+                        new_journal_entry_item_entry_counter,
+                    ),
                 ),
                 (  # insert
                     """
@@ -361,13 +369,7 @@ INSERT INTO journal_entry_items (
 SELECT
     ?,
     journal_entries.id,
-    1 + (
-        SELECT 
-            MAX(jei.entry_counter) 
-        FROM journal_entry_items AS jei
-        WHERE 
-            jei.journal_entry_id = journal_entries.id
-    ),
+    ?,
     user_journal_master_keys.id,
     ?,
     ?,
@@ -379,20 +381,29 @@ WHERE
     AND journal_entries.uid = ?
     AND user_journal_master_keys.uid = ?
     AND user_journal_master_keys.user_id = users.id
-    AND 1 = (
+    AND ? = (
         SELECT COUNT(*) FROM journal_entry_items AS jei
         WHERE
             jei.journal_entry_id = journal_entries.id
     )
+    AND NOT EXISTS (
+        SELECT 1 FROM journal_entry_items AS jei
+        WHERE
+            jei.journal_entry_id = journal_entries.id
+            AND jei.entry_counter >= ?
+    )
                     """,
                     (
                         new_journal_entry_item_uid,
+                        new_journal_entry_item_entry_counter,
                         master_encrypted_data,
                         new_journal_entry_created_at,
                         new_journal_entry_created_unix_date,
                         std_auth_result.result.sub,
                         args.journal_entry_uid,
                         journal_master_key.journal_master_key_uid,
+                        new_journal_entry_item_entry_counter - 1,
+                        new_journal_entry_item_entry_counter,
                     ),
                 ),
             )
@@ -412,7 +423,7 @@ WHERE
             assert (
                 response[4].rows_affected is None or response[4].rows_affected < 1
             ), response
-            return ERROR_JOURNAL_ENTRY_NOT_FOUND
+            return ERROR_JOURNAL_ENTRY_NOT_FOUND_RESPONSE
 
         if not response[2].results:
             assert (
@@ -429,7 +440,7 @@ WHERE
             assert (
                 response[4].rows_affected is None or response[4].rows_affected < 1
             ), response
-            return ERROR_JOURNAL_ENTRY_BAD_STATE
+            return ERROR_BAD_STATE_RESPONSE
 
         if response[4].rows_affected is None or response[4].rows_affected < 1:
             await handle_warning(
@@ -440,16 +451,11 @@ WHERE
             return Response(status_code=500)
 
         queue_job_at = time.time()
-        queue_job_result = (
-            await lib.journals.start_journal_chat_job.add_journal_entry_chat(
-                itgs,
-                user_sub=std_auth_result.result.sub,
-                journal_entry_uid=args.journal_entry_uid,
-                now=queue_job_at,
-                include_previous_history=(
-                    args.version is not None and args.version > 73
-                ),
-            )
+        queue_job_result = await lib.journals.start_journal_chat_job.sync_journal_entry(
+            itgs,
+            user_sub=std_auth_result.result.sub,
+            journal_entry_uid=args.journal_entry_uid,
+            now=queue_job_at,
         )
         if queue_job_result.type != "success":
             await handle_warning(
@@ -480,7 +486,7 @@ WHERE
             audience="oseh-journal-entry",
         )
         return Response(
-            content=CreateJournalEntryUserChatResponse(
+            content=SyncJournalEntryResponse(
                 journal_chat_jwt=chat_jwt,
                 journal_entry_uid=args.journal_entry_uid,
                 journal_entry_jwt=entry_jwt,

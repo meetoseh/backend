@@ -253,15 +253,19 @@ INSERT INTO journal_entries (
     user_id,
     flags,
     created_at,
-    created_unix_date
+    created_unix_date,
+    canonical_at,
+    canonical_unix_date
 )
 SELECT
-    ?, users.id, ?, ?, ?
+    ?, users.id, ?, ?, ?, ?, ?
 FROM users WHERE users.sub=?
         """,
         (
             journal_entry_uid,
             0,
+            now,
+            user_now_unix_date,
             now,
             user_now_unix_date,
             user_sub,

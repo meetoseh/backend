@@ -293,9 +293,11 @@ async def create_reflection_response(
 
         new_journal_entry_item_uid = f"oseh_jei_{secrets.token_urlsafe(16)}"
         new_journal_entry_item_entry_counter = len(stream.loaded) + 1
-        new_journal_entry_created_at = time.time()
-        new_journal_entry_created_unix_date = unix_dates.unix_timestamp_to_unix_date(
-            new_journal_entry_created_at, tz=user_tz
+        new_journal_entry_item_created_at = time.time()
+        new_journal_entry_item_created_unix_date = (
+            unix_dates.unix_timestamp_to_unix_date(
+                new_journal_entry_item_created_at, tz=user_tz
+            )
         )
 
         del stream
@@ -397,13 +399,35 @@ WHERE
                         new_journal_entry_item_uid,
                         new_journal_entry_item_entry_counter,
                         master_encrypted_data,
-                        new_journal_entry_created_at,
-                        new_journal_entry_created_unix_date,
+                        new_journal_entry_item_created_at,
+                        new_journal_entry_item_created_unix_date,
                         std_auth_result.result.sub,
                         args.journal_entry_uid,
                         journal_master_key.journal_master_key_uid,
                         new_journal_entry_item_entry_counter - 1,
                         new_journal_entry_item_entry_counter,
+                    ),
+                ),
+                (  # update
+                    """
+UPDATE journal_entries
+SET
+  canonical_at = ?,
+  canonical_unix_date = ?
+WHERE
+    uid = ?
+    AND EXISTS (
+        SELECT 1 FROM journal_entry_items
+        WHERE journal_entry_items.uid = ? AND journal_entry_items.master_encrypted_data = ?
+    )
+
+                    """,
+                    (
+                        new_journal_entry_item_created_at,
+                        new_journal_entry_item_created_unix_date,
+                        args.journal_entry_uid,
+                        new_journal_entry_item_uid,
+                        master_encrypted_data,
                     ),
                 ),
             )
@@ -416,6 +440,9 @@ WHERE
             assert (
                 response[4].rows_affected is None or response[4].rows_affected < 1
             ), response
+            assert (
+                response[5].rows_affected is None or response[5].rows_affected < 1
+            ), response
             return AUTHORIZATION_UNKNOWN_TOKEN
 
         if not response[1].results:
@@ -423,11 +450,17 @@ WHERE
             assert (
                 response[4].rows_affected is None or response[4].rows_affected < 1
             ), response
+            assert (
+                response[5].rows_affected is None or response[5].rows_affected < 1
+            ), response
             return ERROR_JOURNAL_ENTRY_NOT_FOUND_RESPONSE
 
         if not response[2].results:
             assert (
                 response[4].rows_affected is None or response[4].rows_affected < 1
+            ), response
+            assert (
+                response[5].rows_affected is None or response[5].rows_affected < 1
             ), response
             await handle_warning(
                 f"{__name__}:no_master_key",
@@ -440,15 +473,24 @@ WHERE
             assert (
                 response[4].rows_affected is None or response[4].rows_affected < 1
             ), response
+            assert (
+                response[5].rows_affected is None or response[5].rows_affected < 1
+            ), response
             return ERROR_BAD_STATE_RESPONSE
 
         if response[4].rows_affected is None or response[4].rows_affected < 1:
+            assert (
+                response[5].rows_affected is None or response[5].rows_affected < 1
+            ), response
             await handle_warning(
                 f"{__name__}:no_insert",
                 f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
                 f"request but the insert failed",
             )
             return Response(status_code=500)
+
+        assert response[4].rows_affected == 1, response
+        assert response[5].rows_affected == 1, response
 
         queue_job_at = time.time()
         queue_job_result = await lib.journals.start_journal_chat_job.sync_journal_entry(

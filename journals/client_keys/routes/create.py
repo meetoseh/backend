@@ -22,6 +22,13 @@ import base64
 
 router = APIRouter()
 
+# SECURITY:
+#  Implementing RSA encryption only clientside is still pretty complicated so I've omitted it
+#  for now, but it means in theory an active man-in-the-middle attack which inspects and alters
+#  all journal client key requests could be used to compromise journal entries without causing
+#  any unexpected requests to the backend, which is not desirable. However, due to the effort this
+#  would take by the mitm, it's currently low priority.
+
 
 class CreateJournalClientKeyRequest(BaseModel):
     platform: Literal["ios", "android", "browser"] = Field(
@@ -31,8 +38,16 @@ class CreateJournalClientKeyRequest(BaseModel):
         description=(
             "The client-side chosen public key for a diffie-hellman key exchange "
             "(group 14, https://www.ietf.org/rfc/rfc3526.txt), base64 (standard) encoded"
+            # ". If `pinned_public_key` is provided, this must be encrypted using the indicated public key"
         )
     )
+    # pinned_public_key: Optional[Literal["rsa-4096:2024-08"]] = Field(
+    #     description=(
+    #         "The identifier for the public key that was used to encrypt `client_dh_public_key`.\n\n"
+    #         "The valid options are:\n"
+    #         "- `rsa-4096:2024-08`: pad with OAEP (from PKCS#1 v2, RFC 2437, blank label, MGF1), use e=65537, n=<some public key here>"
+    #     )
+    # )
 
 
 class CreateJournalClientKeyResponse(BaseModel):

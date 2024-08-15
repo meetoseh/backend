@@ -22,7 +22,7 @@ class GeneralFeedbackRequest(BaseModel):
     )
     slug: Annotated[
         str,
-        StringConstraints(min_length=1, max_length=32, pattern=r"^[a-z0-9_]+$"),
+        StringConstraints(min_length=1, max_length=32, pattern=r"^[a-z0-9_\\-]+$"),
     ] = Field(description="A slug which loosely identifies why we asked for feedback")
 
 

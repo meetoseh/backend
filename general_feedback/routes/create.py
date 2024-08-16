@@ -128,7 +128,7 @@ LEFT OUTER JOIN users ON (? = 0 AND users.sub = ?)
         if not args.anonymous:
             await enqueue_send_described_user_slack_message(
                 itgs,
-                message=f"Feedback `{args.slug=}`\n\n{args.feedback}",
+                message=f"{{name}} is giving feedback `{args.slug=}`\n\n{args.feedback}",
                 channel="oseh_bot",
                 sub=auth_result.result.sub,
             )

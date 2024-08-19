@@ -3538,11 +3538,16 @@ via a share code. The UTM is:
   - `started`: of those queued, how many were assigned a worker
   - `completed`: of those started, how many were completed
   - `failed`: of those started, how many failed
-  
+
 - `stats:journal_chat_jobs:daily:{unix_date}:extra:{event}` goes to a hash breaking
   down the event key, where the keys in the breakdown depend on the event:
 
-  - `requested`: `{type}`, one of `greeting`, `system_chat`, `reflection_question`, `sync`
+  - `requested`: `{type}`, one of 
+    - `greeting`
+    - `system_chat`
+    - `reflection_question`
+    - `sync`
+    - `summarize`
   - `failed_to_queue`: `{type}:{reason}`, e.g., `system_chat:locked`
   - `queued`: `{type}`, e.g., `greeting`
   - `started`: `{type}`, e.g., `greeting`
@@ -3867,7 +3872,6 @@ These are regular keys used by the personalization module
   `start_unix_date`, `end_unix_date`, `length_bytes` and the blob is
   `length_bytes` of data to write to the corresponding local cache key. All
   numbers are big-endian encoded.
-  
 - `ps:stats:client_flows:daily` is used to optimistically send
   compressed client flow statistics. messages are formatted as
   (uint32, uint32, uint64, blob) where the ints mean, in order:

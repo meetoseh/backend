@@ -20,7 +20,7 @@ from journals.entries.routes.edit_reflection_question import (
     ERROR_BAD_STATE_RESPONSE,
 )
 from lib.journals.edit_entry_item import (
-    EditEntryItemDecryptedTextToTextualItem,
+    EditEntryItemDecryptedTextToSummary,
     edit_entry_item,
 )
 from models import (
@@ -35,7 +35,7 @@ import journals.entry_auth
 from visitors.lib.get_or_create_visitor import VisitorSource
 
 
-class EditReflectionResponseRequest(BaseModel):
+class EditSummaryRequest(BaseModel):
     platform: VisitorSource = Field(description="the platform the client is running on")
     journal_client_key_uid: str = Field(
         description=(
@@ -52,8 +52,8 @@ class EditReflectionResponseRequest(BaseModel):
     entry_counter: int = Field(
         description="The entry counter of the item within the journal to edit"
     )
-    encrypted_reflection_response: str = Field(
-        description="The new value of the reflection response, encrypted with the client key"
+    encrypted_summary: str = Field(
+        description="The new jsonified summary v1, encrypted with the client key"
     )
 
 
@@ -61,7 +61,7 @@ router = APIRouter()
 
 
 @router.post(
-    "/edit_reflection_response",
+    "/edit_summary",
     response_model=SyncJournalEntryResponse,
     responses={
         "404": {
@@ -70,7 +70,7 @@ router = APIRouter()
 - `key_unavailable`: the provided journal client key is not available or is not acceptable for this transfer. Generate a new one.
 - `journal_entry_not_found`: there is no journal entry with that uid despite valid authorization; it has been deleted.
 - `journal_entry_item_not_found`: the journal entry exists, but either the entry indicated doesn't exist,
-  or isn't a reflection question
+  or isn't a summary
 """,
             "model": StandardErrorResponse[ERROR_404_TYPES],
         },
@@ -81,14 +81,13 @@ router = APIRouter()
         **STANDARD_ERRORS_BY_CODE,
     },
 )
-async def edit_reflection_response(
-    args: EditReflectionResponseRequest,
+async def edit_summary(
+    args: EditSummaryRequest,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
-    """Edits the indicated reflection response and returns the JWT required to stream
-    the new state of the entry. The client MAY skip streaming the entry and instead choose
-    to update the entry client-side after a successful response, but only if they are careful
-    to trim the reflection response and break paragraphs.
+    """Edits the indicated summary and returns the JWT required to stream the new
+    state of the entry. The client SHOULD skip streaming the entry and instead
+    choose to update the entry client-side after a successful response
 
     Requires standard authorization for the user that the journal entry belongs to,
     plus an additional JWT authorizing viewing that journal entry.
@@ -110,7 +109,7 @@ async def edit_reflection_response(
         if entry_auth_result.result.user_sub != std_auth_result.result.sub:
             await handle_warning(
                 f"{__name__}:stolen_jwt",
-                f"User {std_auth_result.result.sub} tried to sync + ensure a reflection question, but the JWT provided "
+                f"User {std_auth_result.result.sub} tried to sync + edit a summary, but the JWT provided "
                 f"was for a different user ({entry_auth_result.result.user_sub})",
                 is_urgent=True,
             )
@@ -123,11 +122,9 @@ async def edit_reflection_response(
             entry_counter=args.entry_counter,
             journal_client_key_uid=args.journal_client_key_uid,
             platform=args.platform,
-            encrypted_text=args.encrypted_reflection_response,
-            expected_type="reflection-response",
-            decrypted_text_to_item=EditEntryItemDecryptedTextToTextualItem(
-                "reflection-response"
-            ),
+            encrypted_text=args.encrypted_summary,
+            expected_type="summary",
+            decrypted_text_to_item=EditEntryItemDecryptedTextToSummary(),
         )
         if edit_result.type == "user_not_found":
             return AUTHORIZATION_UNKNOWN_TOKEN

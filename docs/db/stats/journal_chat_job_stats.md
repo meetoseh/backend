@@ -22,6 +22,8 @@ we'd drop requests much sooner).
   - `system_chat`: stream the entry, then add a system response to the user and stream that
   - `reflection_question`: stream the entry then add a reflection question and stream that
   - `sync`: a basic job that just streams the entry unchanged
+  - `summarize`: a job that adds or regenerates a `summary` item to the entry with a 3-4 word
+    title and some tags
 - `failed_to_queue (integer not null)`: Of the jobs requested, how many did we fail to
   queue
 - `failed_to_queue_breakdown (text not null)`: jobs failed to queue, broken down by:

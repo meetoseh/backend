@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 import users.me.screens.routes.peek
 import users.me.screens.routes.pop
+import users.me.screens.routes.pop_from_journal_reflection
 import users.me.screens.routes.trace
 
 import users.me.screens.routes.pop_to_series
@@ -30,6 +31,7 @@ router.include_router(users.me.screens.routes.pop_to_existing_journal_entry.rout
 router.include_router(users.me.screens.routes.pop_to_history_class.router)
 router.include_router(users.me.screens.routes.pop_to_journal_chat_class.router)
 router.include_router(users.me.screens.routes.pop_to_journal_reflection.router)
+router.include_router(users.me.screens.routes.pop_from_journal_reflection.router)
 router.include_router(users.me.screens.routes.pop_to_new_journal_entry.router)
 router.include_router(users.me.screens.routes.pop_to_phone_verify.router)
 

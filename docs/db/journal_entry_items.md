@@ -15,6 +15,11 @@ The history of an entry can often be partially reconstructed using the
 as we want to ensure truncating/moving that table is straightforward in case
 it gets too large.
 
+NOTE: For searching entries, the intended approach is to produce a seachable index
+(e.g., a sqlite3 file, if we have a sqlite3 engine on the client) and pass it to the
+client and let them doing searching locally. This allows them to get reasonably fast
+feedback without us having to store sensitive details unencrypted
+
 ## Fields
 
 - `id (integer primary key)`: Internal row identifier.
@@ -58,6 +63,10 @@ it gets too large.
       Use `data`, `$.conceptually.type` for more details about what we were hoping
       the flow would accomplish
 
+    uses summary elements:
+
+    - `"summary"` - a summary of the journal entry
+
   - `data (object)`: enum discriminated by its own `type` field to allow for independent
     parsing from the top level `type` field:
 
@@ -77,6 +86,12 @@ it gets too large.
         trigger that was used to manipulate the users screen queue. It's very convenient if this
         object can be shared with the client as-is, so we don't include server parameters or client
         parameters here.
+    - `"summary"`: enum discriminated by `version`, which is a string:
+      - `v1`: the summary version when this was introduced. Has the following additional fields:
+        - `title`: a title for the entry
+        - `tags`: an array of string tags associated with the entry. Generally consist of an emoji
+          followed by an emotion word, e.g., `["😊 Happy"]`. See the NOTE in this file for how this
+          can be searched.
 
   - `display_author (string, enum)`: one of
 

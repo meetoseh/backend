@@ -1,12 +1,13 @@
 import gzip
 import time
-from typing import Literal, Union, cast
+from typing import Callable, Literal, Protocol, Union, cast
 
 from error_middleware import handle_warning
 from itgs import Itgs
 from lib.journals.client_keys import get_journal_client_key
 from lib.journals.journal_entry_item_data import (
     JournalEntryItemData,
+    JournalEntryItemDataDataSummaryV1,
     JournalEntryItemDataDataTextual,
     JournalEntryItemProcessingBlockedReason,
     JournalEntryItemTextualPartParagraph,
@@ -78,9 +79,11 @@ class EditEntryItemResultItemBadType:
     - `journal_entry_item_bad_type`: the journal entry item indicated is not the
       expected type, so it does not make sense to edit its value
     """
-    expected: Literal["chat", "reflection-question", "reflection-response"]
+    expected: Literal["chat", "reflection-question", "reflection-response", "summary"]
     """The type we expected"""
-    actual: Literal["ui", "chat", "reflection-question", "reflection-response"]
+    actual: Literal[
+        "ui", "chat", "reflection-question", "reflection-response", "summary"
+    ]
     """The type we got"""
 
 
@@ -135,6 +138,111 @@ EditEntryItemResult = Union[
 ]
 
 
+@dataclass
+class EditEntryItemDecryptedTextToItemResultSuccess:
+    type: Literal["success"]
+    """
+    - `success`: the decrypted text was successfully converted to a journal entry item
+    """
+    data: JournalEntryItemData
+    """The data the payload corresponds to"""
+
+
+EditEntryItemDecryptedTextToItemResult = Union[
+    EditEntryItemResultDecryptNewError, EditEntryItemDecryptedTextToItemResultSuccess
+]
+
+
+class EditEntryItemDecryptedTextToItem(Protocol):
+    """Describes something capable of taking the decrypted payload and converting it to
+    the journal entry item data it is trying to have us save
+    """
+
+    async def __call__(
+        self, payload: bytes, /, *, error_ctx: Callable[[], str]
+    ) -> EditEntryItemDecryptedTextToItemResult:
+        """Determines the journal entry item data the decrypted payload corresponds to,
+        raising a warning before returning if there is a problem. The warning should be
+        prefixed by the result of calling `error_ctx` to provide context for the warning
+        (e.g., the user involved)
+        """
+        ...
+
+
+class EditEntryItemDecryptedTextToTextualItem:
+    def __init__(
+        self, type: Literal["chat", "reflection-question", "reflection-response"]
+    ):
+        self.type: Literal["chat", "reflection-question", "reflection-response"] = type
+
+    async def __call__(
+        self, payload: bytes, /, *, error_ctx: Callable[[], str]
+    ) -> EditEntryItemDecryptedTextToItemResult:
+        try:
+            decrypted_text_str = payload.decode("utf-8")
+        except UnicodeDecodeError:
+            await handle_warning(
+                f"{__name__}:decryption_failure",
+                f"{error_ctx()} Could not interpret the payload as utf-8",
+            )
+            return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
+
+        decrypted_text_str = decrypted_text_str.strip()
+        if decrypted_text_str == "":
+            await handle_warning(
+                f"{__name__}:empty_payload",
+                f"{error_ctx()}, but the payload was empty",
+            )
+            return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
+
+        paragraphs = break_paragraphs(decrypted_text_str)
+
+        return EditEntryItemDecryptedTextToItemResultSuccess(
+            type="success",
+            data=JournalEntryItemData(
+                data=JournalEntryItemDataDataTextual(
+                    parts=[
+                        JournalEntryItemTextualPartParagraph(type="paragraph", value=p)
+                        for p in paragraphs
+                    ],
+                    type="textual",
+                ),
+                type=self.type,
+                processing_block=JournalEntryItemProcessingBlockedReason(
+                    reasons=["unchecked"]
+                ),
+                display_author="other",
+            ),
+        )
+
+
+class EditEntryItemDecryptedTextToSummary:
+    async def __call__(
+        self, payload: bytes, /, *, error_ctx: Callable[[], str]
+    ) -> EditEntryItemDecryptedTextToItemResult:
+        try:
+            result = JournalEntryItemDataDataSummaryV1.model_validate_json(payload)
+        except Exception as e:
+            await handle_warning(
+                f"{__name__}:decryption_failure",
+                f"{error_ctx()} Could not interpret the payload as a summary",
+                exc=e,
+            )
+            return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
+
+        return EditEntryItemDecryptedTextToItemResultSuccess(
+            type="success",
+            data=JournalEntryItemData(
+                data=result,
+                type="summary",
+                processing_block=JournalEntryItemProcessingBlockedReason(
+                    reasons=["unchecked"]
+                ),
+                display_author="other",
+            ),
+        )
+
+
 async def edit_entry_item(
     itgs: Itgs,
     /,
@@ -145,7 +253,10 @@ async def edit_entry_item(
     journal_client_key_uid: str,
     platform: VisitorSource,
     encrypted_text: str,
-    expected_type: Literal["chat", "reflection-question", "reflection-response"],
+    expected_type: Literal[
+        "chat", "reflection-question", "reflection-response", "summary"
+    ],
+    decrypted_text_to_item: EditEntryItemDecryptedTextToItem,
 ) -> EditEntryItemResult:
     """Edits the journal entry item within the journal entry with the given uid
     owned by the user with the given sub to the value indicated by the encrypted
@@ -266,23 +377,6 @@ WHERE
         )
         return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
 
-    try:
-        decrypted_text_str = decrypted_text_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        await handle_warning(
-            f"{__name__}:decryption_failure",
-            f"User `{user_sub}` tried to edit a(n) {expected_type}, but we could not decode the payload",
-        )
-        return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
-
-    decrypted_text_str = decrypted_text_str.strip()
-    if decrypted_text_str == "":
-        await handle_warning(
-            f"{__name__}:empty_payload",
-            f"User `{user_sub}` tried to edit a(n) {expected_type}, but the payload was empty",
-        )
-        return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
-
     existing_user_journal_master_key = await get_journal_master_key_from_s3(
         itgs,
         user_journal_master_key_uid=existing_user_journal_master_key_uid,
@@ -324,34 +418,6 @@ WHERE
             actual=existing_item_data.type,
         )
 
-    paragraphs = break_paragraphs(decrypted_text_str)
-    if (
-        existing_item_data.data.type == "textual"
-        and len(paragraphs) == len(existing_item_data.data.parts)
-        and all(
-            p.type == "paragraph" and p.value == paragraphs[i]
-            for i, p in enumerate(existing_item_data.data.parts)
-        )
-    ):
-        await handle_warning(
-            f"{__name__}:no_change",
-            f"User `{user_sub}` tried to edit a(n) {expected_type}, but the new value is the same as the old value. The client should skip the api request",
-        )
-        return EditEntryItemResultSuccess(type="success")
-
-    new_item_data = JournalEntryItemData(
-        data=JournalEntryItemDataDataTextual(
-            parts=[
-                JournalEntryItemTextualPartParagraph(type="paragraph", value=p)
-                for p in paragraphs
-            ],
-            type="textual",
-        ),
-        type=expected_type,
-        processing_block=JournalEntryItemProcessingBlockedReason(reasons=["unchecked"]),
-        display_author="other",
-    )
-
     encryption_master_key = await get_journal_master_key_for_encryption(
         itgs, user_sub=user_sub, now=time.time()
     )
@@ -364,9 +430,19 @@ WHERE
         )
         return EditEntryItemResultEncryptNewError(type="encrypt_new_error")
 
+    parse_payload_result = await decrypted_text_to_item(
+        decrypted_text_bytes,
+        error_ctx=lambda: f"User `{user_sub}` tried to edit a(n) {expected_type}",
+    )
+    if parse_payload_result.type != "success":
+        return parse_payload_result
+
     new_encrypted_master_data = encryption_master_key.journal_master_key.encrypt(
         gzip.compress(
-            new_item_data.__pydantic_serializer__.to_json(new_item_data), mtime=0
+            parse_payload_result.data.__pydantic_serializer__.to_json(
+                parse_payload_result.data
+            ),
+            mtime=0,
         )
     ).decode("ascii")
 

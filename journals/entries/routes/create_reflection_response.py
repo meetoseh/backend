@@ -103,7 +103,7 @@ async def create_reflection_response(
 ):
     """Adds a reflection response to a journal entry, provided it is in an appropriate
     state to accept one (i.e., it has a reflection question without a corresponding
-    reflection response)
+    reflection response). Also flags the journal entry to be included in My Journal.
 
     Requires standard authorization for the user who owns the given journal entry.
     """
@@ -412,6 +412,7 @@ WHERE
                     """
 UPDATE journal_entries
 SET
+  flags = (journal_entries.flags & (~1)),
   canonical_at = ?,
   canonical_unix_date = ?
 WHERE

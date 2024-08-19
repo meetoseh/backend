@@ -14,7 +14,10 @@ from journals.entries.routes.sync_journal_entry import (
     ERROR_RATELIMITED_RESPONSE,
     SyncJournalEntryResponse,
 )
-from lib.journals.edit_entry_item import edit_entry_item
+from lib.journals.edit_entry_item import (
+    EditEntryItemDecryptedTextToTextualItem,
+    edit_entry_item,
+)
 from models import (
     AUTHORIZATION_UNKNOWN_TOKEN,
     STANDARD_ERRORS_BY_CODE,
@@ -134,6 +137,9 @@ async def edit_reflection_question(
             platform=args.platform,
             encrypted_text=args.encrypted_reflection_question,
             expected_type="reflection-question",
+            decrypted_text_to_item=EditEntryItemDecryptedTextToTextualItem(
+                "reflection-question"
+            ),
         )
         if edit_result.type == "user_not_found":
             return AUTHORIZATION_UNKNOWN_TOKEN

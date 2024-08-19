@@ -129,7 +129,10 @@ async def pop_from_journal_reflection(
                 f"{std_auth_result.result.sub} failed to queue job to start journal chat job: {queue_job_result}",
             )
 
-            if args.trigger.parameters.forward_journal_entry_uid:
+            if (
+                args.trigger.parameters.forward_journal_entry_uid
+                and queue_job_result.type != "bad_state"
+            ):
                 screen = await execute_peek(
                     itgs,
                     user_sub=std_auth_result.result.sub,

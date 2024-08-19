@@ -29,7 +29,7 @@ class PopFromJournalReflectionParameters(BaseModel):
     )
     forward_journal_entry_uid: bool = Field(
         False,
-        description="If true, the journal entry uid is included in the server parameters for the next screen if it can be validated, otherwise not_found is triggered instead",
+        description="If true, the journal entry uid is included (as `journal_entry`) in the server parameters for the next screen if it can be validated, otherwise not_found is triggered instead",
     )
 
 
@@ -153,7 +153,7 @@ async def pop_from_journal_reflection(
                 flow_slug=args.trigger.slug,
                 client_parameters={},
                 server_parameters=(
-                    {"journal_entry_uid": args.trigger.parameters.journal_entry_uid}
+                    {"journal_entry": args.trigger.parameters.journal_entry_uid}
                     if args.trigger.parameters.forward_journal_entry_uid
                     else {}
                 ),

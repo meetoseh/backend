@@ -27,6 +27,10 @@ class PopFromJournalReflectionParameters(BaseModel):
     journal_entry_uid: str = Field(
         description="The UID of the journal entry whose reflection response was just added"
     )
+    forward_journal_entry_uid: bool = Field(
+        False,
+        description="If true, the journal entry uid is included in the server parameters for the next screen if it can be validated, otherwise not_found is triggered instead",
+    )
 
 
 class PopFromJournalReflectionParametersTriggerRequest(BaseModel):
@@ -125,6 +129,20 @@ async def pop_from_journal_reflection(
                 f"{std_auth_result.result.sub} failed to queue job to start journal chat job: {queue_job_result}",
             )
 
+            if args.trigger.parameters.forward_journal_entry_uid:
+                screen = await execute_peek(
+                    itgs,
+                    user_sub=std_auth_result.result.sub,
+                    platform=platform,
+                    version=version,
+                    trigger=TrustedTrigger(
+                        flow_slug="not_found",
+                        client_parameters={},
+                        server_parameters={},
+                    ),
+                )
+                return await _realize(screen)
+
         screen = await execute_pop(
             itgs,
             expected_front_uid=screen_auth_result.result.user_client_screen_uid,
@@ -134,7 +152,11 @@ async def pop_from_journal_reflection(
             trigger=TrustedTrigger(
                 flow_slug=args.trigger.slug,
                 client_parameters={},
-                server_parameters={},
+                server_parameters=(
+                    {"journal_entry_uid": args.trigger.parameters.journal_entry_uid}
+                    if args.trigger.parameters.forward_journal_entry_uid
+                    else {}
+                ),
             ),
         )
         return await _realize(screen)

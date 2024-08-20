@@ -10,7 +10,7 @@ from lib.client_flows.executor import (
     execute_pop,
 )
 from models import STANDARD_ERRORS_BY_CODE
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 from itgs import Itgs
 import auth as std_auth
 import users.me.screens.auth
@@ -24,7 +24,11 @@ import lib.journals.start_journal_chat_job
 router = APIRouter()
 
 
-class PopToNewJournalEntryParameters(BaseModel): ...
+class PopToNewJournalEntryParameters(BaseModel):
+    initialize_with: Literal["greeting", "reflection-question"] = Field(
+        "greeting",
+        description="What to put as the initial content of the journal entry",
+    )
 
 
 class PopToNewJournalEntryTriggerRequest(BaseModel):
@@ -59,12 +63,15 @@ async def pop_to_new_journal_entry(
     then triggers the indicated flow with the new journal entry uid in the server
     parameters (as `journal_entry`).
 
-    Typically, this will result in the `journal_chat` screen with the
-    `$.journal_entry.uid` and `$.journal_entry.jwt` set in the client parameters,
-    which can then be converted to a journal chat JWT via the sync endpoint
-    `/api/1/journals/entries/sync`, which allows connecting to the websocket
-    endpoint `/api/2/journals/chat`, which will stream the state of the journal
-    entry to the client.
+    This can either initialize the journal entry with a greeting (for the journal chat
+    screen) or with a reflection question (for the journal reflection large screen)
+
+    Typically the journal entry uid will be converted to a journal chat JWT via
+    the sync endpoint `/api/1/journals/entries/sync`, which allows connecting to
+    the websocket endpoint `/api/2/journals/chat`, which will stream the state
+    of the journal entry to the client. Then various sync-like endpoints (endpoints
+    that largely accept and return the same structure) can be used to update the
+    journal entry.
 
     Requires standard authorization for a user.
     """

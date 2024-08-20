@@ -124,10 +124,7 @@ async def pop_from_journal_reflection(
         )
 
         if queue_job_result.type != "success":
-            if (
-                queue_job_result.type != "bad_state"
-                or queue_job_result.subtype != "already-has-summary"
-            ):
+            if queue_job_result.type != "bad_state":
                 await handle_warning(
                     f"{__name__}:failed_to_queue",
                     f"{std_auth_result.result.sub} failed to queue job to start journal chat job: {queue_job_result}",

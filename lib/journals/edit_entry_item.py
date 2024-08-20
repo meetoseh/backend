@@ -171,9 +171,12 @@ class EditEntryItemDecryptedTextToItem(Protocol):
 
 class EditEntryItemDecryptedTextToTextualItem:
     def __init__(
-        self, type: Literal["chat", "reflection-question", "reflection-response"]
+        self,
+        type: Literal["chat", "reflection-question", "reflection-response"],
+        display_author: Literal["self", "other"],
     ):
         self.type: Literal["chat", "reflection-question", "reflection-response"] = type
+        self.display_author: Literal["self", "other"] = display_author
 
     async def __call__(
         self, payload: bytes, /, *, error_ctx: Callable[[], str]
@@ -211,7 +214,7 @@ class EditEntryItemDecryptedTextToTextualItem:
                 processing_block=JournalEntryItemProcessingBlockedReason(
                     reasons=["unchecked"]
                 ),
-                display_author="other",
+                display_author=self.display_author,
             ),
         )
 

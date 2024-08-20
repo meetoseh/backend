@@ -126,7 +126,7 @@ async def edit_reflection_response(
             encrypted_text=args.encrypted_reflection_response,
             expected_type="reflection-response",
             decrypted_text_to_item=EditEntryItemDecryptedTextToTextualItem(
-                "reflection-response"
+                "reflection-response", "self"
             ),
         )
         if edit_result.type == "user_not_found":

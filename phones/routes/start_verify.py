@@ -2,7 +2,7 @@ import os
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, validator
-from typing import Any, Dict, Literal, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union, cast
 from error_middleware import handle_error, handle_warning
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from starlette.concurrency import run_in_threadpool
@@ -196,7 +196,7 @@ async def start_verify(
             itgs, user_sub=auth_result.result.sub, timezone=args.timezone
         )
 
-        response = await cursor.executemany3(
+        response = await cursor.executeunified3(
             (
                 (
                     """
@@ -246,11 +246,23 @@ async def start_verify(
                     "UPDATE users SET timezone = ? WHERE sub = ? AND (timezone IS NULL OR timezone <> ?)",
                     (args.timezone, auth_result.result.sub, args.timezone),
                 ),
+                (
+                    """
+SELECT 
+    phone_verifications.uid 
+FROM users, phone_verifications
+WHERE
+    users.sub = ?
+    AND phone_verifications.sid = ? 
+    AND phone_verifications.user_id = users.id
+                    """,
+                    (auth_result.result.sub, verification.sid),
+                )
             ),
         )
 
         affected = [
-            r.rows_affected is not None and r.rows_affected > 0 for r in response
+            r.rows_affected is not None and r.rows_affected > 0 for r in response.items[:3]
         ]
         if any((a and r.rows_affected != 1 for a, r in zip(affected, response))):
             await handle_warning(
@@ -276,6 +288,15 @@ async def start_verify(
                 f"User timezone log mismatch for `{auth_result.result.sub=}`, `{args.phone_number=}`"
                 f"`{inserted_user_timezone_log=}`, `{updated_user_timezone=}`",
             )
+
+        current_verification_uid_result = response.items[3]
+        if not current_verification_uid_result.results:
+            await handle_warning(
+                f"{__name__}:no_verification",
+                f"No verification for `{auth_result.result.sub=}`, `{args.phone_number=}` found in db after insert",
+            )
+        else:
+            uid = cast(str, current_verification_uid_result.results[0][0])
 
         return Response(
             status_code=201,

@@ -224,7 +224,7 @@ async def patch_journey(
                 instructors.name,
                 instructor_pictures.uid,
                 instructors.created_at,
-                instructors.deleted_at,
+                instructors.flags,
                 journeys.created_at,
                 journeys.title,
                 journeys.description,
@@ -339,10 +339,7 @@ async def patch_journey(
         else:
             query = (
                 query.left_outer_join(instructors)
-                .on(
-                    (instructors.uid == Parameter("?"))
-                    & instructors.deleted_at.isnull()
-                )
+                .on(instructors.uid == Parameter("?"))
                 .left_outer_join(instructor_pictures)
                 .on(instructor_pictures.id == instructors.picture_image_file_id)
             )
@@ -380,7 +377,7 @@ async def patch_journey(
         instructor_name = typing_cast(Optional[str], response.results[0][7])
         instructor_picture_file_uid = typing_cast(Optional[str], response.results[0][8])
         instructor_created_at = typing_cast(Optional[float], response.results[0][9])
-        instructor_deleted_at = typing_cast(Optional[float], response.results[0][10])
+        instructor_flags = typing_cast(int, response.results[0][10])
         journey_created_at = typing_cast(Optional[float], response.results[0][11])
         journey_title = typing_cast(Optional[str], response.results[0][12])
         journey_description = typing_cast(Optional[str], response.results[0][13])
@@ -816,7 +813,7 @@ async def patch_journey(
                         else None
                     ),
                     created_at=instructor_created_at,
-                    deleted_at=instructor_deleted_at,
+                    flags=instructor_flags,
                 ),
                 title=args.title if args.title is not None else journey_title,
                 description=args.description

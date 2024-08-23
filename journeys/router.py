@@ -14,6 +14,7 @@ import journeys.routes.follow_share_link
 import journeys.routes.give_feedback
 import journeys.routes.patch
 import journeys.routes.read_canonical_url
+import journeys.routes.read_public
 import journeys.routes.read
 import journeys.routes.start_interactive_prompt
 import journeys.routes.undelete
@@ -36,6 +37,7 @@ router.include_router(journeys.routes.delete.router)
 router.include_router(journeys.routes.follow_share_link.router)
 router.include_router(journeys.routes.patch.router)
 router.include_router(journeys.routes.read_canonical_url.router)
+router.include_router(journeys.routes.read_public.router)
 router.include_router(journeys.routes.read.router)
 router.include_router(journeys.routes.undelete.router)
 router.include_router(journeys.routes.start_interactive_prompt.router)

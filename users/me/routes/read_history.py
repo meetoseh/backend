@@ -1,6 +1,6 @@
 from pypika import Table, Query, Parameter, Not
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, Function, ExistsCriterion
+from pypika.terms import Term, Function, ExistsCriterion, BitwiseAndCriterion
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -80,6 +80,7 @@ router = APIRouter()
     "/search_history",
     response_model=ReadUserHistoryResponse,
     responses=STANDARD_ERRORS_BY_CODE,
+    deprecated=True,
 )
 async def read_user_history(
     args: ReadUserHistoryRequest, authorization: Optional[str] = Header(None)
@@ -87,6 +88,11 @@ async def read_user_history(
     """Lists out journeys that the user has taken. The result items only contain
     the minimal information required to display these journeys in a listing; to
     start one of these journeys, use `start_journey_from_history`.
+
+    Deprecated: Prefer using the more general endpoint `/api/1/journeys/search_public`
+    with the `last_taken_at` filter set to not equal to null to replicate this behavior.
+    The data in that endpoint is also reduced to better match what is actually used in
+    the current UI, speeding up response times and decoding times.
 
     Requires standard authorization.
     """
@@ -215,7 +221,9 @@ async def raw_read_user_history(
                     .join(courses)
                     .on(courses.id == course_journeys.course_id)
                     .where(course_journeys.journey_id == journeys.id)
-                    .where((courses.flags & Parameter("?")) == 0)
+                    .where(
+                        BitwiseAndCriterion(courses.field("flags"), Parameter("?")) == 0
+                    )
                 )
             )
         )

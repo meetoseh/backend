@@ -3,8 +3,9 @@ import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints
-from typing import Literal, Optional, Annotated
+from typing import Literal, Optional, Annotated, cast
 from auth import auth_admin
+from instructors.lib.instructor_flags import ALL_INSTRUCTOR_FLAGS
 from journeys.lib.read_one_external import evict_external_journey
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from itgs import Itgs
@@ -24,11 +25,20 @@ class UpdateInstructorRequest(BaseModel):
         ),
         ge=0,
     )
+    flags: int = Field(
+        description=(
+            "The new flags for the instructor, which is a bitfield. From least to most "
+            "significant:\n"
+            " - 0x01: unset to prevent the instructor from being shown by default in the admin area\n"
+            " - 0x02: unset to prevent the instructor from being shown in the classes filter\n"
+        )
+    )
 
 
 class UpdateInstructorResponse(BaseModel):
     name: str = Field(description="The new display name for the instructor")
     bias: float = Field(description="the new bias for the instructor")
+    flags: int = Field(description="The new flags for the instructor")
 
 
 ERROR_404_TYPES = Literal["instructor_not_found"]
@@ -36,19 +46,9 @@ INSTRUCTOR_NOT_FOUND_RESPONSE = Response(
     status_code=404,
     content=StandardErrorResponse[ERROR_404_TYPES](
         type="instructor_not_found",
-        message="The instructor was not found or is deleted",
+        message="The instructor was not found",
     ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
-)
-
-ERROR_503_TYPES = Literal["raced"]
-RACED_RESPONSE = Response(
-    status_code=503,
-    content=StandardErrorResponse[ERROR_503_TYPES](
-        type="raced",
-        message="The instructor was updated by another request. Please try again.",
-    ).model_dump_json(),
-    headers={"Content-Type": "application/json; charset=utf-8", "Retry-After": "5"},
 )
 
 
@@ -67,8 +67,7 @@ RACED_RESPONSE = Response(
 async def update_instructor(
     uid: str, args: UpdateInstructorRequest, authorization: Optional[str] = Header(None)
 ):
-    """Updates the simple fields on the instructor with the given uid. This cannot
-    be performed against soft-deleted instructors.
+    """Updates the simple fields on the instructor with the given uid.
 
     See also: `PUT {uid}/pictures/` to update the instructor's profile picture.
 
@@ -82,38 +81,40 @@ async def update_instructor(
         conn = await itgs.conn()
         cursor = conn.cursor("none")
 
-        response = await cursor.execute(
-            """
-            SELECT
-                name, bias
-            FROM instructors
-            WHERE
-                uid = ? AND deleted_at IS NULL
-            """,
-            (uid,),
+        clean_flags = args.flags & int(ALL_INSTRUCTOR_FLAGS)
+
+        response = await cursor.executeunified3(
+            (
+                (
+                    """
+SELECT name FROM instructors WHERE uid = ?
+                    """,
+                    (uid,),
+                ),
+                (
+                    """
+UPDATE instructors
+SET name = ?, bias = ?, flags = ?
+WHERE uid = ?
+                    """,
+                    (args.name, args.bias, clean_flags, uid),
+                ),
+            ),
         )
-        if not response.results:
+
+        if not response[0].results:
+            assert (
+                response[1].rows_affected is None or response[1].rows_affected == 0
+            ), response
             return INSTRUCTOR_NOT_FOUND_RESPONSE
 
-        old_name: str = response.results[0][0]
-        old_bias: float = response.results[0][1]
-
-        response = await cursor.execute(
-            """
-            UPDATE instructors
-            SET name = ?, bias = ?
-            WHERE uid = ? AND deleted_at IS NULL AND name=? AND bias=?
-            """,
-            (args.name, args.bias, uid, old_name, old_bias),
-        )
-
-        if response.rows_affected is None or response.rows_affected < 1:
-            return RACED_RESPONSE
+        assert response[1].rows_affected == 1, response
+        old_name = cast(str, response[0].results[0][0])
 
         success_response = Response(
             status_code=200,
             content=UpdateInstructorResponse(
-                name=args.name, bias=args.bias
+                name=args.name, bias=args.bias, flags=clean_flags
             ).model_dump_json(),
             headers={"Content-Type": "application/json; charset=utf-8"},
         )

@@ -191,7 +191,7 @@ async def raw_read_course_journeys(
             instructors.name,
             instructor_pictures.uid,
             instructors.created_at,
-            instructors.deleted_at,
+            instructors.flags,
             instructors.bias,
             journeys.title,
             journeys.description,
@@ -297,7 +297,7 @@ async def raw_read_course_journeys(
                     else None
                 ),
                 created_at=row[10],
-                deleted_at=row[11],
+                flags=row[11],
                 bias=row[12],
             ),
             title=row[13],

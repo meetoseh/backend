@@ -1,6 +1,7 @@
 import json
 from typing import (
     Any,
+    Callable,
     Dict,
     Generator,
     List,
@@ -24,6 +25,7 @@ from lib.client_flows.client_flow_screen import (
 )
 from lib.client_flows.special_index import SpecialIndex
 from response_utils import response_to_bytes
+from functools import partial
 
 if TYPE_CHECKING:
     from lib.client_flows.flow_cache import ClientFlow
@@ -138,7 +140,7 @@ TransformFlowServerParametersResult = Union[
 ]
 
 
-async def handle_trigger_time_transformations(
+async def handle_trigger_time_server_transformations(
     itgs: Itgs,
     /,
     *,
@@ -146,10 +148,11 @@ async def handle_trigger_time_transformations(
     flow_screen: "ClientFlowScreen",
     flow_server_parameters: Any,
 ) -> TransformFlowServerParametersResult:
-    """Manages any trigger-time transformations that occur to the given flow screen.
-    This can transform both the flow server parameters that are sent (realizing values
-    that require extraction) and the actual variable parameters for the flow screen
-    (to reference the extracted values instead of the original server parameters).
+    """Manages any trigger-time transformations that occur to the server parameters on
+    the given flow screen. This can transform both the flow server parameters
+    that are sent (realizing values that require extraction) and the actual
+    variable parameters for the flow screen (to reference the extracted values
+    instead of the original server parameters).
 
     These transformations are:
     - `extract`: Suppose a flow wants to show a video interstitial containing the series
@@ -172,6 +175,12 @@ async def handle_trigger_time_transformations(
 
     new_server_parameters = None
     new_variable_parameters = cast(Optional[List[ClientFlowScreenVariableInput]], None)
+
+    defaults_result = fill_in_default_values(
+        schema=flow.server_schema_raw, original=flow_server_parameters
+    )
+    if defaults_result.is_changed:
+        new_server_parameters = defaults_result.filled_in
 
     # we don't currently have a built-in cache for courses, so in case we are repeatedly
     # extracting from the same course (common), this avoids repeated requests
@@ -352,6 +361,322 @@ async def handle_trigger_time_transformations(
     )
 
 
+@dataclass(frozen=True)
+class TransformFlowClientParametersSuccess:
+    type: Literal["success"]
+    transformed_client_parameters: Any
+    transformed_flow_screen: "ClientFlowScreen"
+
+
+TransformFlowClientParametersResult = TransformFlowClientParametersSuccess
+
+
+async def handle_trigger_time_client_transformations(
+    itgs: Itgs,
+    /,
+    *,
+    flow: "ClientFlow",
+    flow_screen: "ClientFlowScreen",
+    flow_client_parameters: Any,
+) -> TransformFlowClientParametersResult:
+    """Performs trigger-time client parameter transformations. This is just used to
+    fill in default values for any missing client parameters, where a default value
+    is specified by the flow screen client schema.
+
+    Args:
+        itgs (Itgs): The integrations to (re)use
+        flow (ClientFlow): The flow the screen is in
+        flow_screen (ClientFlowScreen): The specific flow screen
+        flow_client_parameters (Any): The client parameters
+
+    Returns:
+        TransformFlowClientParametersResult: The transformed client parameters
+    """
+
+    if flow_client_parameters is None:
+        return TransformFlowClientParametersSuccess(
+            type="success",
+            transformed_client_parameters=dict(),
+            transformed_flow_screen=flow_screen,
+        )
+
+    defaults_result = fill_in_default_values(
+        schema=flow.client_schema_raw, original=flow_client_parameters
+    )
+
+    return TransformFlowClientParametersSuccess(
+        type="success",
+        transformed_client_parameters=defaults_result.filled_in,
+        transformed_flow_screen=flow_screen,
+    )
+
+
+@dataclass(frozen=True)
+class FillInDefaultValuesSuccess:
+    type: Literal["success"]
+    original: Any
+    filled_in: Any
+
+    @property
+    def is_changed(self) -> bool:
+        return self.original is not self.filled_in
+
+
+@dataclass(frozen=True)
+class _FillInDefaultValueStackItem:
+    schema: Optional[dict]
+    original: Any
+    original_is_set: bool
+    output_is_required: bool
+    store: Callable[[Any], None]
+    schema_path_to_here: List[Union[str, int]]
+    original_path_to_here: List[Union[str, int]]
+
+
+def fill_in_default_values(*, schema: Any, original: Any) -> FillInDefaultValuesSuccess:
+    """Fills in default values for any missing fields in the original object where
+    there are default values specified in the schema. May raise a ValueError or respond
+    incorrectly if the original object does not match the schema or the schema is malformed.
+
+    Does not recurse.
+
+    Args:
+        schema (Any): the openapi schema to use, validated. Supports extensions that are
+            supported on flow screen client schemas or flow screen server schemas
+        original (Any): the original parameters
+
+    Returns:
+        FillInDefaultValuesSuccess: the result, which may indicate no change was required
+    """
+    if not isinstance(schema, dict):
+        raise ValueError(f"schema must be a dict, not {type(schema)=}")
+
+    result: Any = None
+
+    def _set_result(v: Any) -> None:
+        nonlocal result
+        result = v
+
+    stack: List[_FillInDefaultValueStackItem] = [
+        _FillInDefaultValueStackItem(
+            schema=schema,
+            original=original,
+            original_is_set=True,
+            output_is_required=True,
+            store=_set_result,
+            schema_path_to_here=[],
+            original_path_to_here=[],
+        )
+    ]
+
+    top_level_original = original
+    del schema
+    del original
+
+    changed = False
+
+    while True:
+        try:
+            current = stack.pop()
+        except IndexError:
+            break
+
+        if current.schema is None:
+            if current.original_is_set:
+                current.store(current.original)
+            continue
+
+        if not current.original_is_set:
+            if "default" not in current.schema:
+                if current.output_is_required:
+                    raise ValueError(
+                        f"missing required field at {pretty_path(current.original_path_to_here)} as no default in schema at {pretty_path(current.schema_path_to_here)}"
+                    )
+                continue
+
+            changed = True
+            stack.append(
+                _FillInDefaultValueStackItem(
+                    schema=current.schema,
+                    original=current.schema["default"],
+                    original_is_set=True,
+                    output_is_required=current.output_is_required,
+                    store=current.store,
+                    schema_path_to_here=current.schema_path_to_here,
+                    original_path_to_here=current.original_path_to_here
+                    + ["$schema"]
+                    + current.schema_path_to_here
+                    + ["default"],
+                )
+            )
+            continue
+
+        if current.schema.get("nullable", False) is True and current.original is None:
+            current.store(None)
+            continue
+
+        if current.schema.get("type") == "object":
+            if not isinstance(current.original, dict):
+                raise ValueError(
+                    f"expected object at {pretty_path(current.original_path_to_here)} to fill in {pretty_path(current.schema_path_to_here)}, got {type(current.original)=}"
+                )
+
+            if "x-enum-discriminator" in current.schema:
+                enum_discriminator = current.schema["x-enum-discriminator"]
+                if not isinstance(enum_discriminator, str):
+                    raise ValueError(
+                        f"expected string at {pretty_path(current.schema_path_to_here + ['x-enum-discriminator'])}"
+                    )
+
+                enum_value = current.original.get(enum_discriminator)
+                if not isinstance(enum_value, str):
+                    raise ValueError(
+                        f"expected string for {enum_discriminator=} at {pretty_path(current.original_path_to_here)}, got {type(enum_value)=}"
+                    )
+
+                one_of = current.schema.get("oneOf")
+                if not isinstance(one_of, list):
+                    raise ValueError(
+                        f"expected list at {pretty_path(current.schema_path_to_here + ['oneOf'])} (have x-enum-discriminator)"
+                    )
+
+                for subschema_idx, subschema in one_of:
+                    if not isinstance(subschema, dict):
+                        raise ValueError(
+                            f"expected dict at {pretty_path(current.schema_path_to_here + ['oneOf', subschema_idx])}"
+                        )
+
+                    subprops = subschema.get("properties")
+                    if not isinstance(subprops, dict):
+                        raise ValueError(
+                            f"expected dict at {pretty_path(current.schema_path_to_here + ['oneOf', subschema_idx, 'properties'])}"
+                        )
+
+                    sub_enum_prop_schema = subprops.get(enum_discriminator)
+                    if not isinstance(sub_enum_prop_schema, dict):
+                        raise ValueError(
+                            f"expected dict at {pretty_path(current.schema_path_to_here + ['oneOf', subschema_idx, 'properties', enum_discriminator])} to handle {pretty_path(current.schema_path_to_here + ['x-enum-discriminator'])}"
+                        )
+
+                    sub_enum_values = sub_enum_prop_schema.get("enum")
+                    if not isinstance(sub_enum_values, list):
+                        raise ValueError(
+                            f"expected list at {pretty_path(current.schema_path_to_here + ['oneOf', subschema_idx, 'properties', enum_discriminator, 'enum'])} to handle {pretty_path(current.schema_path_to_here + ['x-enum-discriminator'])}"
+                        )
+
+                    if enum_value not in sub_enum_values:
+                        continue
+
+                    stack.append(
+                        _FillInDefaultValueStackItem(
+                            schema=subschema,
+                            original=current.original,
+                            original_is_set=True,
+                            output_is_required=current.output_is_required,
+                            store=current.store,
+                            schema_path_to_here=current.schema_path_to_here
+                            + ["oneOf", subschema_idx],
+                            original_path_to_here=current.original_path_to_here,
+                        )
+                    )
+                    break
+                else:
+                    raise ValueError(
+                        f"no subschema matched {enum_discriminator=}={enum_value} at {pretty_path(current.original_path_to_here)}"
+                    )
+
+            for unsupported_key in ["anyOf", "allOf", "oneOf", "patternProperties"]:
+                if unsupported_key in current.schema:
+                    raise ValueError(
+                        f"unsupported at {pretty_path(current.schema_path_to_here + [unsupported_key])}"
+                    )
+
+            required_set = set(current.schema.get("required", []))
+            properties = current.schema.get("properties", dict())
+            if not isinstance(properties, dict):
+                raise ValueError(
+                    f"expected dict at {pretty_path(current.schema_path_to_here + ['properties'])}"
+                )
+
+            new_obj = dict()
+
+            for key, prop in properties.items():
+                stack.append(
+                    _FillInDefaultValueStackItem(
+                        schema=prop,
+                        original=current.original.get(key),
+                        original_is_set=key in current.original,
+                        output_is_required=key in required_set,
+                        store=partial(new_obj.__setitem__, key),
+                        schema_path_to_here=current.schema_path_to_here
+                        + ["properties", key],
+                        original_path_to_here=current.original_path_to_here + [key],
+                    )
+                )
+
+            if current.schema.get("additionalProperties", True):
+                for key, value in current.original.items():
+                    if key in properties:
+                        continue
+                    stack.append(
+                        _FillInDefaultValueStackItem(
+                            schema=None,
+                            original=value,
+                            original_is_set=True,
+                            output_is_required=False,
+                            store=partial(new_obj.__setitem__, key),
+                            schema_path_to_here=current.schema_path_to_here
+                            + ["additionalProperties"],
+                            original_path_to_here=current.original_path_to_here + [key],
+                        )
+                    )
+            else:
+                for key in current.original.keys():
+                    if key not in properties:
+                        raise ValueError(
+                            f"unexpected key {key!r} at {pretty_path(current.original_path_to_here)} because {pretty_path(current.schema_path_to_here + ['additionalProperties'])} is false"
+                        )
+
+            current.store(new_obj)
+            continue
+
+        if current.schema.get("type") == "array":
+            item_schema = current.schema.get("items")
+            if not isinstance(item_schema, dict):
+                raise ValueError(
+                    f"expected dict at {pretty_path(current.schema_path_to_here + ['items'])}"
+                )
+            if not isinstance(current.original, list):
+                raise ValueError(
+                    f"expected list at {pretty_path(current.original_path_to_here)} to match {pretty_path(current.schema_path_to_here)}"
+                )
+
+            item_schema_path = current.schema_path_to_here + ["items"]
+            new_arr: list = [None] * len(current.original)
+            for idx, item in enumerate(current.original):
+                stack.append(
+                    _FillInDefaultValueStackItem(
+                        schema=item_schema,
+                        original=item,
+                        original_is_set=True,
+                        output_is_required=True,
+                        store=partial(new_arr.__setitem__, idx),
+                        schema_path_to_here=item_schema_path,
+                        original_path_to_here=current.original_path_to_here + [idx],
+                    )
+                )
+            current.store(new_arr)
+            continue
+
+        current.store(current.original)
+
+    return FillInDefaultValuesSuccess(
+        type="success",
+        original=top_level_original,
+        filled_in=result if changed else top_level_original,
+    )
+
+
 async def _handle_course_extraction(
     itgs: Itgs,
     /,
@@ -454,7 +779,7 @@ async def _handle_extraction(
 def produce_screen_input_parameters(
     *,
     flow_screen: "ClientFlowScreen",
-    flow_client_parameters: Any,
+    transformed_flow_client_parameters: Any,
     transformed_flow_server_parameters: Any,
     standard_parameters: Any,
 ) -> Any:
@@ -466,7 +791,7 @@ def produce_screen_input_parameters(
 
     copy_dict = {
         "server": transformed_flow_server_parameters,
-        "client": flow_client_parameters,
+        "client": transformed_flow_client_parameters,
         "standard": standard_parameters,
     }
 
@@ -480,7 +805,7 @@ def produce_screen_input_parameters(
         elif variable_parameter.type == "string_format":
             formatted = variable_parameter.format.format(
                 server=transformed_flow_server_parameters,
-                client=flow_client_parameters,
+                client=transformed_flow_client_parameters,
                 standard=standard_parameters,
             )
             deep_set(result, variable_parameter.output_path, formatted)

@@ -19,7 +19,10 @@ from lib.client_flows.client_flow_stats_preparer import ClientFlowStatsPreparer
 from lib.client_flows.client_screen_stats_preparer import ClientScreenStatsPreparer
 from lib.client_flows.flow_cache import ClientFlow, get_client_flow
 from lib.client_flows.flow_flags import get_flow_flag_by_platform
-from lib.client_flows.helper import handle_trigger_time_transformations
+from lib.client_flows.helper import (
+    handle_trigger_time_client_transformations,
+    handle_trigger_time_server_transformations,
+)
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_flags import get_screen_flag_by_platform
 from lib.redis_stats_preparer import RedisStatsPreparer
@@ -273,7 +276,6 @@ async def simulate_add_screens(
         return
 
     outer_counter = state.current.outer_counter + 1 if state.current is not None else 1
-    flow_client_parameters_serd = json.dumps(flow_client_parameters)
 
     user_client_screens: List[ClientFlowSimulatorUserClientScreen] = []
     queue_prepend: Optional[List[ClientFlowSimulatorScreen]] = (
@@ -302,19 +304,31 @@ async def simulate_add_screens(
                 f"Cannot trigger {flow.slug} ({flow.uid}): screen {raw_flow_screen.screen.slug} not found"
             )
 
-        transformation = await handle_trigger_time_transformations(
+        server_transformation = await handle_trigger_time_server_transformations(
             itgs,
             flow=flow,
             flow_screen=raw_flow_screen,
             flow_server_parameters=flow_server_parameters,
         )
-        if transformation.type == "skip":
+        if server_transformation.type == "skip":
             logger.info(
                 f"Skipping {flow.slug} screen {idx=} (a {raw_flow_screen.screen.slug} screen) - skip while transforming server parameters"
             )
             continue
         transformed_flow_server_parameters_serd = json.dumps(
-            transformation.transformed_server_parameters
+            server_transformation.transformed_server_parameters
+        )
+
+        client_transformation = await handle_trigger_time_client_transformations(
+            itgs,
+            flow=flow,
+            flow_screen=server_transformation.transformed_flow_screen,
+            flow_client_parameters=flow_client_parameters,
+        )
+
+        final_flow_screen = client_transformation.transformed_flow_screen
+        transformed_client_parameters_serd = json.dumps(
+            client_transformation.transformed_client_parameters
         )
 
         screen_stats.incr_queued(
@@ -332,14 +346,14 @@ async def simulate_add_screens(
                 inner_counter=idx,
                 client_flow_uid=flow.uid,
                 client_screen_uid=screen.uid,
-                flow_client_parameters=flow_client_parameters_serd,
+                flow_client_parameters=transformed_client_parameters_serd,
                 flow_server_parameters=transformed_flow_server_parameters_serd,
-                screen=transformation.transformed_flow_screen.model_dump_json(),
+                screen=final_flow_screen.model_dump_json(),
                 flow_obj=flow,
-                flow_screen_obj=transformation.transformed_flow_screen,
+                flow_screen_obj=final_flow_screen,
                 screen_obj=screen,
-                flow_client_parameters_obj=flow_client_parameters,
-                flow_server_parameters_obj=transformation.transformed_server_parameters,
+                flow_client_parameters_obj=client_transformation.transformed_client_parameters,
+                flow_server_parameters_obj=server_transformation.transformed_server_parameters,
             )
         )
 
@@ -348,11 +362,11 @@ async def simulate_add_screens(
 
         simulator_screen = ClientFlowSimulatorScreen(
             user_client_screen_uid=user_client_screen_uid,
-            flow_screen=transformation.transformed_flow_screen,
+            flow_screen=final_flow_screen,
             screen=screen,
             outer_counter=outer_counter,
-            flow_client_parameters=flow_client_parameters,
-            flow_server_parameters=transformation.transformed_server_parameters,
+            flow_client_parameters=client_transformation.transformed_client_parameters,
+            flow_server_parameters=server_transformation.transformed_server_parameters,
             queued_at=state.created_at,
         )
 

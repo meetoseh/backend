@@ -9,6 +9,7 @@ from image_files.models import ImageFileRef
 import image_files.auth
 from content_files.models import ContentFileRef
 import content_files.auth
+from instructors.lib.instructor_flags import InstructorFlags
 from instructors.routes.read import Instructor
 from itgs import Itgs
 from journeys.lib.slugs import assign_slug_from_title
@@ -490,7 +491,7 @@ async def create_journey(
                         ),
                     ),
                     created_at=instructor_created_at,
-                    deleted_at=None,
+                    flags=int(InstructorFlags.SHOWS_IN_ADMIN),
                 ),
                 title=args.title,
                 description=args.description,

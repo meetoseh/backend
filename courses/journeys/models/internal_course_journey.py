@@ -47,7 +47,7 @@ SELECT
     instructors.bias,
     instructor_pictures.uid,
     instructors.created_at,
-    instructors.deleted_at,
+    instructors.flags,
     journeys.title,
     journeys.description,
     audio_contents.duration_seconds,
@@ -118,7 +118,7 @@ async def parse_read_result(
                         )
                     ),
                     created_at=row[16],
-                    deleted_at=row[17],
+                    flags=row[17],
                 ),
                 title=row[18],
                 description=row[19],

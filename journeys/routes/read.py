@@ -195,7 +195,8 @@ router = APIRouter()
 async def read_journeys(
     args: ReadJourneyRequest, authorization: Optional[str] = Header(None)
 ):
-    """lists out journeys
+    """Lists out journeys for the admin endpoint. For the app itself, use the
+    `/search_public` endpoint for a filterable list of all classes.
 
     This requires standard authorization for an admin user
     """
@@ -279,7 +280,7 @@ async def raw_read_journeys(
             instructors.name,
             instructor_pictures.uid,
             instructors.created_at,
-            instructors.deleted_at,
+            instructors.flags,
             instructors.bias,
             journeys.title,
             journeys.description,
@@ -417,7 +418,7 @@ async def raw_read_journeys(
                         else None
                     ),
                     created_at=row[10],
-                    deleted_at=row[11],
+                    flags=row[11],
                     bias=row[12],
                 ),
                 title=row[13],

@@ -17,10 +17,11 @@ from lib.client_flows.helper import (
     deep_extract,
     extract_from_model_json_schema,
     extract_schema_default_value,
+    handle_trigger_time_client_transformations,
     iter_flow_screen_required_parameters,
     pretty_path,
     produce_screen_input_parameters,
-    handle_trigger_time_transformations,
+    handle_trigger_time_server_transformations,
 )
 from lib.client_flows.screen_cache import ClientScreen, get_client_screen
 from lib.client_flows.screen_schema import UNSAFE_SCREEN_SCHEMA_TYPES, SpecialIndex
@@ -505,27 +506,29 @@ async def test_screen(
             platform="browser",
         )
 
-        transformation = await handle_trigger_time_transformations(
+        test_flow = ClientFlow(
+            uid="oseh_cf_test",
+            slug="__test__",
+            client_schema=client_schema_validator,
+            client_schema_raw=args.flow.client_schema,
+            server_schema=server_schema_validator,
+            server_schema_raw=args.flow.server_schema,
+            replaces=False,
+            screens=[args.flow_screen],
+            rules=[],
+            flags=ClientFlowFlag.ANDROID_TRIGGERABLE
+            | ClientFlowFlag.IOS_TRIGGERABLE
+            | ClientFlowFlag.BROWSER_TRIGGERABLE,
+        )
+
+        server_transformation = await handle_trigger_time_server_transformations(
             itgs,
-            flow=ClientFlow(
-                uid="oseh_cf_test",
-                slug="__test__",
-                client_schema=client_schema_validator,
-                client_schema_raw=args.flow.client_schema,
-                server_schema=server_schema_validator,
-                server_schema_raw=args.flow.server_schema,
-                replaces=False,
-                screens=[args.flow_screen],
-                rules=[],
-                flags=ClientFlowFlag.ANDROID_TRIGGERABLE
-                | ClientFlowFlag.IOS_TRIGGERABLE
-                | ClientFlowFlag.BROWSER_TRIGGERABLE,
-            ),
+            flow=test_flow,
             flow_screen=args.flow_screen,
             flow_server_parameters=args.server_parameters,
         )
 
-        if transformation.type == "skip":
+        if server_transformation.type == "skip":
             return Response(
                 status_code=409,
                 content=StandardErrorResponse[ERROR_409_TYPES](
@@ -534,10 +537,19 @@ async def test_screen(
                 ).model_dump_json(),
             )
 
-        screen_input_parameters = produce_screen_input_parameters(
-            flow_screen=transformation.transformed_flow_screen,
+        client_transformation = await handle_trigger_time_client_transformations(
+            itgs,
+            flow=test_flow,
+            flow_screen=server_transformation.transformed_flow_screen,
             flow_client_parameters=args.client_parameters,
-            transformed_flow_server_parameters=transformation.transformed_server_parameters,
+        )
+
+        final_flow_screen = client_transformation.transformed_flow_screen
+
+        screen_input_parameters = produce_screen_input_parameters(
+            flow_screen=final_flow_screen,
+            transformed_flow_client_parameters=client_transformation.transformed_client_parameters,
+            transformed_flow_server_parameters=server_transformation.transformed_server_parameters,
             standard_parameters=standard_parameters,
         )
 
@@ -609,10 +621,10 @@ WHERE
             """,
             (
                 f"oseh_ucs_{secrets.token_urlsafe(16)}",
-                json.dumps(args.client_parameters, sort_keys=True),
-                json.dumps(args.server_parameters, sort_keys=True),
+                json.dumps(client_transformation.transformed_client_parameters, sort_keys=True),
+                json.dumps(server_transformation.transformed_server_parameters, sort_keys=True),
                 json.dumps(
-                    transformation.transformed_flow_screen.model_dump(), sort_keys=True
+                    final_flow_screen.model_dump(), sort_keys=True
                 ),
                 time.time(),
                 auth_result.result.sub,
@@ -668,7 +680,8 @@ def _get_input_schema(
         allow_missing (bool): If true, we will not verify that the input_path will be extractable
             from the target, only that if it can be extracted it will match the returned schema.
             For example, for {"foo": {"bar": null}}, $.foo.bar is extractable but null, however
-            for {} $.foo.bar is not extractable
+            for {} $.foo.bar is not extractable. Note that this assumes that the caller fills in
+            default values where applicable.
     """
     if not input_path:
         return FindSchemaNotFound(
@@ -850,18 +863,6 @@ def _get_input_schema(
             required = current.get("required", [])
 
             assert isinstance(required, list)
-            if remaining[0] not in required and not allow_missing:
-                return FindSchemaNotFound(
-                    type="failure",
-                    error_response=Response(
-                        status_code=409,
-                        content=StandardErrorResponse[ERROR_409_TYPES](
-                            type="screen_input_parameters_wont_match",
-                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is not required at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)}). You may require it and make it nullable if its the last part of the path",
-                        ).model_dump_json(),
-                        headers={"Content-Type": "application/json; charset=utf-8"},
-                    ),
-                )
 
             properties = current.get("properties", dict())
             assert isinstance(properties, dict)
@@ -876,6 +877,23 @@ def _get_input_schema(
                         content=StandardErrorResponse[ERROR_409_TYPES](
                             type="screen_input_parameters_wont_match",
                             message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is not in properties at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)})",
+                        ).model_dump_json(),
+                        headers={"Content-Type": "application/json; charset=utf-8"},
+                    ),
+                )
+
+            if (
+                remaining[0] not in required
+                and not allow_missing
+                and "default" not in nxt
+            ):
+                return FindSchemaNotFound(
+                    type="failure",
+                    error_response=Response(
+                        status_code=409,
+                        content=StandardErrorResponse[ERROR_409_TYPES](
+                            type="screen_input_parameters_wont_match",
+                            message=f"variable[{variable_parameter_idx}] references {pretty_path(input_path)}, which is not required at {pretty_path(made_it_to)} (schema path {pretty_path(schema_path)}) and has no default value. Either require it or provide a default value.",
                         ).model_dump_json(),
                         headers={"Content-Type": "application/json; charset=utf-8"},
                     ),

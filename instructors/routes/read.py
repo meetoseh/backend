@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from auth import auth_admin
 from models import STANDARD_ERRORS_BY_CODE
 from resources.filter import sort_criterion, flattened_filters
+from resources.filter_bit_field_item import FilterBitFieldItemModel
 from resources.filter_item import FilterItemModel
 from resources.filter_item_like import FilterItemLike
 from resources.sort import cleanup_sort, get_next_page_sort, reverse_sort
@@ -24,18 +25,20 @@ class Instructor(BaseModel):
     )
     name: str = Field(description="The display name for this instructor")
     bias: float = Field(description="The content selection bias for this instructor")
+    flags: int = Field(
+        description=(
+            "The flags for the instructor, which is a bitfield. From least to most "
+            "significant:\n"
+            " - 0x01: unset to prevent the instructor from being shown by default in the admin area\n"
+            " - 0x02: unset to prevent the instructor from being shown in the classes filter\n"
+        )
+    )
     picture: Optional[ImageFileRef] = Field(
         description="The profile picture for this instructor"
     )
     created_at: float = Field(
         description=(
             "The timestamp of when this instructor was created, specified "
-            "in seconds since the unix epoch"
-        )
-    )
-    deleted_at: Optional[float] = Field(
-        description=(
-            "The timestamp of when this instructor was soft-deleted, specified "
             "in seconds since the unix epoch"
         )
     )
@@ -46,14 +49,12 @@ INSTRUCTOR_SORT_OPTIONS = [
     SortItem[Literal["name"], str],
     SortItem[Literal["bias"], float],
     SortItem[Literal["created_at"], float],
-    SortItem[Literal["deleted_at"], float],
 ]
 InstructorSortOption = Union[
     SortItemModel[Literal["uid"], str],
     SortItemModel[Literal["name"], str],
     SortItemModel[Literal["bias"], float],
     SortItemModel[Literal["created_at"], float],
-    SortItemModel[Literal["deleted_at"], float],
 ]
 
 
@@ -67,18 +68,14 @@ class InstructorFilter(BaseModel):
     bias: Optional[FilterItemModel[float]] = Field(
         None, description="the bias of the instructor"
     )
+    flags: Optional[FilterBitFieldItemModel] = Field(
+        None, description="the flags for the instructor"
+    )
     created_at: Optional[FilterItemModel[float]] = Field(
         None,
         description=(
             "the timestamp of when the instructor was created, specified "
             "in seconds since the unix epoch"
-        ),
-    )
-    deleted_at: Optional[FilterItemModel[float]] = Field(
-        None,
-        description=(
-            "the timestamp of when the instructor was soft-deleted, specified in "
-            "seconds since the unix epoch"
         ),
     )
 
@@ -179,9 +176,9 @@ async def raw_read_instructors(
             instructors.uid,
             instructors.name,
             instructors.bias,
+            instructors.flags,
             image_files.uid,
             instructors.created_at,
-            instructors.deleted_at,
         )
         .left_outer_join(image_files)
         .on(image_files.id == instructors.picture_image_file_id)
@@ -189,7 +186,7 @@ async def raw_read_instructors(
     qargs = []
 
     def pseudocolumn(key: str) -> Term:
-        if key in ("uid", "name", "created_at", "deleted_at", "bias"):
+        if key in ("uid", "name", "created_at", "bias", "flags"):
             return instructors.field(key)
         raise ValueError(f"unknown key {key}")
 
@@ -209,7 +206,7 @@ async def raw_read_instructors(
     response = await cursor.execute(query.get_sql(), qargs)
     items: List[Instructor] = []
     for row in response.results or []:
-        image_file_uid: Optional[str] = row[3]
+        image_file_uid = cast(Optional[str], row[4])
         image_file_ref: Optional[ImageFileRef] = None
         if image_file_uid is not None:
             image_file_jwt = await img_file_auth.create_jwt(itgs, image_file_uid)
@@ -220,9 +217,9 @@ async def raw_read_instructors(
                 uid=row[0],
                 name=row[1],
                 bias=row[2],
+                flags=row[3],
                 picture=image_file_ref,
-                created_at=row[4],
-                deleted_at=row[5],
+                created_at=row[5],
             )
         )
     return items
@@ -235,6 +232,6 @@ def item_pseudocolumns(item: Instructor) -> dict:
         "uid": item.uid,
         "name": item.name,
         "bias": item.bias,
+        "flags": item.flags,
         "created_at": item.created_at,
-        "deleted_at": item.deleted_at,
     }

@@ -157,11 +157,11 @@ class FilterItem(Generic[ValueT]):
         elif self.operator == StandardOperator.OUTSIDE_EXCLUSIVE_END:
             assert isinstance(formattable_value, (list, tuple))
             qargs.extend(formattable_value)
-            return (term <= p) | (term >= p)
+            return (term < p) | (term >= p)
         elif self.operator == StandardOperator.OUTSIDE_EXCLUSIVE_END_OR_NULL:
             assert isinstance(formattable_value, (list, tuple))
             qargs.extend(formattable_value)
-            return term.isnull() | ((term <= p) | (term >= p))
+            return term.isnull() | ((term < p) | (term >= p))
 
         raise ValueError(f"Unsupported operator: {self.operator}")
 

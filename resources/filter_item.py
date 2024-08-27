@@ -251,6 +251,38 @@ class FilterItem(Generic[ValueT]):
                 <= the_constant_value
                 < cast(Any, self.value)[1]
             )
+        elif self.operator == StandardOperator.OUTSIDE:
+            if self.value is None or the_constant_value is None:
+                return False
+            return (
+                the_constant_value < cast(Any, self.value)[0]
+                or the_constant_value > cast(Any, self.value)[1]
+            )
+        elif self.operator == StandardOperator.OUTSIDE_OR_NULL:
+            if the_constant_value is None:
+                return True
+            if self.value is None:
+                return False
+            return (
+                the_constant_value < cast(Any, self.value)[0]
+                or the_constant_value > cast(Any, self.value)[1]
+            )
+        elif self.operator == StandardOperator.OUTSIDE_EXCLUSIVE_END:
+            if self.value is None or the_constant_value is None:
+                return False
+            return (
+                the_constant_value < cast(Any, self.value)[0]
+                or the_constant_value >= cast(Any, self.value)[1]
+            )
+        elif self.operator == StandardOperator.OUTSIDE_EXCLUSIVE_END_OR_NULL:
+            if the_constant_value is None:
+                return True
+            if self.value is None:
+                return False
+            return (
+                the_constant_value < cast(Any, self.value)[0]
+                or the_constant_value >= cast(Any, self.value)[1]
+            )
         else:
             raise ValueError(f"Unsupported operator: {self.operator}")
 

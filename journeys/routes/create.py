@@ -212,10 +212,7 @@ async def create_journey(
             LEFT OUTER JOIN journey_subcategories ON (
                 journey_subcategories.uid = ?
             )
-            LEFT OUTER JOIN instructors ON (
-                instructors.uid = ?
-                AND instructors.deleted_at IS NULL
-            )
+            LEFT OUTER JOIN instructors ON instructors.uid = ?
             LEFT OUTER JOIN image_files AS ins_picture_image_files ON (
                 ins_picture_image_files.id = instructors.picture_image_file_id
             )
@@ -388,7 +385,6 @@ async def create_journey(
                         journey_audio_contents.uid = ?
                         AND journey_background_images.uid = ?
                         AND instructors.uid = ?
-                        AND instructors.deleted_at IS NULL
                         AND journey_subcategories.uid = ?
                         AND interactive_prompts.uid = ?
                         {'' if args.variation_of_journey_uid is None else 'AND variation_journeys.uid = ? AND variation_journeys.variation_of_journey_id IS NULL AND variation_journeys.deleted_at IS NULL'}

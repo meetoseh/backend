@@ -37,6 +37,8 @@ bit = gen.random_raw() & 1
 print(f"In group: {bit}")
 ```
 
+SEE ALSO: [opt_in_groups](opt_in_groups.md)
+
 ## Fields
 
 - `id (integer primary key)`: internal row identifier

@@ -293,6 +293,8 @@ async def create_merging_queries(
             table_name="user_journal_client_keys",
             operation_order=OperationOrder.move_user_journal_client_keys,
         ),
+        *await _move_opt_in_group_users__transfer(itgs, ctx),
+        *await _move_opt_in_group_users__delete(itgs, ctx),
         *await _create_move_created_at_queries(itgs, ctx),
         *await _delete_merging_user(itgs, ctx),
     ]
@@ -474,7 +476,10 @@ async def _delete_user_daily_reminders(
         await mctx.log.write(
             b"got the user's actual daily reminder records:\n"
             + json.dumps(
-                dict((k, v.model_dump() if v is not None else None) for k, v in registrations_by_channel.items()),
+                dict(
+                    (k, v.model_dump() if v is not None else None)
+                    for k, v in registrations_by_channel.items()
+                ),
                 indent=2,
             ).encode("utf-8")
             + b"\n"
@@ -2204,7 +2209,7 @@ async def _move_user_phone_numbers__verify(
 ) -> Sequence[MergeQuery]:
     log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
     await octx.log.write(
-        b"- move_user_phone_numbers__transfer -\n"
+        b"- move_user_phone_numbers__verify -\n"
         b"computed:\n"
         b"  log_uid: " + log_uid.encode("ascii") + b"\n"
     )
@@ -2921,6 +2926,307 @@ async def _move_visitor_users(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQuery]
                 "  SELECT 1 FROM merging_user"
                 "  WHERE merging_user.id = visitor_users.user_id"
                 " )"
+            ),
+            qargs=[*ctes_qargs],
+            handler=partial(handler, "delete"),
+        ),
+    ]
+
+
+async def _move_opt_in_group_users__transfer(
+    itgs: Itgs, octx: _Ctx, /
+) -> Sequence[MergeQuery]:
+    log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
+    await octx.log.write(
+        b"- move_opt_in_group_users__transfer -\n"
+        b"computed:\n"
+        b"  log_uid: " + log_uid.encode("ascii") + b"\n"
+    )
+    logged: Optional[bool] = None
+    expected_moved: Optional[int] = None
+
+    async def handler(step: Literal["log", "move"], mctx: MergeContext) -> None:
+        nonlocal logged, expected_moved
+
+        if step == "log":
+            assert logged is None, "handler called twice for log step"
+            logged = not not mctx.result.rows_affected
+
+            if not logged:
+                return
+
+            await mctx.log.write(
+                b"logged: true\n"
+                b"interpretation: we logged that we intended to move some opt_in_group_users "
+                b"\ngoing to fetch details on what groups we should have transferred from the log entry\n"
+            )
+
+            conn = await itgs.conn()
+            cursor = conn.cursor("weak")
+            resp = await _log_and_execute_query(
+                cursor,
+                "SELECT reason FROM merge_account_log WHERE uid=?",
+                (log_uid,),
+                mctx.log,
+            )
+            assert resp.results, resp
+            assert len(resp.results) == 1, resp
+            assert len(resp.results[0]) == 1, resp
+
+            parsed_reason = json.loads(resp.results[0][0])
+            assert isinstance(parsed_reason, dict), resp
+            await mctx.log.write(
+                b"parsed_reason:\n"
+                + json.dumps(parsed_reason, indent=2).encode("utf-8")
+                + b"\n"
+            )
+
+            details = parsed_reason["context"]["transfered"]
+            rows = parsed_reason["context"]["rows"]
+
+            assert isinstance(details, list), resp
+            assert isinstance(rows, int), resp
+            assert len(details) == rows, resp
+            assert rows > 0
+
+            for detail in details:
+                assert isinstance(detail, dict), resp
+                uid = detail.get("uid")
+                assert isinstance(uid, str), resp
+
+            expected_moved = rows
+            await mctx.log.write(
+                b"reason is correctly shaped for expected_moved="
+                + str(expected_moved).encode("ascii")
+                + b"\n"
+            )
+            return
+
+        assert step == "move", step
+        assert logged is not None, "move step handler called before log step"
+
+        num_moved = mctx.result.rows_affected or 0
+        await mctx.log.write(b"num_moved: " + str(num_moved).encode("ascii") + b"\n")
+        if num_moved <= 0:
+            assert (
+                not logged
+            ), f"logged that we intended to move some opt_in_group_users, but none were moved"
+        else:
+            assert (
+                logged
+            ), f"moved some opt_in_group_users, but didn't log that we intended to move any"
+            assert expected_moved == num_moved, (
+                f"logged that we intended to move {expected_moved}"
+                f" opt_in_group_users, but moved {num_moved}"
+            )
+        await mctx.log.write(b"log and move steps matched\n")
+
+    ctes, ctes_qargs = _merging_user_and_original_user_ctes(octx)
+    ctes += (
+        ", query_ctx(id, uid) AS ("
+        "SELECT"
+        " opt_in_group_users.id,"
+        " opt_in_groups.uid "
+        "FROM opt_in_group_users, opt_in_groups, merging_user, original_user "
+        "WHERE"
+        "  opt_in_group_users.user_id = merging_user.id"
+        "  AND NOT EXISTS ("
+        "   SELECT 1 FROM opt_in_group_users AS ou"
+        "   WHERE"
+        "    ou.user_id = original_user.id"
+        "    AND ou.opt_in_group_id = opt_in_group_users.opt_in_group_id"
+        "  )"
+        "  AND opt_in_groups.id = opt_in_group_users.opt_in_group_id"
+        ") "
+    )
+    return [
+        MergeQuery(
+            query=(
+                f"{ctes}INSERT INTO merge_account_log ("
+                " uid, user_id, operation_uid, operation_order, phase, step, step_result, reason, created_at"
+                ") SELECT"
+                " ?, original_user.id, ?, ?, 'merging', 'move_opt_in_group_users__transfer', 'xfer',"
+                " json_insert("
+                "  '{}'"
+                "  , '$.context.transfered', ("
+                "   SELECT json_group_array("
+                "    json_object("
+                "     'uid', query_ctx.uid"
+                "    ))"
+                "   FROM query_ctx"
+                "  )"
+                "  , '$.context.rows', (SELECT COUNT(*) FROM query_ctx)"
+                " ), ? "
+                "FROM merging_user, original_user "
+                "WHERE EXISTS (SELECT 1 FROM query_ctx)"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+                octx.operation_uid,
+                OperationOrder.move_opt_in_group_users__transfer.value,
+                octx.merge_at,
+            ],
+            handler=partial(handler, "log"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes}UPDATE opt_in_group_users "
+                "SET user_id = original_user.id "
+                "FROM original_user "
+                "WHERE"
+                " EXISTS (SELECT 1 FROM query_ctx WHERE query_ctx.id = opt_in_group_users.id)"
+            ),
+            qargs=[*ctes_qargs],
+            handler=partial(handler, "move"),
+        ),
+    ]
+
+
+async def _move_opt_in_group_users__delete(
+    itgs: Itgs, octx: _Ctx, /
+) -> Sequence[MergeQuery]:
+    log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
+    await octx.log.write(
+        b"- move_opt_in_group_users__delete -\n"
+        b"computed:\n"
+        b"  log_uid: " + log_uid.encode("ascii") + b"\n"
+    )
+    logged: Optional[bool] = None
+    expected_deleted: Optional[int] = None
+
+    async def handler(step: Literal["log", "delete"], mctx: MergeContext) -> None:
+        nonlocal logged, expected_deleted
+
+        if step == "log":
+            assert logged is None, "handler called twice for log step"
+            logged = not not mctx.result.rows_affected
+
+            if not logged:
+                return
+
+            await mctx.log.write(
+                b"logged: true\n"
+                b"interpretation: we logged that we intended to delete some opt_in_group_users "
+                b"\ngoing to fetch details on what groups we should have deleted from the log entry\n"
+            )
+
+            conn = await itgs.conn()
+            cursor = conn.cursor("weak")
+            resp = await _log_and_execute_query(
+                cursor,
+                "SELECT reason FROM merge_account_log WHERE uid=?",
+                (log_uid,),
+                mctx.log,
+            )
+            assert resp.results, resp
+            assert len(resp.results) == 1, resp
+            assert len(resp.results[0]) == 1, resp
+
+            parsed_reason = json.loads(resp.results[0][0])
+            assert isinstance(parsed_reason, dict), resp
+            await mctx.log.write(
+                b"parsed_reason:\n"
+                + json.dumps(parsed_reason, indent=2).encode("utf-8")
+                + b"\n"
+            )
+
+            details = parsed_reason["context"]["deleted"]
+            rows = parsed_reason["context"]["rows"]
+
+            assert isinstance(details, list), resp
+            assert isinstance(rows, int), resp
+            assert len(details) == rows, resp
+            assert rows > 0
+
+            for detail in details:
+                assert isinstance(detail, dict), resp
+                uid = detail.get("uid")
+                assert isinstance(uid, str), resp
+
+            expected_deleted = rows
+            await mctx.log.write(
+                b"reason is correctly shaped for expected_deleted="
+                + str(expected_deleted).encode("ascii")
+                + b"\n"
+            )
+            return
+
+        assert step == "delete", step
+        assert logged is not None, "delete step handler called before log step"
+
+        num_deleted = mctx.result.rows_affected or 0
+        await mctx.log.write(b"num_deleted: " + str(num_deleted).encode("ascii") + b"\n")
+        if num_deleted <= 0:
+            assert (
+                not logged
+            ), f"logged that we intended to delete some opt_in_group_users, but none were deleted"
+        else:
+            assert (
+                logged
+            ), f"deleted some opt_in_group_users, but didn't log that we intended to delete any"
+            assert expected_deleted == num_deleted, (
+                f"logged that we intended to delete {expected_deleted}"
+                f" opt_in_group_users, but deleted {num_deleted}"
+            )
+        await mctx.log.write(b"log and delete steps matched\n")
+
+    ctes, ctes_qargs = _merging_user_and_original_user_ctes(octx)
+    ctes += (
+        ", query_ctx(id, uid) AS ("
+        "SELECT"
+        " opt_in_group_users.id,"
+        " opt_in_groups.uid "
+        "FROM opt_in_group_users, opt_in_groups, merging_user, original_user "
+        "WHERE"
+        "  opt_in_group_users.user_id = merging_user.id"
+        "  AND EXISTS ("
+        "   SELECT 1 FROM opt_in_group_users AS ou"
+        "   WHERE"
+        "    ou.user_id = original_user.id"
+        "    AND ou.opt_in_group_id = opt_in_group_users.opt_in_group_id"
+        "  )"
+        "  AND opt_in_groups.id = opt_in_group_users.opt_in_group_id"
+        ") "
+    )
+    return [
+        MergeQuery(
+            query=(
+                f"{ctes}INSERT INTO merge_account_log ("
+                " uid, user_id, operation_uid, operation_order, phase, step, step_result, reason, created_at"
+                ") SELECT"
+                " ?, original_user.id, ?, ?, 'merging', 'move_opt_in_group_users__delete', 'xfer',"
+                " json_insert("
+                "  '{}'"
+                "  , '$.context.deleted', ("
+                "   SELECT json_group_array("
+                "    json_object("
+                "     'uid', query_ctx.uid"
+                "    ))"
+                "   FROM query_ctx"
+                "  )"
+                "  , '$.context.rows', (SELECT COUNT(*) FROM query_ctx)"
+                " ), ? "
+                "FROM merging_user, original_user "
+                "WHERE EXISTS (SELECT 1 FROM query_ctx)"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+                octx.operation_uid,
+                OperationOrder.move_opt_in_group_users__delete.value,
+                octx.merge_at,
+            ],
+            handler=partial(handler, "log"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes}DELETE FROM opt_in_group_users "
+                "WHERE"
+                " opt_in_group_users.user_id = (SELECT merging_user.id FROM merging_user)"  
+                # we don't need to check query_ctx; if they are not deleted here, they
+                # will be deleted when the user is deleted. assuming transfer already
+                # happened, this should still match
             ),
             qargs=[*ctes_qargs],
             handler=partial(handler, "delete"),

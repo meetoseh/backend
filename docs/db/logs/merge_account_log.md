@@ -338,7 +338,19 @@ alphabetical order, with logs moved to the bottom:
 46. `move_journal_entries`: standard update
 47. `move_user_journal_master_keys`: standard update
 48. `move_user_journal_client_keys`: standard update
-49. `move_created_at`: we set the `created_at` timestamp of the original user to the
+49. `move_opt_in_group_users__transfer`: the opt-in groups that were simply transfered
+    over because they existed on the merging user but not on the original user.
+    - `context`
+      - `transfered`: goes to a list of group uids that were transfered over
+        - `uid`: the opt in group uid
+      - `rows`: the length of transfered
+50. `move_opt_in_group_users__delete`: the opt-in groups that were deleted from the
+    merging user because they were already associated with the original user
+    - `context`
+      - `deleted`: goes to a list of group uids that were deleted
+        - `uid`: the opt in group uid
+      - `rows`: the length of deleted
+51. `move_created_at`: we set the `created_at` timestamp of the original user to the
     earlier of the original users created at and the merging users created at. this may
     mean that, incidentally, some computed attribution information is excluded.
     - `context`:

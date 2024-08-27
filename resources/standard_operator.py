@@ -18,3 +18,7 @@ class StandardOperator(str, Enum):
     BETWEEN_OR_NULL = "btn"
     BETWEEN_EXCLUSIVE_END = "bte"
     BETWEEN_EXCLUSIVE_END_OR_NULL = "bten"
+    OUTSIDE = "out"
+    OUTSIDE_OR_NULL = "outn"
+    OUTSIDE_EXCLUSIVE_END = "oute"
+    OUTSIDE_EXCLUSIVE_END_OR_NULL = "outen"

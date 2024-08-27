@@ -146,6 +146,22 @@ class FilterItem(Generic[ValueT]):
             assert isinstance(formattable_value, (list, tuple))
             qargs.extend(formattable_value)
             return term.isnull() | ((term >= p) & (term < p))
+        elif self.operator == StandardOperator.OUTSIDE:
+            assert isinstance(formattable_value, (list, tuple))
+            qargs.extend(formattable_value)
+            return (term < p) | (term > p)
+        elif self.operator == StandardOperator.OUTSIDE_OR_NULL:
+            assert isinstance(formattable_value, (list, tuple))
+            qargs.extend(formattable_value)
+            return term.isnull() | ((term < p) | (term > p))
+        elif self.operator == StandardOperator.OUTSIDE_EXCLUSIVE_END:
+            assert isinstance(formattable_value, (list, tuple))
+            qargs.extend(formattable_value)
+            return (term <= p) | (term >= p)
+        elif self.operator == StandardOperator.OUTSIDE_EXCLUSIVE_END_OR_NULL:
+            assert isinstance(formattable_value, (list, tuple))
+            qargs.extend(formattable_value)
+            return term.isnull() | ((term <= p) | (term >= p))
 
         raise ValueError(f"Unsupported operator: {self.operator}")
 
@@ -335,6 +351,10 @@ class FilterItemModel(BaseModel, Generic[ValueT], metaclass=_FilterItemModelMeta
             StandardOperator.BETWEEN_OR_NULL,
             StandardOperator.BETWEEN_EXCLUSIVE_END,
             StandardOperator.BETWEEN_EXCLUSIVE_END_OR_NULL,
+            StandardOperator.OUTSIDE,
+            StandardOperator.OUTSIDE_OR_NULL,
+            StandardOperator.OUTSIDE_EXCLUSIVE_END,
+            StandardOperator.OUTSIDE_EXCLUSIVE_END_OR_NULL,
         ):
             if not isinstance(value, (list, tuple)) or len(value) != 2:
                 raise ValueError(

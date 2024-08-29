@@ -280,7 +280,7 @@ class BitwiseOrCriterion(Criterion):
         return self
 
     def get_sql(self, **kwargs: Any) -> str:
-        sql = "({term} & {value})".format(
+        sql = "({term} | {value})".format(
             term=self.term.get_sql(**kwargs),
             value=self.value,
         )

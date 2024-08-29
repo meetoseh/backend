@@ -1,7 +1,7 @@
 import math
-from pypika import Table, Query, Parameter
+from pypika import Table, Query, Parameter, Not
 from pypika.queries import QueryBuilder
-from pypika.terms import Term, ExistsCriterion
+from pypika.terms import Term, ExistsCriterion, BitwiseAndCriterion
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union, cast
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -216,6 +216,10 @@ async def raw_read_search_public_journeys(
     user_likes = Table("user_likes")
     content_files = Table("content_files")
 
+    # only in inner queries
+    courses = Table("courses")
+    course_journeys = Table("course_journeys")
+
     # ctes
     last_taken_ats = Table("last_taken_ats")
     premium_journeys = Table("premium_journeys")
@@ -292,6 +296,26 @@ premium_journeys(journey_id) AS (
         )
         .where(journeys.deleted_at.isnull())
         .where(journeys.special_category.isnull())
+        .where(
+            Not(
+                ExistsCriterion(
+                    Query.from_(courses)
+                    .select(1)
+                    .join(course_journeys)
+                    .on(course_journeys.course_id == courses.id)
+                    .where(course_journeys.journey_id == journeys.id)
+                    .where(
+                        BitwiseAndCriterion(
+                            courses.flags,
+                            Term.wrap_constant(
+                                int(SeriesFlags.JOURNEYS_IN_SERIES_IN_LIBRARY)
+                            ),
+                        )
+                        == 0
+                    )
+                )
+            )
+        )
     )
     qargs: list = [user_sub]
 

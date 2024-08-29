@@ -49,6 +49,10 @@ class SeriesFlags(IntFlag):
     """Not set if the series should be prevented from showing by default in
     the admin series listing, false for no change
     """
+    JOURNEYS_IN_SERIES_IN_LIBRARY = auto()
+    """Not set if the journeys within the series should be prevented from
+    showing in the Library tab (aka Classes from nav, aka search_public endpoint)
+    """
 
 
 SERIES_HARD_DELETED: SeriesFlags = SeriesFlags(0)
@@ -71,6 +75,7 @@ SERIES_FREE: SeriesFlags = (
     | SeriesFlags.JOURNEYS_IN_SERIES_IN_HISTORY
     | SeriesFlags.SERIES_ATTACHABLE_FOR_FREE
     | SeriesFlags.SERIES_IN_ADMIN_AREA
+    | SeriesFlags.JOURNEYS_IN_SERIES_IN_LIBRARY
 )
 """Standard series flags for a free series"""
 
@@ -83,5 +88,6 @@ SERIES_PAID: SeriesFlags = (
     | SeriesFlags.SERIES_IN_SERIES_TAB
     | SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM
     | SeriesFlags.SERIES_IN_ADMIN_AREA
+    | SeriesFlags.JOURNEYS_IN_SERIES_IN_LIBRARY
 )
 """Standard series flags for a paid series"""

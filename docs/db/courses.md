@@ -36,6 +36,8 @@ course videos and a basic index file to play them.
       true for no effect
   11. false to prevent the series from being shown by default in admin series listing,
       true for no effect
+  12. false to prevent the journeys in the series from being shown in the Library screen,
+      aka the classes tab, aka, returned from the search_public endpoint
 - `revenue_cat_entitlement (text not null)`: The name of the revenue cat entitlement
   that provides access to this course. It's not necessarily true that a user with this
   entitlement wants to go through the course, though if they just bought it usually

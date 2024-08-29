@@ -241,7 +241,7 @@ premium_journeys(journey_id) AS (
     FROM course_journeys, courses
     WHERE
         course_journeys.course_id = courses.id
-        AND (courses.flags & {int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM)}) = 1
+        AND (courses.flags & {int(SeriesFlags.JOURNEYS_IN_SERIES_ARE_PREMIUM)}) != 0
 )
 """
     premium_journeys_qargs: list = []

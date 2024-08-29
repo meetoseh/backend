@@ -194,7 +194,7 @@ class EditEntryItemDecryptedTextToTextualItem:
         if decrypted_text_str == "":
             await handle_warning(
                 f"{__name__}:empty_payload",
-                f"{error_ctx()}, but the payload was empty",
+                f"{error_ctx()}, but the payload was empty (unstripped length: {len(decrypted_text_str)})",
             )
             return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
 

@@ -8,7 +8,10 @@ import pytz
 
 from error_middleware import handle_contextless_error, handle_error
 from itgs import Itgs
-from lib.client_flows.client_flow_predicate import check_flow_predicate
+from lib.client_flows.client_flow_predicate import (
+    CheckFlowPredicateContext,
+    check_flow_predicate,
+)
 from lib.client_flows.client_flow_screen import (
     ClientFlowScreen,
     ClientFlowScreenFlag,
@@ -177,6 +180,12 @@ class ClientFlowSimulatorState:
     since it will be undone).
     """
 
+    flow_predicate_ctx: CheckFlowPredicateContext
+    """The conditionally fetched data required for checking flow predicates. Most of this
+    is data that we won't usually need, and thus is only collected on demand. However, if
+    we do need it it's likely we will need it multiple times
+    """
+
     stats: RedisStatsPreparer
     """The stats that need to be stored in redis if the simulated state is successfully
     applied to the user's screen queue. These track, for example, what client flows were
@@ -208,6 +217,7 @@ def init_simulator_from_peek(
         current=front,
         queue=queue if queue is not None else ([] if front is None else None),
         mutations=[],
+        flow_predicate_ctx=CheckFlowPredicateContext(),
         stats=RedisStatsPreparer(),
         created_at=created_at,
         unix_date=unix_dates.unix_timestamp_to_unix_date(created_at, tz=tz),
@@ -235,6 +245,7 @@ def init_simulator_from_pop(
             if queue_after_pop is not None
             else ([] if second is None else None)
         ),
+        flow_predicate_ctx=CheckFlowPredicateContext(),
         stats=RedisStatsPreparer(),
         created_at=created_at,
         unix_date=unix_dates.unix_timestamp_to_unix_date(created_at, tz=tz),
@@ -289,9 +300,11 @@ async def simulate_add_screens(
             itgs,
             raw_flow_screen.rules.trigger,
             version=version,
-            time_in_queue=0,
-            account_age=int(state.created_at) - user_created_at,
+            queued_at=int(state.created_at),
+            account_created_at=user_created_at,
+            now=int(state.created_at),
             user_sub=user_sub,
+            ctx=state.flow_predicate_ctx,
         ):
             logger.info(
                 f"Skipping {flow.slug} screen {idx + 1} of {len(flow.screens)} (a {raw_flow_screen.screen.slug} screen) - trigger predicate passed"
@@ -753,8 +766,10 @@ async def fetch_and_simulate_trigger(
             rule.condition,
             version=client_info.version,
             user_sub=client_info.user_sub,
-            time_in_queue=0,
-            account_age=int(state.created_at) - client_info.user_created_at,
+            queued_at=int(state.created_at),
+            account_created_at=client_info.user_created_at,
+            now=int(state.created_at),
+            ctx=state.flow_predicate_ctx,
         ):
             logger.debug(
                 f"Applying rule for {flow.slug}, checked with version={client_info.version}: {rule.model_dump_json()}"
@@ -965,8 +980,10 @@ async def check_skip_preconditions(
         state.current.flow_screen.rules.peek,
         version=client_info.version,
         user_sub=client_info.user_sub,
-        time_in_queue=int(state.created_at - state.current.queued_at),
-        account_age=int(state.created_at) - client_info.user_created_at,
+        queued_at=int(state.current.queued_at),
+        account_created_at=client_info.user_created_at,
+        now=int(state.created_at),
+        ctx=state.flow_predicate_ctx,
     ):
         logger.debug(
             f"Should skip because the peek rule for {state.current.screen.slug} passed"

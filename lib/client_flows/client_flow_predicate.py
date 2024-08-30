@@ -224,9 +224,9 @@ WITH
 user(id) AS (
     SELECT users.id FROM users WHERE users.sub = ?
 ),
-last_journey(id, created_at) AS (
+last_journey(journey_id, taken_at) AS (
     SELECT 
-        user_journeys.id,
+        user_journeys.journey_id,
         user_journeys.created_at
     FROM user, user_journeys
     WHERE user_journeys.user_id = user.id
@@ -234,11 +234,11 @@ last_journey(id, created_at) AS (
     LIMIT 1
 )
 SELECT
-    journey_feedback.rating
+    journey_feedback.response
 FROM journey_feedback, user, last_journey
 WHERE
-    journey_feedback.journey_id = last_journey.id
-    AND journey_feedback.created_at >= last_journey.created_at
+    journey_feedback.journey_id = last_journey.journey_id
+    AND journey_feedback.created_at >= last_journey.taken_at
     AND journey_feedback.user_id = user.id
 ORDER BY journey_feedback.created_at DESC
 LIMIT 1
@@ -300,8 +300,8 @@ FROM users, journal_entries
 WHERE
     users.sub = ?
     AND users.id = journal_entries.user_id
-    AND journal_entries.created_at_unix_date = ?
-    AND (journal_entries.flags & 1) <> 0
+    AND journal_entries.created_unix_date = ?
+    AND (journal_entries.flags & 1) = 0
         """,
         (user_sub, user_unix_date_today),
     )

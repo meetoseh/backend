@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -148,12 +149,13 @@ WHERE
             )
         elif response[1].rows_affected is not None and response[1].rows_affected > 0:
             assert response[1].rows_affected == 1, response
-            await enqueue_send_described_user_slack_message(
-                itgs,
-                message=f"{{name}} joined the opt in group `{args.trigger.parameters.group_name}`",
-                sub=std_auth_result.result.sub,
-                channel="oseh_bot",
-            )
+            if os.environ["ENVIRONMENT"] != "dev":
+                await enqueue_send_described_user_slack_message(
+                    itgs,
+                    message=f"{{name}} joined the opt in group `{args.trigger.parameters.group_name}`",
+                    sub=std_auth_result.result.sub,
+                    channel="oseh_bot",
+                )
 
         screen = await execute_pop(
             itgs,

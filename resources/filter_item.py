@@ -168,13 +168,21 @@ class FilterItem(Generic[ValueT]):
     def check_constant(self, the_constant_value: Optional[ValueT]) -> bool:
         """Checks this filter item against a known constant value."""
         if self.operator == StandardOperator.EQUAL:
-            if self.value is None or the_constant_value is None:
-                return False
+            if self.value is None:
+                return the_constant_value is None
+            if self.value is True:
+                return not not the_constant_value
+            if self.value is False:
+                return not the_constant_value
             return the_constant_value == self.value
         elif self.operator == StandardOperator.NOT_EQUAL:
-            if self.value is None or the_constant_value is None:
-                return False
-            return the_constant_value != self.value
+            if self.value is None:
+                return the_constant_value is not None
+            if self.value is True:
+                return not the_constant_value
+            if self.value is False:
+                return not not the_constant_value
+            return the_constant_value is not None and (the_constant_value != self.value)
         elif self.operator == StandardOperator.GREATER_THAN:
             if self.value is None or the_constant_value is None:
                 return False

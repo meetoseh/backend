@@ -333,6 +333,7 @@ class _FilterItemModelMeta(type(BaseModel)):
 
         class _CustomFilterItemModel(FilterItemModel):
             value: Union[t, List[t], None] = Field(
+                None,
                 title="Value",
                 description=(
                     "The value to compare the pseudocolumn to. Must be a list of two items for "

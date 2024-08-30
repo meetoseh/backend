@@ -105,6 +105,7 @@ class FilterTextItemModel(BaseModel):
     )
 
     value: Optional[str] = Field(
+        None,
         title="Value",
         description="The value to compare the pseudocolumn to",
     )

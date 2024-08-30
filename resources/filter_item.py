@@ -369,6 +369,7 @@ class FilterItemModel(BaseModel, Generic[ValueT], metaclass=_FilterItemModelMeta
     )
 
     value: Union[ValueT, List[ValueT], None] = Field(
+        None,
         title="Value",
         description=(
             "The value to compare the pseudocolumn to. Must be a list of two items for "

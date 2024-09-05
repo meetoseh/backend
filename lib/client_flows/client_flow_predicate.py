@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Dict, Generic, Optional, TypeVar, cast
+from typing_extensions import TypedDict
 from itgs import Itgs
 from lib.opt_in_groups import check_if_user_in_opt_in_group
 from lib.sticky_random_groups import check_if_user_in_sticky_random_group
@@ -87,6 +88,17 @@ class CheckFlowPredicateContext:
     journal_entries_in_history_today: Optional[Wrapped[int]] = None
 
 
+class ClientFlowPredicateParams(TypedDict):
+    """Convenience class for describing the keyword arguments to check_flow_predicate"""
+
+    version: Optional[int]
+    queued_at: int
+    account_created_at: int
+    now: int
+    user_sub: str
+    ctx: CheckFlowPredicateContext
+
+
 async def check_flow_predicate(
     itgs: Itgs,
     rule: ClientFlowPredicate,
@@ -155,6 +167,11 @@ async def _check_flow_predicate_non_recursive(
         return False
     if rule.account_age is not None and not rule.account_age.to_result().check_constant(
         now - account_created_at
+    ):
+        return False
+    if (
+        rule.account_created_at is not None
+        and not rule.account_created_at.to_result().check_constant(account_created_at)
     ):
         return False
     if rule.sticky_random_groups is not None:

@@ -110,7 +110,7 @@ async def read_entitlement(
         if force:
             redis = await itgs.redis()
             key = f"entitlements:read:force:ratelimit:{auth_result.result.sub}"
-            success = await redis.set(key, "1", ex=30, nx=True)
+            success = await redis.set(key, "1", ex=3, nx=True)
             if not success:
                 return Response(
                     content=StandardErrorResponse[ERROR_429_TYPES](

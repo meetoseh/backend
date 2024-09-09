@@ -1197,7 +1197,7 @@ def deep_extract_value_and_subschema(
                     assert isinstance(
                         oneof_discrim_enum, list
                     ), f"list expected at {pretty_path(schema_path_to_here + ['oneOf', one_of_idx, 'properties', discriminator, 'enum'])} to extract {pretty_path(path)}"
-                    if discrim_value in oneof_discrim_enum:
+                    if discrim_value not in oneof_discrim_enum:
                         continue
 
                     subschema = one_of_schema

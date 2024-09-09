@@ -6,6 +6,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Annotated, Optional, List, Union, cast
 from content_files.lib.serve_s3_file import read_in_parts
+from error_middleware import handle_error
 from lifespan import lifespan_handler
 from models import STANDARD_ERRORS_BY_CODE
 from auth import auth_admin
@@ -391,27 +392,36 @@ def _serialize_and_compress_sync(raw: ReadTopSharersResponse) -> bytes:
 async def handle_incoming_top_sharers_loop():
     assert pps.instance is not None
 
-    async with pps.PPSSubscription(
-        pps.instance, "ps:journey_share_links:top_sharers", "jsl_rts_hitsl"
-    ) as sub:
-        async for message_raw in sub:
-            message = io.BytesIO(message_raw)
-            start_unix_date_bytes = message.read(4)
-            if start_unix_date_bytes == b"\xff\xff\xff\xff":
-                start_unix_date = None
-            else:
-                start_unix_date = int.from_bytes(
-                    start_unix_date_bytes, "big", signed=False
-                )
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:journey_share_links:top_sharers", "jsl_rts_hitsl"
+        ) as sub:
+            async for message_raw in sub:
+                message = io.BytesIO(message_raw)
+                start_unix_date_bytes = message.read(4)
+                if start_unix_date_bytes == b"\xff\xff\xff\xff":
+                    start_unix_date = None
+                else:
+                    start_unix_date = int.from_bytes(
+                        start_unix_date_bytes, "big", signed=False
+                    )
 
-            end_unix_date = int.from_bytes(message.read(4), "big", signed=False)
-            payload_length = int.from_bytes(message.read(8), "big", signed=False)
-            payload_raw = message.read(payload_length)
+                end_unix_date = int.from_bytes(message.read(4), "big", signed=False)
+                payload_length = int.from_bytes(message.read(8), "big", signed=False)
+                payload_raw = message.read(payload_length)
 
-            async with Itgs() as itgs:
-                await _write_top_sharers_to_local_cache(
-                    itgs, start_unix_date, end_unix_date, payload_raw
-                )
+                async with Itgs() as itgs:
+                    await _write_top_sharers_to_local_cache(
+                        itgs, start_unix_date, end_unix_date, payload_raw
+                    )
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return  # type: ignore
+        await handle_error(e)
+    finally:
+        print(
+            "admin.journey_share_links.routes.read_top_sharers#handle_incoming_top_sharers_loop exiting"
+        )
 
 
 @lifespan_handler

@@ -63,6 +63,7 @@ from resources.patch.query import Query
 from openapi_schema_validator import OAS30Validator
 
 from users.me.screens.lib.standard_parameters import get_standard_parameter_schema
+import lib.client_flows.analysis
 
 router = APIRouter()
 
@@ -183,6 +184,7 @@ async def patch_client_flow(
             if args.patch.slug is not NotSetEnum.NOT_SET:
                 assert args.precondition.slug is not NotSetEnum.NOT_SET
                 await purge_client_flow_cache(itgs, slug=args.precondition.slug)
+                await lib.client_flows.analysis.evict(itgs)
 
             await purge_client_flow_cache(itgs, slug=flow.slug)
 

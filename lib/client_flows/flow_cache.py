@@ -101,7 +101,10 @@ async def get_client_flow(itgs: Itgs, /, *, slug: str) -> Optional[ClientFlow]:
 
 
 async def purge_client_flow_cache(itgs: Itgs, /, *, slug: str) -> None:
-    """Purges any cached client flows with the given slug, everywhere"""
+    """Purges any cached client flows with the given slug, everywhere.
+    Typically, if you are doing this, you also want to call
+    lib.client_flows.analysis#evict to clear the analysis cache.
+    """
     await publish_client_flow_delete(itgs, slug=slug)
 
 

@@ -7,7 +7,7 @@ import secrets
 import time
 from typing import List, Optional, cast
 from pydantic import BaseModel, Field, TypeAdapter
-from error_middleware import handle_warning
+from error_middleware import handle_error, handle_warning
 from itgs import Itgs
 import gzip
 import unix_dates
@@ -612,31 +612,39 @@ async def _handle_local_purge(itgs: Itgs, *, now: float) -> None:
 
 async def _handle_cache_pushes_forever() -> None:
     assert pps.instance is not None
-    async with pps.PPSSubscription(
-        pps.instance, _available_ps_key.decode("utf-8"), "hsi_hcpf"
-    ) as sub:
-        async for raw_message_bytes in sub:
-            msg = io.BytesIO(raw_message_bytes)
-            is_data_push = int.from_bytes(msg.read(1), "big", signed=False) == 1
-            if not is_data_push:
+
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, _available_ps_key.decode("utf-8"), "hsi_hcpf"
+        ) as sub:
+            async for raw_message_bytes in sub:
+                msg = io.BytesIO(raw_message_bytes)
+                is_data_push = int.from_bytes(msg.read(1), "big", signed=False) == 1
+                if not is_data_push:
+                    async with Itgs() as itgs:
+                        await _handle_local_purge(itgs, now=time.time())
+                    continue
+
+                date_iso8601 = msg.read(10).decode("ascii")
+                has_pro = bool(int.from_bytes(msg.read(1), "big", signed=False))
+                wrapped_only = bool(int.from_bytes(msg.read(1), "big", signed=False))
+                available_len = int.from_bytes(msg.read(8), "big", signed=False)
+                available = msg.read(available_len)
+
                 async with Itgs() as itgs:
-                    await _handle_local_purge(itgs, now=time.time())
-                continue
-
-            date_iso8601 = msg.read(10).decode("ascii")
-            has_pro = bool(int.from_bytes(msg.read(1), "big", signed=False))
-            wrapped_only = bool(int.from_bytes(msg.read(1), "big", signed=False))
-            available_len = int.from_bytes(msg.read(8), "big", signed=False)
-            available = msg.read(available_len)
-
-            async with Itgs() as itgs:
-                await _write_available_home_screen_images_to_local_cache(
-                    itgs,
-                    date_iso8601=date_iso8601,
-                    has_pro=has_pro,
-                    wrapped_only=wrapped_only,
-                    available=available,
-                )
+                    await _write_available_home_screen_images_to_local_cache(
+                        itgs,
+                        date_iso8601=date_iso8601,
+                        has_pro=has_pro,
+                        wrapped_only=wrapped_only,
+                        available=available,
+                    )
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return  # type: ignore
+        await handle_error(e)
+    finally:
+        print("users.lib.home_screen_images#_handle_cache_pushes_forever exiting")
 
 
 @lifespan_handler

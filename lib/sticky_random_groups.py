@@ -4,6 +4,7 @@ import secrets
 import socket
 import time
 from typing import Literal, Optional, cast, overload
+from error_middleware import handle_error
 from itgs import Itgs
 import hmac
 import randomgen
@@ -257,28 +258,34 @@ WHERE
 
 async def _handle_incoming_messages_forever():
     assert pps.instance is not None
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:sticky_random_groups", "srg_himf"
+        ) as sub:
+            async for message_raw in sub:
+                message = io.BytesIO(message_raw)
+                group_name_length = int.from_bytes(message.read(4), "big")
+                group_name = message.read(group_name_length).decode("utf-8")
+                message_type = int.from_bytes(message.read(1), "big")
+                if message_type == 0:
+                    async with Itgs() as itgs:
+                        await delete_sticky_random_group_number_from_local_cache(
+                            itgs, group_name=group_name
+                        )
+                        continue
 
-    async with pps.PPSSubscription(
-        pps.instance, "ps:sticky_random_groups", "srg_himf"
-    ) as sub:
-        async for message_raw in sub:
-            message = io.BytesIO(message_raw)
-            group_name_length = int.from_bytes(message.read(4), "big")
-            group_name = message.read(group_name_length).decode("utf-8")
-            message_type = int.from_bytes(message.read(1), "big")
-            if message_type == 0:
+                assert message_type == 1, message_type
+                group_number = message.read(32)
                 async with Itgs() as itgs:
-                    await delete_sticky_random_group_number_from_local_cache(
-                        itgs, group_name=group_name
+                    await write_sticky_random_group_number_to_local_cache(
+                        itgs, group_name=group_name, group_number=group_number
                     )
-                    continue
-
-            assert message_type == 1, message_type
-            group_number = message.read(32)
-            async with Itgs() as itgs:
-                await write_sticky_random_group_number_to_local_cache(
-                    itgs, group_name=group_name, group_number=group_number
-                )
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return  # type: ignore
+        await handle_error(e)
+    finally:
+        print("lib.sticky_random_groups#_handle_incoming_messages_forever exiting")
 
 
 @lifespan_handler

@@ -13,6 +13,7 @@ from lib.client_flows.flow_flags import ClientFlowFlag
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_admin
 from client_flows.routes.read import ClientFlow
+import lib.client_flows.analysis
 
 
 router = APIRouter()
@@ -137,6 +138,7 @@ WHERE
             return ERROR_CLIENT_FLOW_SLUG_EXISTS_RESPONSE
 
         await purge_client_flow_cache(itgs, slug=flow.slug)
+        await lib.client_flows.analysis.evict(itgs)
         return Response(
             content=ClientFlow.__pydantic_serializer__.to_json(flow),
             headers={"Content-Type": "application/json; charset=utf-8"},

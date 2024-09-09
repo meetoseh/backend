@@ -5,7 +5,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Annotated, Awaitable, List, Optional, Union, cast
 from content_files.lib.serve_s3_file import read_in_parts
-from error_middleware import handle_warning
+from error_middleware import handle_error, handle_warning
 from transcripts.auth import auth_any
 from models import AUTHORIZATION_UNKNOWN_TOKEN, STANDARD_ERRORS_BY_CODE
 from lifespan import lifespan_handler
@@ -301,15 +301,22 @@ async def get_transcript_from_source(itgs: Itgs, uid: str) -> Optional[Transcrip
 async def _actively_sync_local_cache():
     assert pps.instance is not None
 
-    async with pps.PPSSubscription(pps.instance, "ps:transcripts", "taslc") as sub:
-        async for raw_message in sub:
-            message = io.BytesIO(raw_message)
-            uid_length = int.from_bytes(message.read(4), "big", signed=False)
-            uid = message.read(uid_length).decode("utf-8")
-            content_length = int.from_bytes(message.read(8), "big", signed=False)
-            content = message.read(content_length)
-            async with Itgs() as itgs:
-                await write_transcript_to_local_cache(itgs, uid, content)
+    try:
+        async with pps.PPSSubscription(pps.instance, "ps:transcripts", "taslc") as sub:
+            async for raw_message in sub:
+                message = io.BytesIO(raw_message)
+                uid_length = int.from_bytes(message.read(4), "big", signed=False)
+                uid = message.read(uid_length).decode("utf-8")
+                content_length = int.from_bytes(message.read(8), "big", signed=False)
+                content = message.read(content_length)
+                async with Itgs() as itgs:
+                    await write_transcript_to_local_cache(itgs, uid, content)
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return  # type: ignore
+        await handle_error(e)
+    finally:
+        print("transcripts.routes.show#_actively_sync_local_cache exiting")
 
 
 @lifespan_handler

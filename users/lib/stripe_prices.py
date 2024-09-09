@@ -5,6 +5,7 @@ import os
 import random
 from typing import Any, Awaitable, Dict, Literal, Optional, cast
 from pydantic import BaseModel, Field
+from error_middleware import handle_error
 from itgs import Itgs
 from users.lib.prices import (
     Period,
@@ -331,18 +332,25 @@ async def read_stripe_price_from_source(
 async def _subscribe_to_stripe_price_updates():
     assert pps.instance is not None
 
-    async with pps.PPSSubscription(
-        pps.instance, "ps:stripe:products:prices", "sp_stspu"
-    ) as sub:
-        async for message_raw in sub:
-            message = io.BytesIO(message_raw)
-            serd_product_id_len = int.from_bytes(message.read(2), "big")
-            product_id = message.read(serd_product_id_len).decode("utf-8")
-            raw_len = int.from_bytes(message.read(8), "big")
-            raw = message.read(raw_len)
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:stripe:products:prices", "sp_stspu"
+        ) as sub:
+            async for message_raw in sub:
+                message = io.BytesIO(message_raw)
+                serd_product_id_len = int.from_bytes(message.read(2), "big")
+                product_id = message.read(serd_product_id_len).decode("utf-8")
+                raw_len = int.from_bytes(message.read(8), "big")
+                raw = message.read(raw_len)
 
-            async with Itgs() as itgs:
-                await write_stripe_price_to_local_cache(itgs, product_id, raw)
+                async with Itgs() as itgs:
+                    await write_stripe_price_to_local_cache(itgs, product_id, raw)
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return  # type: ignore
+        await handle_error(e)
+    finally:
+        print("users.lib.stripe_prices#_subscribe_to_stripe_price_updates exiting")
 
 
 @lifespan_handler

@@ -255,25 +255,38 @@ async def push_offerings_to_all_local_caches(
 async def subscribe_to_offerings_pushes():
     assert pps.instance is not None
 
-    async with pps.PPSSubscription(
-        pps.instance, "ps:revenue_cat:offerings", "ulo_stop"
-    ) as sub:
-        async for message_raw in sub:
-            message = io.BytesIO(message_raw)
-            serd_revenue_cat_id_len = int.from_bytes(message.read(2), "big")
-            revenue_cat_id = message.read(serd_revenue_cat_id_len).decode("utf-8")
-            serd_platform_len = int.from_bytes(message.read(1), "big")
-            serd_platform = message.read(serd_platform_len).decode("utf-8")
-            raw_len = int.from_bytes(message.read(8), "big")
-            raw = message.read(raw_len)
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:revenue_cat:offerings", "ulo_stop"
+        ) as sub:
+            async for message_raw in sub:
+                message = io.BytesIO(message_raw)
+                serd_revenue_cat_id_len = int.from_bytes(message.read(2), "big")
+                revenue_cat_id = message.read(serd_revenue_cat_id_len).decode("utf-8")
+                serd_platform_len = int.from_bytes(message.read(1), "big")
+                serd_platform = message.read(serd_platform_len).decode("utf-8")
+                raw_len = int.from_bytes(message.read(8), "big")
+                raw = message.read(raw_len)
 
-            assert serd_platform in ("stripe", "playstore", "appstore"), serd_platform
-            platform = cast(Literal["stripe", "playstore", "appstore"], serd_platform)
-
-            async with Itgs() as itgs:
-                await write_offerings_to_local_cache(
-                    itgs, revenue_cat_id=revenue_cat_id, platform=platform, raw=raw
+                assert serd_platform in (
+                    "stripe",
+                    "playstore",
+                    "appstore",
+                ), serd_platform
+                platform = cast(
+                    Literal["stripe", "playstore", "appstore"], serd_platform
                 )
+
+                async with Itgs() as itgs:
+                    await write_offerings_to_local_cache(
+                        itgs, revenue_cat_id=revenue_cat_id, platform=platform, raw=raw
+                    )
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return  # type: ignore
+        await handle_error(e)
+    finally:
+        print("users.lib.offerings#subscribe_to_offerings_pushes exiting")
 
 
 @lifespan_handler

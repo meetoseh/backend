@@ -25,7 +25,7 @@ async def handle_lifespan():
 """
 
 from fastapi import FastAPI
-from typing import Callable, AsyncGenerator, List
+from typing import Callable, AsyncGenerator, List, Optional
 from contextlib import asynccontextmanager
 
 from error_middleware import handle_error
@@ -49,7 +49,7 @@ def first_lifespan_handler(func: Callable[[], AsyncGenerator]) -> None:
 
 
 @asynccontextmanager
-async def top_level_lifespan_handler(app: FastAPI):
+async def top_level_lifespan_handler(app: Optional[FastAPI]):
     """A context manager that runs all registered lifespan handlers."""
     global _registered_handlers
     global _already_started

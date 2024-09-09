@@ -5,6 +5,7 @@ from itgs import Itgs
 from lib.client_flows.flow_cache import purge_client_flow_cache
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_admin
+import lib.client_flows.analysis
 
 
 router = APIRouter()
@@ -61,4 +62,5 @@ async def delete_client_flow(
         assert response[1].rows_affected == 1
         slug = cast(str, response[0].results[0][0])
         await purge_client_flow_cache(itgs, slug=slug)
+        await lib.client_flows.analysis.evict(itgs)
         return Response(status_code=204)

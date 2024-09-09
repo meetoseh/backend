@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+import client_flows.routes.analyze_reachable
 import client_flows.routes.create
 import client_flows.routes.delete
 import client_flows.routes.patch
@@ -8,6 +9,7 @@ import client_flows.routes.test_screen
 import client_flows.routes.oneoff_flow
 
 router = APIRouter()
+router.include_router(client_flows.routes.analyze_reachable.router)
 router.include_router(client_flows.routes.create.router)
 router.include_router(client_flows.routes.delete.router)
 router.include_router(client_flows.routes.patch.router)

@@ -380,16 +380,25 @@ async def emotion_content_statistics_purge_cache_loop() -> Never:
     """
     assert pps.instance is not None
 
-    async with pps.PPSSubscription(
-        pps.instance, "ps:emotion_content_statistics:push_cache", "emotion_content"
-    ) as subscription:
-        async for raw_message in subscription:
-            message = EmotionContentPurgeMessage.model_validate_json(raw_message)
-            logger.info(
-                f"Received emotion content statistics {'purge' if message.replace_stats is None else 'fill'} message"
-            )
-            async with Itgs() as itgs:
-                await handle_emotion_content_purge_message(itgs, message=message)
+    try:
+        async with pps.PPSSubscription(
+            pps.instance, "ps:emotion_content_statistics:push_cache", "emotion_content"
+        ) as subscription:
+            async for raw_message in subscription:
+                message = EmotionContentPurgeMessage.model_validate_json(raw_message)
+                logger.info(
+                    f"Received emotion content statistics {'purge' if message.replace_stats is None else 'fill'} message"
+                )
+                async with Itgs() as itgs:
+                    await handle_emotion_content_purge_message(itgs, message=message)
+    except Exception as e:
+        if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
+            return  # type: ignore
+        await handle_error(e)
+    finally:
+        print(
+            "emotions.lib.emotion_content#emotion_content_statistics_purge_cache_loop exiting"
+        )
 
 
 @lifespan_handler

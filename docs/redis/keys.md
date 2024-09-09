@@ -1878,6 +1878,148 @@ to share a specific journey via URL.
     this unix date
   - `total (integer)`: the sum up to and excluding this unix date
 
+### Client Flow Graph Analysis namespace
+
+Used for analyzing the graph produced by considering the connections between client
+flows. The graph depends on how rules are evaluated, which means it is keyed by the
+data provided by the client (`version`), user specific information (`account_created_at`,
+etc), and evaluation time information (`now`).
+
+The exact format of the graph settings identifier portion of these keys is in
+`lib.client_flows.analysis` (via `ClientFlowAnalysisEnvironment#to_redis_identifier`).
+It will be referred to with just `{graph}` within this section.
+
+These keys all have expiration times set (because of the high cardinality of the graph
+settings) and are also evicted actively (to avoid stale searches). However, because a
+lot of data may be produced for a single graph, we do not guarrantee the entire graph
+is written within a transaction. For that reason, an explicit locking mechanism is
+required. We use a reader-writer method, notifying listeners using the pubsub system
+via `ps:client_flow_graph_analysis:lock_changed` and we are careful to detect partial
+writes. A writer or reader can be interrupted at any point by stealing the lock and
+everything will recover without corruption.
+
+- `client_flow_graph_analysis:version` goes to a string which changes whenever any
+  client flow or client screen changes. This is how cache eviction is performed.
+
+- `client_flow_graph_analysis:{graph}:{version}:meta` describes the meta level cache
+  information within redis for the graph with the given id fetched at the indicated
+  client flow graph analysis version.
+
+  - `uid`: a uid used for identifying where the data about this graph can be
+    found. Uses the prefix `cfga`
+  - `initialized_at`: the time this key was initialized
+  - `expires_at`: not technically needed (EXPIRETIME could be used instead), but when
+    all the associated keys are set to expire. The lock should expire at the same time.
+
+- `client_flow_graph_analysis:{graph}:{version}:readers` goes to a sorted set where the
+  keys are uids assigned by readers and the values are when their lock can be considered
+  expired because the instance died. This key is always set to expire no **earlier** than
+  `expires_at` on the meta key. Each key uses the uid prefix `cfgarl`
+
+- `client_flow_graph_analysis:{graph}:{version}:writer` goes to a string containing a uid
+  that identifies a writer. This is always set to expire, no later than `expires_at` on
+  the meta key. Uses the uid prefix `cfgawl`
+
+- `client_flow_graph_analysis:{uid}:reachable:{source}[:{n}]` is an optional value that
+  goes to a set where the values the slugs of client flows reachable within `n` steps of
+  the source flow Answers the "where from here" question. This is always set to
+  expire no **earlier** than `expires_at` on the meta key. Has the associated keys from
+  the next section
+  IMPORTANT: to avoid recomputing this value if there are no results, this will always
+  include the value `__computed__`. This value is only added to the set after all other
+  values have been set, and can also be used to detect if this key was only partially
+  written (because the last writer was interrupted)
+
+- `client_flow_graph_analysis:{uid}:reachable:{source}[:{n}]:paths:{target}` goes to a list
+  where each value is a json object (describing a path) of json objects (describing vertices),
+  where each object is of the form
+
+  ```json
+  {
+    "type": "path",
+    "nodes": []
+  }
+  ```
+
+  where the nodes are objects of the form
+
+  ```json
+  {
+    "type": "edge",
+    "via": {
+      "type": "screen-trigger",
+      "index": 0,
+      "slug": "string",
+      "trigger": ["string", 0]
+    },
+    "slug": "string"
+  }
+  ```
+
+  For example, if the source is `foo` and the target is `bar`, then the following path might
+  be used:
+
+  ```json
+  {
+    "type": "edge",
+    "via": {
+      "type": "screen-trigger",
+      "index": 1,
+      "slug": "confirmation",
+      "name": "Example 2",
+      "trigger": ["cta", "trigger", "flow"],
+      "description": "How to handle the call to action"
+    },
+    "slug": "baz"
+  }
+  {
+    "type": "edge",
+    "via": {
+      "type": "screen-trigger",
+      "index": 0,
+      "slug": "large_image_interstitial",
+      "name": "Data Privacy",
+      "trigger": ["back", "trigger", "flow"],
+      "description": "How to handle the back button"
+    },
+    "slug": "bar"
+  }
+  ```
+
+  which means that `bar` can be reached from `foo` via `foo -> baz -> bar`, and that baz is
+  triggered within foo on the second screen, which is a confirmation screen called `Example 2`,
+  and that bar is triggered within baz on the first screen, which is a large image interstitial
+  screen called `Data Privacy`. This is always set to expire no **earlier** than `expires_at`
+
+  Acceptable `via` `type`s:
+
+  - `screen-trigger`: indicates that the edge was found by analyzing a screen, seeing a flow
+    within the allowed trigger list, and identifying a corresponding flow slug in the realized
+    screen parameters. Has fields `index`, `slug`, `name`, `trigger`, and `description`
+  - `screen-allowed`: indicates the edge was found by analyzing a screen and seeing a flow within
+    the allowed trigger list, but not finding where specifically in the configuration the flow
+    slug is included. Has fields `index`, `slug`, `name`.
+  - `flow-replacer-rule`: indicates the edge was found on the flow rules themselves via the replace
+    effect. Has fields `rule_index`.
+
+  The list always contains a final entry `{"type":"done"}` to indicate the end of the paths. This can be used
+  to detect if the writer was interrupted before finishing writing the paths. Note that the final
+  part must be exactly serialized as `{"type":"done"}` as it will be checked with string matching
+  (not json parsing) for performance.
+
+- `client_flow_graph_analysis:{uid}:inverted_reachable:{source}[:{n}]` is an optional value that
+  goes to a set just like the reachable hash, but for the inverted graph. So if the source
+  is `bar` and the key is `foo`, then the path ``[["bar", "foo"]]` means in the inverted graph
+  bar goes to foo, i.e., in the regular graph, foo goes to bar. Answers the "how to get here" question.
+  This is always set to expire no **earlier** than `expires_at` on the meta key.
+  IMPORTANT: to avoid recomputing this value if there are no results, this will always
+  include the key `__computed__` after all other values have been set, and can also be used
+  to detect if this key was only partially written (because the last writer was interrupted)
+
+- `client_flow_graph_analysis:{uid}:inverted_reachable:{source}[:{n}]:paths:{target}` see
+  the regular reachable paths for the format. This is always set to expire no **earlier**
+  than `expires_at` on the meta key
+
 ### Stats namespace
 
 These are regular keys which are primarily for statistics, i.e., internal purposes,
@@ -3542,7 +3684,7 @@ via a share code. The UTM is:
 - `stats:journal_chat_jobs:daily:{unix_date}:extra:{event}` goes to a hash breaking
   down the event key, where the keys in the breakdown depend on the event:
 
-  - `requested`: `{type}`, one of 
+  - `requested`: `{type}`, one of
     - `greeting`
     - `system_chat`
     - `reflection_question`
@@ -3920,6 +4062,7 @@ These are regular keys used by the personalization module
   sticky random numbers associated with group names in sync, since the name of the
   group is allowed to change. Messages are formatted as `(uint32, blob, uint8[, 256 bit blob])`
   where the parts are:
+
   - length of the group name
   - the group name
   - either `0x00` to indicate the group should be purged, or `0x01` to indicate the group
@@ -3927,3 +4070,13 @@ These are regular keys used by the personalization module
   - the 256 bit random number to associate with the group name (only if the previous byte
     is `0x01`)
     all numbers are big-endian encoded.
+
+- `ps:client_flow_graph_analysis:lock_changed` is used by `lib/client_flows/analysis` to
+  report when one of the locks on a client flow graph analysis was changed, i.e., a reader
+  or writer lock was acquired or releasd. Messages are formatted as `(uint32, blob, uint64, uint16, uint8)`
+  where the parts are:
+  - length of the client flow graph analysis uid
+  - the client flow graph analysis uid
+  - the value of `client_flow_graph_analysis:version` for the changed analysis
+  - the new number of readers
+  - the new number of writers (1 or 0)

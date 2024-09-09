@@ -34,7 +34,7 @@ from error_middleware import handle_warning
 from itgs import Itgs
 from lib.client_flows.client_flow_rule import ClientFlowRules, client_flow_rules_adapter
 from lib.client_flows.client_flow_screen import ClientFlowScreen
-from lib.client_flows.flow_cache import purge_client_flow_cache
+from lib.client_flows.flow_cache import purge_client_flow_cache, purge_valid_client_flows_cache
 from lib.client_flows.helper import (
     check_oas_30_schema,
     iter_flow_screen_required_parameters,
@@ -184,9 +184,10 @@ async def patch_client_flow(
             if args.patch.slug is not NotSetEnum.NOT_SET:
                 assert args.precondition.slug is not NotSetEnum.NOT_SET
                 await purge_client_flow_cache(itgs, slug=args.precondition.slug)
-                await lib.client_flows.analysis.evict(itgs)
+                await purge_valid_client_flows_cache(itgs)
 
             await purge_client_flow_cache(itgs, slug=flow.slug)
+            await lib.client_flows.analysis.evict(itgs)
 
         return Response(
             content=flow.__pydantic_serializer__.to_json(flow),

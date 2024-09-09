@@ -4022,8 +4022,12 @@ These are regular keys used by the personalization module
   numbers are big-endian encoded.
 
 - `ps:client_flows` is used to sync client flows across instances.
-  messages are formatted as `(uint32, blob)` corresponding to
-  `(length of slug, slug)`. All numbers are big-endian encoded.
+  messages are formatted as `(uint8, [uint32, blob])` corresponding to
+  `(type, length of slug, slug)`. All numbers are big-endian encoded.
+  If type is 0, remove the given client flow from your cache without
+  changing the list of valid client flows. If type is 1, remove the list
+  of valid client flows from your cache without changing the individual
+  client flows.
 
 - `ps:client_screens` is used to sync client screens across instances.
   messages are formatted as `(uint32, blob)` corresponding to

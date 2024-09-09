@@ -8,7 +8,10 @@ from typing import Annotated, Optional, Literal
 from client_flows.lib.parse_flow_screens import encode_flow_screens
 from lib.client_flows.client_flow_rule import client_flow_rules_adapter
 from itgs import Itgs
-from lib.client_flows.flow_cache import purge_client_flow_cache
+from lib.client_flows.flow_cache import (
+    purge_client_flow_cache,
+    purge_valid_client_flows_cache,
+)
 from lib.client_flows.flow_flags import ClientFlowFlag
 from models import STANDARD_ERRORS_BY_CODE, StandardErrorResponse
 from auth import auth_admin
@@ -138,6 +141,7 @@ WHERE
             return ERROR_CLIENT_FLOW_SLUG_EXISTS_RESPONSE
 
         await purge_client_flow_cache(itgs, slug=flow.slug)
+        await purge_valid_client_flows_cache(itgs)
         await lib.client_flows.analysis.evict(itgs)
         return Response(
             content=ClientFlow.__pydantic_serializer__.to_json(flow),

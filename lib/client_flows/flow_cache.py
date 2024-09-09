@@ -7,7 +7,7 @@ from dataclasses import dataclass
 import io
 import json
 from openapi_schema_validator import OAS30Validator
-from typing import Dict, List, Optional, cast
+from typing import Dict, List, Optional, Set, cast
 import jsonschema.protocols
 
 from client_flows.lib.parse_flow_screens import decode_flow_screens, encode_flow_screens
@@ -63,12 +63,17 @@ class ClientFlow:
     """The rules that should be checked at trigger time for this client flow"""
 
 
+valid_client_flows: Optional[Set[str]] = None
 memory_cache_size = 200
+
+# only minimal flows cached like this
 old_cache: Dict[str, ClientFlow] = {}
 latest_cache: Dict[str, ClientFlow] = {}
 
 
-async def get_client_flow(itgs: Itgs, /, *, slug: str) -> Optional[ClientFlow]:
+async def get_client_flow(
+    itgs: Itgs, /, *, slug: str, minimal: bool = True
+) -> Optional[ClientFlow]:
     """Fetches the client flow with the given slug from the nearest cache,
     filling any caches that were missed along the way.
 
@@ -80,32 +85,87 @@ async def get_client_flow(itgs: Itgs, /, *, slug: str) -> Optional[ClientFlow]:
         ClientFlow, None: if there exists a client flow with the given slug, the
             in-memory representation, otherwise None.
     """
-    in_memory = read_client_flow_from_in_memory(slug)
-    if in_memory is not None:
-        return in_memory
+    if minimal:
+        in_memory = read_client_flow_from_in_memory(slug)
+        if in_memory is not None:
+            return in_memory
 
-    on_disk = await read_client_flow_from_disk(itgs, slug=slug)
+    on_disk = await read_client_flow_from_disk(itgs, slug=slug, minimal=minimal)
     if on_disk is not None:
         parsed = convert_from_raw(on_disk)
         write_client_flow_to_in_memory(parsed)
         return parsed
 
-    in_db = await read_client_flow_from_db(itgs, slug=slug)
-    if in_db is None:
+    valid = await get_valid_client_flow_slugs(itgs)
+    if slug not in valid:
         return None
 
+    in_db = await read_full_client_flow_from_db(itgs, slug=slug)
+    if in_db is None:
+        await purge_valid_client_flows_cache(itgs)
+        return None
+
+    if not minimal:
+        full_raw = convert_to_raw(in_db)
+        await write_client_flow_to_disk(itgs, slug=slug, minimal=False, raw=full_raw)
+        return in_db
+
+    edit_flow_to_minimal_info(in_db)
     write_client_flow_to_in_memory(in_db)
     raw = convert_to_raw(in_db)
-    await write_client_flow_to_disk(itgs, slug=slug, raw=raw)
+    await write_client_flow_to_disk(itgs, slug=slug, raw=raw, minimal=True)
     return in_db
+
+
+async def get_valid_client_flow_slugs(itgs: Itgs, /) -> Set[str]:
+    """Returns the client flow slugs that are valid to trigger. This is cached in
+    memory on this instance, busted on any change to any client flow, but not carefully
+    protected to races (since client flows are created/renamed/deleted fairly rarely,
+    and almost always edited after)
+    """
+    global valid_client_flows
+    if valid_client_flows is not None:
+        return valid_client_flows
+
+    db_batch_size = 100
+    last_flow_slug: Optional[str] = None
+    result = set()
+
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+
+    while True:
+        response = await cursor.execute(
+            "SELECT slug FROM client_flows WHERE (? IS NULL OR slug > ?) ORDER BY slug ASC LIMIT ?",
+            (last_flow_slug, last_flow_slug, db_batch_size),
+        )
+        if not response.results:
+            break
+
+        for row in response.results:
+            result.add(row[0])
+
+        last_flow_slug = response.results[-1][0]
+
+        if len(response.results) < db_batch_size:
+            break
+
+    valid_client_flows = result
+    return result
 
 
 async def purge_client_flow_cache(itgs: Itgs, /, *, slug: str) -> None:
     """Purges any cached client flows with the given slug, everywhere.
     Typically, if you are doing this, you also want to call
-    lib.client_flows.analysis#evict to clear the analysis cache.
+    lib.client_flows.analysis#evict to clear the analysis cache,
+    and you may want to call #purge_valid_client_flows_cache
     """
     await publish_client_flow_delete(itgs, slug=slug)
+
+
+async def purge_valid_client_flows_cache(itgs: Itgs) -> None:
+    """Purges the cache of valid client flow slugs everywhere"""
+    await publish_valid_client_flows_changed(itgs)
 
 
 def read_client_flow_from_in_memory(slug: str) -> Optional[ClientFlow]:
@@ -189,24 +249,35 @@ def convert_from_raw(raw: bytes) -> ClientFlow:
     )
 
 
-async def read_client_flow_from_disk(itgs: Itgs, /, *, slug: str) -> Optional[bytes]:
+async def read_client_flow_from_disk(
+    itgs: Itgs, /, *, slug: str, minimal: bool
+) -> Optional[bytes]:
     """Reads the raw client flow with the given slug from the disk cache, if it
     is there
     """
     cache = await itgs.local_cache()
-    return cast(Optional[bytes], cache.get(f"client_flows:{slug}".encode("utf-8")))
+    suffix = ":full" if not minimal else ""
+    return cast(
+        Optional[bytes], cache.get(f"client_flows:{slug}{suffix}".encode("utf-8"))
+    )
 
 
-async def write_client_flow_to_disk(itgs: Itgs, /, *, slug: str, raw: bytes) -> None:
+async def write_client_flow_to_disk(
+    itgs: Itgs, /, *, slug: str, minimal: bool, raw: bytes
+) -> None:
     """Writes the raw client flow associated with the given slug to the disk cache"""
     cache = await itgs.local_cache()
-    cache.set(f"client_flows:{slug}".encode("utf-8"), raw, tag="collab")
+    suffix = ":full" if not minimal else ""
+    cache.set(f"client_flows:{slug}{suffix}".encode("utf-8"), raw, tag="collab")
 
 
-async def delete_client_flow_from_disk(itgs: Itgs, /, *, slug: str) -> None:
+async def delete_client_flow_from_disk(
+    itgs: Itgs, /, *, slug: str, minimal: bool
+) -> None:
     """Deletes the raw client flow associated with the given slug from the disk cache"""
     cache = await itgs.local_cache()
-    cache.delete(f"client_flows:{slug}".encode("utf-8"))
+    suffix = ":full" if not minimal else ""
+    cache.delete(f"client_flows:{slug}{suffix}".encode("utf-8"))
 
 
 async def publish_client_flow_delete(itgs: Itgs, /, *, slug: str) -> None:
@@ -215,9 +286,24 @@ async def publish_client_flow_delete(itgs: Itgs, /, *, slug: str) -> None:
     """
     encoded_slug = slug.encode("utf-8")
     redis = await itgs.redis()
+    type_ = 0
     await redis.publish(
         b"ps:client_flows",
-        len(encoded_slug).to_bytes(4, "big", signed=False) + encoded_slug,
+        type_.to_bytes(1, "big", signed=False)
+        + len(encoded_slug).to_bytes(4, "big", signed=False)
+        + encoded_slug,
+    )
+
+
+async def publish_valid_client_flows_changed(itgs: Itgs, /) -> None:
+    """Publishes a message via redis that tells everyone to delete the valid client flow
+    slugs cache
+    """
+    redis = await itgs.redis()
+    type_ = 1
+    await redis.publish(
+        b"ps:client_flows",
+        type_.to_bytes(1, "big", signed=False),
     )
 
 
@@ -226,7 +312,16 @@ async def handle_received_client_flow_delete(itgs: Itgs, /, *, slug: str) -> Non
     slug from all caches
     """
     delete_client_flow_from_in_memory(slug)
-    await delete_client_flow_from_disk(itgs, slug=slug)
+    await delete_client_flow_from_disk(itgs, slug=slug, minimal=True)
+    await delete_client_flow_from_disk(itgs, slug=slug, minimal=False)
+
+
+async def handle_received_valid_client_flows_changed(itgs: Itgs, /) -> None:
+    """Handles a received message that tells us to delete the valid client flow slugs
+    cache
+    """
+    global valid_client_flows
+    valid_client_flows = None
 
 
 async def _subscribe_client_flow_deletes() -> None:
@@ -239,11 +334,17 @@ async def _subscribe_client_flow_deletes() -> None:
         ) as sub:
             async for message in sub:
                 msg = io.BytesIO(message)
-                slug_len = int.from_bytes(msg.read(4), "big", signed=False)
-                slug = msg.read(slug_len).decode("utf-8")
+                msg_type = int.from_bytes(msg.read(1), "big", signed=False)
 
-                async with Itgs() as itgs:
-                    await handle_received_client_flow_delete(itgs, slug=slug)
+                if msg_type == 0:
+                    slug_len = int.from_bytes(msg.read(4), "big", signed=False)
+                    slug = msg.read(slug_len).decode("utf-8")
+
+                    async with Itgs() as itgs:
+                        await handle_received_client_flow_delete(itgs, slug=slug)
+                elif msg_type == 1:
+                    async with Itgs() as itgs:
+                        await handle_received_valid_client_flows_changed(itgs)
     except Exception as e:
         if pps.instance.exit_event.is_set() and isinstance(e, pps.PPSShutdownException):
             return
@@ -258,9 +359,11 @@ async def _do_subscribe_client_flow_deletes():
     yield
 
 
-async def read_client_flow_from_db(itgs: Itgs, /, *, slug: str) -> Optional[ClientFlow]:
+async def read_full_client_flow_from_db(
+    itgs: Itgs, /, *, slug: str
+) -> Optional[ClientFlow]:
     """Fetches the client flow with the given slug from the database, if it
-    exists, otherwise returns None. Clears unnecessary fields
+    exists, otherwise returns None.
     """
     conn = await itgs.conn()
     cursor = conn.cursor("weak")
@@ -289,9 +392,6 @@ WHERE slug = ?
     screens = decode_flow_screens(row[5])
     rules = client_flow_rules_adapter.validate_python(json.loads(row[7]))
 
-    for screen in screens:
-        screen.name = None
-
     client_schema = cast(
         jsonschema.protocols.Validator, OAS30Validator(client_schema_raw)
     )
@@ -311,3 +411,11 @@ WHERE slug = ?
         flags=ClientFlowFlag(row[6]),
         rules=rules,
     )
+
+
+def edit_flow_to_minimal_info(client_flow: ClientFlow) -> None:
+    """Strips information from the given client flow that is not required for
+    triggering it, to try to reduce space
+    """
+    for screen in client_flow.screens:
+        screen.name = None

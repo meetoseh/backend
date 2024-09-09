@@ -478,8 +478,10 @@ the keys we store locally on backend instances via diskcache
   the serialized daily client screen stats for the given date range (incl -> excl)
   see also: [client_screen_stats](../../admin/client_flows/routes/screen_stats.py)
 
-- `client_flows:{slug}` goes to the raw representation of the client flow with the
-  given slug; see [flow_cache](../../lib/client_flows/flow_cache.py)
+- `client_flows:{slug}[:full]` goes to the raw representation of the client flow with the
+  given slug; see [flow_cache](../../lib/client_flows/flow_cache.py). note that the
+  `:full` suffix can be included for debug information not to be stripped before storing
+  (e.g., the admin names for screens).
 
 - `client_screens:{slug}` goes to the raw representation of the client screen with the
   given slug; see [screen_cache](../../lib/client_flows/screen_cache.py)

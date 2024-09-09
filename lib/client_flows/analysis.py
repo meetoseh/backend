@@ -23,15 +23,15 @@ from pydantic import BaseModel, Field, TypeAdapter
 from dataclasses import dataclass
 
 import pytz
-from client_flows.lib.parse_flow_screens import decode_flow_screens
 from lib.client_flows.client_flow_predicate import (
     CheckFlowPredicateContext,
     ClientFlowPredicateParams,
     Wrapped,
     check_flow_predicate,
 )
+from lib.client_flows.flow_cache import get_client_flow, get_valid_client_flow_slugs
 import lib.client_flows.helper as helper
-from lib.client_flows.client_flow_rule import ClientFlowRules, client_flow_rules_adapter
+from lib.client_flows.client_flow_rule import ClientFlowRules
 from error_middleware import handle_error, handle_warning
 from itgs import Itgs
 import hashlib
@@ -1018,6 +1018,10 @@ async def _transfer_adjacency_list_from_db(
     the source in one step) to the cache. This relies on the db directly; longer
     paths may use this value rather than reaching to the database directly
 
+    PERF: Originally this hit the db directly without a cache and it was a significant
+    slowdown to do it that way when processing many different environments (common on
+    e.g. delete prechecks for the flow)
+
     Args:
         itgs (Itgs): the integrations to (re)use
         lock (ClientFlowAnalysisLock): the lock to use
@@ -1025,43 +1029,23 @@ async def _transfer_adjacency_list_from_db(
     """
     assert lock.lock_type == "writer", "This lock is not a write lock"
 
-    conn = await itgs.conn()
-    cursor = conn.cursor("weak")
-
-    response = await cursor.execute(
-        """
-SELECT screens, rules
-FROM client_flows
-WHERE slug = ?
-            """,
-        (source,),
-    )
-
-    if not response.results:
-        return await _transfer_from_iterator(
-            itgs,
-            lock=lock,
-            source=source,
-            inverted=False,
-            max_steps=1,
-            iter=_no_paths(),
-        )
-
-    source_screens = decode_flow_screens(response.results[0][0])
-    source_rules = client_flow_rules_adapter.validate_json(response.results[0][1])
-
+    flow = await get_client_flow(itgs, slug=source, minimal=False)
     return await _transfer_from_iterator(
         itgs,
         lock=lock,
         source=source,
         inverted=False,
         max_steps=1,
-        iter=_iterate_adjacent_flows(
-            itgs,
-            graph=lock.graph,
-            source_slug=source,
-            source_screens=source_screens,
-            source_rules=source_rules,
+        iter=(
+            _no_paths()
+            if flow is None
+            else _iterate_adjacent_flows(
+                itgs,
+                graph=lock.graph,
+                source_slug=source,
+                source_screens=flow.screens,
+                source_rules=flow.rules,
+            )
         ),
     )
 
@@ -1108,118 +1092,101 @@ async def _find_and_iterate_inverted_adjacent_flows(
     assert lock.lock_type == "writer", "This lock is not a write lock"
 
     source_bytes = source.encode("utf-8")
-
-    conn = await itgs.conn()
-    cursor = conn.cursor("weak")
-
-    db_batch_size = 100
     redis_read_batch_size = 10
-    last_flow_slug: Optional[str] = None
 
-    while True:
-        response = await cursor.execute(
-            "SELECT slug FROM client_flows WHERE (? IS NULL OR slug > ?) ORDER BY slug ASC LIMIT ?",
-            (last_flow_slug, last_flow_slug, db_batch_size),
+    flow_slugs = list(await get_valid_client_flow_slugs(itgs))
+
+    await itgs.ensure_redis_liveliness()
+    redis = await itgs.redis()
+
+    for row_slug in flow_slugs:
+        row_slug_bytes = row_slug.encode("utf-8")
+
+        adjacency_list_available = await redis.sismember(
+            b"client_flow_graph_analysis:"
+            + lock.data_uid
+            + b":reachable:"
+            + row_slug_bytes
+            + b":1",  # type: ignore
+            b"__computed__",  # type: ignore
         )
-        if not response.results:
-            return
-
-        await itgs.ensure_redis_liveliness()
-        redis = await itgs.redis()
-
-        for row in response.results:
-            row_slug = cast(str, row[0])
-            row_slug_bytes = row_slug.encode("utf-8")
-
-            adjacency_list_available = await redis.sismember(
-                b"client_flow_graph_analysis:"
-                + lock.data_uid
-                + b":reachable:"
-                + row_slug_bytes
-                + b":1",  # type: ignore
-                b"__computed__",  # type: ignore
+        if not adjacency_list_available:
+            sub_result = await _transfer_adjacency_list_from_db(
+                itgs, lock=lock, source=row_slug
             )
-            if not adjacency_list_available:
-                sub_result = await _transfer_adjacency_list_from_db(
-                    itgs, lock=lock, source=row_slug
-                )
-                if sub_result.type != "success":
-                    yield sub_result
+            if sub_result.type != "success":
+                yield sub_result
+                return
+
+        paths_to_me_key = (
+            b"client_flow_graph_analysis:"
+            + lock.data_uid
+            + b":reachable:"
+            + row_slug_bytes
+            + b":1:paths:"
+            + source_bytes
+        )
+        paths_to_me_batch = cast(
+            List[bytes],
+            await redis.lrange(
+                paths_to_me_key, 0, redis_read_batch_size - 1  # type: ignore
+            ),
+        )
+        if not paths_to_me_batch:
+            # no path from source to me
+            continue
+
+        read_up_to_excl = redis_read_batch_size
+        while True:
+            seen_done = False
+            for path_raw in paths_to_me_batch:
+                if seen_done:
+                    await handle_warning(
+                        f"{__name__}:inverted_adjacency_list:forward_list_done_not_last",
+                        f"Detected invariant violation in:\n\n"
+                        f"```\n{lock.graph_id=}\n{lock.version=}\n{lock.lock_type=}\n{lock.lock_uid=}\n{lock.data_uid=}\n{lock.data_initialized_at=}\n{lock.data_expires_at=}\n{lock.lock_expires_at=}\n{source=}\n{row_slug=}\n```\n\nrecovering by evicting",
+                    )
+                    await evict(itgs)
                     return
+                path = flow_path_or_done_adapter.validate_json(path_raw)
+                if path.type == "done":
+                    seen_done = True
+                    yield row_slug_bytes, path
+                else:
+                    yield row_slug_bytes, FlowPath(
+                        type="path",
+                        nodes=list(reversed(path.nodes)),
+                    )
 
-            paths_to_me_key = (
-                b"client_flow_graph_analysis:"
-                + lock.data_uid
-                + b":reachable:"
-                + row_slug_bytes
-                + b":1:paths:"
-                + source_bytes
-            )
+            if seen_done:
+                break
+
+            if len(paths_to_me_batch) != redis_read_batch_size:
+                await handle_warning(
+                    f"{__name__}:inverted_adjacency_list:forward_list_missing_done",
+                    f"Detected invariant violation in:\n\n"
+                    f"```\n{lock.graph_id=}\n{lock.version=}\n{lock.lock_type=}\n{lock.lock_uid=}\n{lock.data_uid=}\n{lock.data_initialized_at=}\n{lock.data_expires_at=}\n{lock.lock_expires_at=}\n{source=}\n{row_slug=}\n```\n\nrecovering by evicting",
+                )
+                await evict(itgs)
+                return
+
             paths_to_me_batch = cast(
                 List[bytes],
                 await redis.lrange(
-                    paths_to_me_key, 0, redis_read_batch_size - 1  # type: ignore
+                    paths_to_me_key,  # type: ignore
+                    read_up_to_excl,
+                    read_up_to_excl + redis_read_batch_size - 1,
                 ),
             )
+            read_up_to_excl += redis_read_batch_size
             if not paths_to_me_batch:
-                # no path from source to me
-                continue
-
-            read_up_to_excl = redis_read_batch_size
-            while True:
-                seen_done = False
-                for path_raw in paths_to_me_batch:
-                    if seen_done:
-                        await handle_warning(
-                            f"{__name__}:inverted_adjacency_list:forward_list_done_not_last",
-                            f"Detected invariant violation in:\n\n"
-                            f"```\n{lock.graph_id=}\n{lock.version=}\n{lock.lock_type=}\n{lock.lock_uid=}\n{lock.data_uid=}\n{lock.data_initialized_at=}\n{lock.data_expires_at=}\n{lock.lock_expires_at=}\n{source=}\n{row_slug=}\n```\n\nrecovering by evicting",
-                        )
-                        await evict(itgs)
-                        return
-                    path = flow_path_or_done_adapter.validate_json(path_raw)
-                    if path.type == "done":
-                        seen_done = True
-                        yield row_slug_bytes, path
-                    else:
-                        yield row_slug_bytes, FlowPath(
-                            type="path",
-                            nodes=list(reversed(path.nodes)),
-                        )
-
-                if seen_done:
-                    break
-
-                if len(paths_to_me_batch) != redis_read_batch_size:
-                    await handle_warning(
-                        f"{__name__}:inverted_adjacency_list:forward_list_missing_done",
-                        f"Detected invariant violation in:\n\n"
-                        f"```\n{lock.graph_id=}\n{lock.version=}\n{lock.lock_type=}\n{lock.lock_uid=}\n{lock.data_uid=}\n{lock.data_initialized_at=}\n{lock.data_expires_at=}\n{lock.lock_expires_at=}\n{source=}\n{row_slug=}\n```\n\nrecovering by evicting",
-                    )
-                    await evict(itgs)
-                    return
-
-                paths_to_me_batch = cast(
-                    List[bytes],
-                    await redis.lrange(
-                        paths_to_me_key,  # type: ignore
-                        read_up_to_excl,
-                        read_up_to_excl + redis_read_batch_size - 1,
-                    ),
+                await handle_warning(
+                    f"{__name__}:inverted_adjacency_list:forward_list_missing_done",
+                    f"Detected invariant violation in:\n\n"
+                    f"```\n{lock.graph_id=}\n{lock.version=}\n{lock.lock_type=}\n{lock.lock_uid=}\n{lock.data_uid=}\n{lock.data_initialized_at=}\n{lock.data_expires_at=}\n{lock.lock_expires_at=}\n{source=}\n{row_slug=}\n```\n\nrecovering by evicting",
                 )
-                read_up_to_excl += redis_read_batch_size
-                if not paths_to_me_batch:
-                    await handle_warning(
-                        f"{__name__}:inverted_adjacency_list:forward_list_missing_done",
-                        f"Detected invariant violation in:\n\n"
-                        f"```\n{lock.graph_id=}\n{lock.version=}\n{lock.lock_type=}\n{lock.lock_uid=}\n{lock.data_uid=}\n{lock.data_initialized_at=}\n{lock.data_expires_at=}\n{lock.lock_expires_at=}\n{source=}\n{row_slug=}\n```\n\nrecovering by evicting",
-                    )
-                    await evict(itgs)
-                    return
-
-        if len(response.results) < db_batch_size:
-            return
-        last_flow_slug = cast(str, response.results[-1][0])
+                await evict(itgs)
+                return
 
 
 async def _transfer_extended_paths_from_db(

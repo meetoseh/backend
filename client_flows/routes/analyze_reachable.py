@@ -235,9 +235,6 @@ async def _handle_no_target(itgs: Itgs, args: ClientFlowsSearchReadableRequest):
             itgs, graph=args.settings, lock_type="reader"
         )
     except asyncio.TimeoutError:
-        await handle_warning(
-            f"{__name__}:shedding_load", "took too long to acquire read lock"
-        )
         return ERROR_RATELIMITED_RESPONSE
 
     if read_lock_result.type == "not_found":
@@ -284,9 +281,6 @@ async def _handle_no_target_with_write_lock(
             itgs, graph=args.settings, lock_type="writer"
         )
     except asyncio.TimeoutError:
-        await handle_warning(
-            f"{__name__}:shedding_load", "took too long to acquire write lock"
-        )
         return ERROR_RATELIMITED_RESPONSE
 
     assert write_lock_result.type == "success", write_lock_result
@@ -409,9 +403,6 @@ async def _handle_target(itgs: Itgs, args: ClientFlowsSearchReadableRequest):
             itgs, graph=args.settings, lock_type="reader"
         )
     except asyncio.TimeoutError:
-        await handle_warning(
-            f"{__name__}:shedding_load", "took too long to acquire read lock"
-        )
         return ERROR_RATELIMITED_RESPONSE
 
     if read_lock_result.type == "not_found":
@@ -463,9 +454,6 @@ async def _handle_target_with_write_lock(
             itgs, graph=args.settings, lock_type="writer"
         )
     except asyncio.TimeoutError:
-        await handle_warning(
-            f"{__name__}:shedding_load", "took too long to acquire write lock"
-        )
         return ERROR_RATELIMITED_RESPONSE
 
     assert write_lock_result.type == "success", write_lock_result

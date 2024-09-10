@@ -621,11 +621,13 @@ WHERE
             """,
             (
                 f"oseh_ucs_{secrets.token_urlsafe(16)}",
-                json.dumps(client_transformation.transformed_client_parameters, sort_keys=True),
-                json.dumps(server_transformation.transformed_server_parameters, sort_keys=True),
                 json.dumps(
-                    final_flow_screen.model_dump(), sort_keys=True
+                    client_transformation.transformed_client_parameters, sort_keys=True
                 ),
+                json.dumps(
+                    server_transformation.transformed_server_parameters, sort_keys=True
+                ),
+                json.dumps(final_flow_screen.model_dump(), sort_keys=True),
                 time.time(),
                 auth_result.result.sub,
                 screen.slug,
@@ -1038,7 +1040,7 @@ def _get_output_schema(
 
             properties = current.get("properties", None)
             if properties is None:
-                return FindSchemaSuccess(type="success", safe=False, schema={})
+                return FindSchemaSuccess(type="success", safe=True, schema={})
             assert isinstance(properties, dict)
 
             nxt = properties.get(remaining[0])

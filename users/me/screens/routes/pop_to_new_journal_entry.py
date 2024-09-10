@@ -1,7 +1,7 @@
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from error_middleware import handle_warning
 from lib.client_flows.executor import (
     ClientScreenQueuePeekInfo,
@@ -29,6 +29,8 @@ class PopToNewJournalEntryParameters(BaseModel):
         "greeting",
         description="What to put as the initial content of the journal entry",
     )
+
+    model_config = ConfigDict(extra="allow")
 
 
 class PopToNewJournalEntryTriggerRequest(BaseModel):
@@ -72,6 +74,8 @@ async def pop_to_new_journal_entry(
     of the journal entry to the client. Then various sync-like endpoints (endpoints
     that largely accept and return the same structure) can be used to update the
     journal entry.
+
+    Any extra parameters are forwarded as client parameters.
 
     Requires standard authorization for a user.
     """
@@ -169,7 +173,7 @@ async def pop_to_new_journal_entry(
             trigger=(
                 TrustedTrigger(
                     flow_slug=args.trigger.slug,
-                    client_parameters={},
+                    client_parameters=args.trigger.parameters.model_extra or dict(),
                     server_parameters={
                         "journal_entry": queue_job_result.journal_entry_uid
                     },

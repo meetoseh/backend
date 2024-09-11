@@ -3,7 +3,7 @@ import secrets
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from error_middleware import handle_warning
 from journeys.lib.notifs import on_entering_lobby
 from lib.client_flows.executor import (
@@ -53,9 +53,20 @@ class PopToJournalChatClassParameters(BaseModel):
         description="Which item within the entry contains the link"
     )
     journey_uid: str = Field(description="The UID of the journey within the link")
-    upgrade_slug: Literal["journal_upgrade_for_journey"] = Field(
-        description="The slug of the client flow to trigger if the user doesn't have access"
+    upgrade_slug: str = Field(
+        description=(
+            "The slug of the client flow to trigger if the user doesn't have access. "
+            "Must include the string literal `journal_upgrade_for_journey`"
+        )
     )
+
+    @validator("upgrade_slug")
+    def validate_upgrade_slug(cls, v):
+        if "journal_upgrade_for_journey" not in v:
+            raise ValueError(
+                "The upgrade slug must include `journal_upgrade_for_journey`"
+            )
+        return v
 
 
 class PopToJournalChatClassParametersTriggerRequest(BaseModel):

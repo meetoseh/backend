@@ -34,7 +34,10 @@ from error_middleware import handle_warning
 from itgs import Itgs
 from lib.client_flows.client_flow_rule import ClientFlowRules, client_flow_rules_adapter
 from lib.client_flows.client_flow_screen import ClientFlowScreen
-from lib.client_flows.flow_cache import purge_client_flow_cache, purge_valid_client_flows_cache
+from lib.client_flows.flow_cache import (
+    purge_client_flow_cache,
+    purge_valid_client_flows_cache,
+)
 from lib.client_flows.helper import (
     check_oas_30_schema,
     iter_flow_screen_required_parameters,
@@ -600,22 +603,18 @@ def _get_param_schema_from_schema(
             else:
                 raise ValueError(f"unexpected stack element type: {type(stack[0])}")
 
-            if next_fixed is None:
-                next_fixed = None
-            elif isinstance(next_fixed, dict):
-                next_fixed = next_fixed
-            else:
+            if not isinstance(next_fixed, (dict, list, type(None))):
                 raise PreconditionFailedException(
                     src,
-                    f"to reference an insertion spot (at level {level})",
-                    f"{param} (fixed not a dict for insertion @ {param[:level]})",
+                    f"to reference a valid parameter (at level {level + 1})",
+                    f"{param} (bad fixed type @ {param[:level + 1]})",
                 )
 
         if not isinstance(current, dict):
             raise PreconditionFailedException(
                 src,
                 f"to reference a valid parameter (at level {level})",
-                f"{param} (not a dict @ {param[:level]})",
+                f"{param} (schema not a dict @ {param[:level]})",
             )
 
         if defs is not None:

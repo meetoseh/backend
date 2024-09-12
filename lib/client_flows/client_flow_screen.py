@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional, Union
 from enum import IntFlag, auto
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 from lib.client_flows.client_flow_predicate import ClientFlowPredicate
 from visitors.lib.get_or_create_visitor import VisitorSource
@@ -16,9 +16,15 @@ class ClientFlowScreenVariableInputStringFormat(BaseModel):
             "and parameters from the standard context are in the `standard` dict. "
         )
     )
-    output_path: List[str] = Field(
+    output_path: List[Union[str, int]] = Field(
         description="Where to store the result", min_length=1
     )
+
+    @validator("output_path")
+    def output_path_ends_on_string(cls, value):
+        if not isinstance(value[-1], str):
+            raise ValueError("The last element of the output path must be a string")
+        return value
 
 
 class ClientFlowScreenVariableInputCopy(BaseModel):
@@ -28,9 +34,15 @@ class ClientFlowScreenVariableInputCopy(BaseModel):
         "which tells us which dictionary to take from",
         min_length=1,
     )
-    output_path: List[str] = Field(
+    output_path: List[Union[str, int]] = Field(
         description="Where to store the result", min_length=1
     )
+
+    @validator("output_path")
+    def output_path_ends_on_string(cls, value):
+        if not isinstance(value[-1], str):
+            raise ValueError("The last element of the output path must be a string")
+        return value
 
 
 class ClientFlowScreenVariableInputExtract(BaseModel):
@@ -48,7 +60,7 @@ class ClientFlowScreenVariableInputExtract(BaseModel):
     extracted_path: List[str] = Field(
         description="The path within the extracted object to take from", min_length=1
     )
-    output_path: List[str] = Field(
+    output_path: List[Union[str, int]] = Field(
         description="Where to store the result", min_length=1
     )
     skip_if_missing: bool = Field(
@@ -58,6 +70,12 @@ class ClientFlowScreenVariableInputExtract(BaseModel):
             "path is null in the converted object. If False, we will provide null."
         ),
     )
+
+    @validator("output_path")
+    def output_path_ends_on_string(cls, value):
+        if not isinstance(value[-1], str):
+            raise ValueError("The last element of the output path must be a string")
+        return value
 
 
 ClientFlowScreenVariableInput = Union[

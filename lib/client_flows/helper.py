@@ -56,11 +56,17 @@ def check_if_flow_screen_is_safe(
             if variable_parameter.input_path[
                 0
             ] != "server" and not screen.realizer.is_safe(
-                variable_parameter.output_path
+                convert_concrete_path_to_abstract_schema_path(
+                    variable_parameter.output_path
+                )
             ):
                 return False
         elif variable_parameter.type == "string_format":
-            if screen.realizer.is_safe(variable_parameter.output_path):
+            if screen.realizer.is_safe(
+                convert_concrete_path_to_abstract_schema_path(
+                    variable_parameter.output_path
+                )
+            ):
                 continue
 
             for part in fmt.parse(variable_parameter.format):
@@ -74,10 +80,23 @@ def check_if_flow_screen_is_safe(
     return True
 
 
+def convert_concrete_path_to_abstract_schema_path(
+    concrete_path: List[Union[str, int]]
+) -> List[Union[str, SpecialIndex]]:
+    """Converts the given concrete path, e.g., ["foo", 2, "bar"] meaning bar within
+    the 3rd element of the list at foo, to the abstract path ["foo", ArrayIndex,
+    "bar"], which can be used to find the schema for the path in a schema
+    object.
+    """
+    return [
+        x if isinstance(x, str) else SpecialIndex.ARRAY_INDEX for x in concrete_path
+    ]
+
+
 @dataclass(frozen=True)
 class FlowScreenRequiredParameter:
     input_path: List[str]
-    output_path: List[str]
+    output_path: List[Union[str, int]]
     usage_type: Literal["string_formattable", "copy", "extract"]
     idx: int
     variable_parameter: ClientFlowScreenVariableInput
@@ -860,12 +879,13 @@ def check_oas_30_schema(
         (schema, [], _State(allow_enum_discriminator=True, no_default=True))
     ]
     while stack:
-        if "$ref" in schema:
+        subschema, path, state = stack.pop()
+
+        if "$ref" in subschema:
             raise jsonschema.exceptions.ValidationError(
                 f"at {pretty_path(path)}: cannot have '$ref'"
             )
 
-        subschema, path, state = stack.pop()
         new_state = state
         if require_example:
             if "example" not in subschema:

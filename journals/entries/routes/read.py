@@ -207,6 +207,13 @@ async def read_journal_entries(
             journal_client_key_uid=client_key_uid,
             read_consistency="none",
         )
+        if client_key.type == "not_found":
+            client_key = await get_journal_client_key(
+                itgs,
+                user_sub=std_auth_result.result.sub,
+                journal_client_key_uid=client_key_uid,
+                read_consistency="weak",
+            )
         if client_key.type != "success":
             await handle_warning(
                 f"{__name__}:client_key:{client_key.type}",

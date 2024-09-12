@@ -508,6 +508,7 @@ async def store_class_started_and_ui_entry(
 
     conn = await itgs.conn()
     cursor = conn.cursor()
+    user_journey_uid = ""
     if type == "take":
         user_journey_uid = f"oseh_uj_{secrets.token_urlsafe(16)}"
         response = await cursor.executeunified3(

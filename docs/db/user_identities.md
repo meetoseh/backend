@@ -4,7 +4,12 @@ Describes an identity, which is a method for a user to login via an account from
 a given provider. All methods a user can use to login go through this table, even
 those that came from the user signing up with an email/password. Email/password
 signup will result in a `Direct` provider. The ability to check the email/password
-is available in `direct_accounts`.
+is available in `direct_accounts`. Passkey signup will result in a `Passkey` provider.
+SilentAuth signup will result in a `Silent` provider.
+
+The ability to check direct accounts is available in `direct_accounts`.
+The ability to check the passkey is available in `passkey_accounts`.
+The ability to check the silentauth is available in `silentauth_accounts`.
 
 ## Fields
 
@@ -17,6 +22,8 @@ is available in `direct_accounts`.
   - Google
   - SignInWithApple
   - Direct (see `direct_accounts`)
+  - Passkey (see `passkey_accounts`)
+  - Silent (see `silentauth_accounts`)
 - `sub (text not null)`: the stable unique identifier by the provider; we provide
   the unique constraint on (provider, sub) in the very unlikely case two providers
   have a collision.

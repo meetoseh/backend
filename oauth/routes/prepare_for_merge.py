@@ -107,6 +107,10 @@ async def prepare_user_for_merge(
 ) -> str:
     if provider == "Dev":
         return os.environ["ROOT_FRONTEND_URL"] + "/dev_login?merge=1"
+    if provider == "Passkey":
+        return os.environ["ROOT_FRONTEND_URL"] + "/passkey_login?merge=1"
+    if provider == "Silent":
+        return os.environ["ROOT_FRONTEND_URL"] + "/silent_login?merge=1"
 
     state = generate_state_secret()
     nonce = generate_nonce()

@@ -60,6 +60,9 @@ import general_feedback.router
 import asyncio
 from loguru import logger
 from typing import cast as typing_cast
+import fido2.features
+
+fido2.features.webauthn_json_mapping.enabled = True
 
 
 if (
@@ -189,6 +192,20 @@ if os.environ.get("ENVIRONMENT") == "dev":
         allow_headers=["Authorization", "Pragma", "Cache-Control", "Visitor"],
         expose_headers=["x-image-file-jwt"],
     )
+
+    # these need to be served from whatever is on 443, which is usually the backend
+    @app.get("/.well-known/{path:path}")
+    def well_known(path: str):
+        import requests
+
+        root_frontend_url = os.environ["ROOT_FRONTEND_URL"]
+        response = requests.get(f"{root_frontend_url}/.well-known/{path}")
+        return Response(
+            content=response.content,
+            headers=response.headers,
+            status_code=response.status_code,
+        )
+
 
 app.include_router(
     continuous_deployment.router.router,

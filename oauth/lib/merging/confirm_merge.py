@@ -61,7 +61,8 @@ async def attempt_confirm_merge(
     operation_uid = f"oseh_mal_o_{secrets.token_urlsafe(16)}"
     mal_confirm = f"oseh_mal_{secrets.token_urlsafe(16)}"
     merge_provider = cast(
-        Literal["Direct", "Google", "SignInWithApple"], merge.provider
+        Literal["Direct", "Google", "SignInWithApple", "Dev", "Passkey", "Silent"],
+        merge.provider,
     )
 
     async with merge_freeform_log(itgs, operation_uid=operation_uid) as log:
@@ -277,7 +278,9 @@ async def create_confirm_query(
     operation_uid: str,
     original_user_sub: str,
     merging_user_sub: str,
-    merging_provider: Literal["Direct", "Google", "SignInWithApple"],
+    merging_provider: Literal[
+        "Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"
+    ],
     merging_provider_sub: str,
     log: MergeFreeformLog,
     merge_at: float,

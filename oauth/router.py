@@ -8,6 +8,9 @@ import oauth.routes.prepare
 import oauth.routes.refresh
 import oauth.routes.token
 import oauth.siwo.router
+import oauth.passkeys.router
+import oauth.silent.router
+
 
 router = APIRouter()
 router.include_router(oauth.routes.apple_callback.router)
@@ -19,3 +22,5 @@ router.include_router(oauth.routes.prepare.router)
 router.include_router(oauth.routes.refresh.router)
 router.include_router(oauth.routes.token.router)
 router.include_router(oauth.siwo.router.router, prefix="/siwo")
+router.include_router(oauth.passkeys.router.router, prefix="/passkeys")
+router.include_router(oauth.silent.router.router, prefix="/silent")

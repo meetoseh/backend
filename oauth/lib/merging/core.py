@@ -55,7 +55,7 @@ class _Ctx:
     confirm_required_step_result: str
     operation_uid: str
     original_user_sub: str
-    merging_provider: Literal["Direct", "Google", "SignInWithApple"]
+    merging_provider: Literal["Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"]
     merging_provider_sub: str
     email_hint: Optional[str]
     phone_hint: Optional[str]
@@ -70,7 +70,7 @@ async def create_merging_queries(
     confirm_required_step_result: str,
     operation_uid: str,
     original_user_sub: str,
-    merging_provider: Literal["Direct", "Google", "SignInWithApple"],
+    merging_provider: Literal["Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"],
     merging_provider_sub: str,
     email_hint: Optional[str],
     phone_hint: Optional[str],
@@ -3156,7 +3156,9 @@ async def _move_opt_in_group_users__delete(
         assert logged is not None, "delete step handler called before log step"
 
         num_deleted = mctx.result.rows_affected or 0
-        await mctx.log.write(b"num_deleted: " + str(num_deleted).encode("ascii") + b"\n")
+        await mctx.log.write(
+            b"num_deleted: " + str(num_deleted).encode("ascii") + b"\n"
+        )
         if num_deleted <= 0:
             assert (
                 not logged
@@ -3223,7 +3225,7 @@ async def _move_opt_in_group_users__delete(
             query=(
                 f"{ctes}DELETE FROM opt_in_group_users "
                 "WHERE"
-                " opt_in_group_users.user_id = (SELECT merging_user.id FROM merging_user)"  
+                " opt_in_group_users.user_id = (SELECT merging_user.id FROM merging_user)"
                 # we don't need to check query_ctx; if they are not deleted here, they
                 # will be deleted when the user is deleted. assuming transfer already
                 # happened, this should still match

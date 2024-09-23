@@ -1690,6 +1690,30 @@ fraudulent behavior. Fraudulent behavior typically falls into two categories:
   NOTE: This is used for all CRSF tokens, but currently that just consists of
   Sign in with Oseh
 
+### Passkeys namespace
+
+- `passkeys:challenges:register:{challenge}` goes to a state value if we recently generated
+  a challenge with the corresponding random value. Always set to expire after 10m.
+  Challenges are generated as if by `secrets.token_urlsafe(32)`. The state is the
+  jsonified representation returned from `fido2.server.FidoServer#register_begin`
+
+- `passkeys:challenges:authenticate:{challenge}` goes to a state value if we recently generated
+  a challenge with the corresponding random value. Always set to expire after 10m.
+  Challenges are generated as if by `secrets.token_urlsafe(32)`. The state is the
+  jsonified representation returned from `fido2.server.FidoServer#authenticate_begin`
+
+## Silent Auth namespace
+
+- `silentauth:challenges:{public_id}` where the `public_id` is the public id for referencing 
+  the challenge returned to the client (currently, always as if by
+  `secrets.token_urlsafe(32)`) goes to a byte string as follows (currently,
+  always 896 bytes):
+  - `type (1 byte, big-endian, unsigned)`: currently, always the byte `0x00`, indicated
+    an RSA key, 4096 bits long (512 bytes), with a 3064 bit (383 byte) challenge and the
+    public exponent `65537`
+  - `challenge (variable length)`: the 383 byte (3064 bit) challenge
+  - `public_key (variable length)`: the 512 byte (4096 bit) RSA public key
+
 ### Journey Share Links
 
 Used for facilitating journey share links, which are links generated on request

@@ -105,7 +105,14 @@ _supported = {
             "properties": {
                 "provider": {
                     "type": "string",
-                    "enum": ["SignInWithApple", "Google", "Direct", "Dev"],
+                    "enum": [
+                        "SignInWithApple",
+                        "Google",
+                        "Direct",
+                        "Passkey",
+                        "Silent",
+                        "Dev",
+                    ],
                     "example": "Google",
                 },
                 "url": {
@@ -124,6 +131,14 @@ _supported = {
         "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
     },
     ("merge", "url", "Direct"): {
+        "type": "string",
+        "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
+    },
+    ("merge", "url", "Passkey"): {
+        "type": "string",
+        "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
+    },
+    ("merge", "url", "Silent"): {
         "type": "string",
         "example": os.environ["ROOT_FRONTEND_URL"] + "#example",
     },
@@ -279,7 +294,14 @@ async def create_standard_parameters(
         if ("merge", "url") in requested:
             result["merge"]["url"] = {}
 
-            for provider in ("SignInWithApple", "Google", "Direct", "Dev"):
+            for provider in (
+                "SignInWithApple",
+                "Google",
+                "Direct",
+                "Passkey",
+                "Silent",
+                "Dev",
+            ):
                 if ("merge", "url", provider) in requested:
                     result["merge"]["url"][provider] = await prepare_user_for_merge(
                         itgs,

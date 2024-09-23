@@ -16,7 +16,7 @@ from typing import (
 )
 from typing_extensions import TypedDict
 import anyio
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 from admin.logs.routes.read_daily_reminder_settings_log import (
     interpret_day_of_week_mask,
 )
@@ -142,9 +142,6 @@ class LoginOption(BaseModel):
     provider: MergeProvider = Field(
         description="The identity provider. Dev is only available in development mode"
     )
-    email: str = Field(
-        description="The email address associated with the user on this provider."
-    )
 
 
 class OauthMergeResult(BaseModel):
@@ -225,7 +222,8 @@ async def attempt_start_merge(
     mal_create_identity = f"oseh_mal_{secrets.token_urlsafe(16)}"
     mal_transfer_identity = f"oseh_mal_{secrets.token_urlsafe(16)}"
     merge_provider = cast(
-        Literal["Direct", "Google", "SignInWithApple"], merge.provider
+        Literal["Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"],
+        merge.provider,
     )
 
     async with merge_freeform_log(itgs, operation_uid=operation_uid) as log:
@@ -466,7 +464,11 @@ class _MoveUserIdentitiesReason(TypedDict):
 class _UserIdentityFromDB(TypedDict):
     provider: MergeProvider
     sub: str
-    email: str
+
+
+login_options_adapter = cast(
+    TypeAdapter[List[LoginOption]], TypeAdapter(List[LoginOption])
+)
 
 
 async def get_merge_result(
@@ -496,7 +498,6 @@ async def get_merge_result(
         "    json_object("
         "     'provider', user_identities.provider"
         "     , 'sub', user_identities.sub"
-        "    , 'email', json_extract(example_claims, '$.email')"
         "    )"
         "   )"
         "  FROM user_identities, users"
@@ -510,7 +511,6 @@ async def get_merge_result(
         "    json_object("
         "     'provider', user_identities.provider"
         "     , 'sub', user_identities.sub"
-        "     , 'email', json_extract(example_claims, '$.email')"
         "    )"
         "   )"
         "  FROM user_identities, users AS merging_user"
@@ -624,11 +624,9 @@ async def get_merge_result(
         + b"\n"
     )
 
-    current_login_options = [
-        opt for opt in current_user_identities or [] if opt.get("email") is not None
-    ]
+    current_login_options = [opt for opt in current_user_identities or []]
     still_existing_merging_login_options = [
-        opt for opt in merging_user_identities or [] if opt.get("email") is not None
+        opt for opt in merging_user_identities or []
     ]
     moved_options: Set[Tuple[MergeProvider, str]] = (
         set(
@@ -649,7 +647,6 @@ async def get_merge_result(
     original_login_options = [
         LoginOption(
             provider=opt["provider"],
-            email=opt["email"],
         )
         for opt in current_login_options
         if (opt["provider"], opt["sub"]) not in moved_options
@@ -657,7 +654,6 @@ async def get_merge_result(
     merging_login_options = [
         LoginOption(
             provider=opt["provider"],
-            email=opt["email"],
         )
         for opt in current_login_options
         if (opt["provider"], opt["sub"]) in moved_options
@@ -683,7 +679,7 @@ async def get_merge_result(
         b"  original_login_options:\n    "
         + (
             b"\n    ".join(
-                LoginOption.__pydantic_serializer__.to_json(
+                login_options_adapter.dump_json(
                     original_login_options, indent=2
                 ).splitlines()
             )
@@ -834,14 +830,12 @@ async def get_merge_result(
         original_login_options=[
             LoginOption(
                 provider=opt["provider"],
-                email=opt["email"],
             )
             for opt in current_login_options
         ],
         merging_login_options=[
             LoginOption(
                 provider=opt["provider"],
-                email=opt["email"],
             )
             for opt in still_existing_merging_login_options
         ],
@@ -1257,7 +1251,9 @@ async def create_duplicate_identity_query(
     *,
     operation_uid: str,
     original_user_sub: str,
-    merging_provider: Literal["Direct", "Google", "SignInWithApple"],
+    merging_provider: Literal[
+        "Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"
+    ],
     merging_provider_sub: str,
     log: MergeFreeformLog,
     merge_at: float,
@@ -1327,7 +1323,9 @@ async def create_create_identity_query(
     *,
     operation_uid: str,
     original_user_sub: str,
-    merging_provider: Literal["Direct", "Google", "SignInWithApple"],
+    merging_provider: Literal[
+        "Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"
+    ],
     merging_provider_sub: str,
     merging_provider_claims: Mapping[str, Any],
     log: MergeFreeformLog,
@@ -1448,7 +1446,9 @@ async def create_transfer_identity_query(
     *,
     operation_uid: str,
     original_user_sub: str,
-    merging_provider: Literal["Direct", "Google", "SignInWithApple"],
+    merging_provider: Literal[
+        "Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"
+    ],
     merging_provider_sub: str,
     log: MergeFreeformLog,
     merge_at: float,

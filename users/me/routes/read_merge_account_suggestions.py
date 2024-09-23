@@ -12,14 +12,11 @@ from loguru import logger
 router = APIRouter()
 
 
-MergeProvider = Literal["Google", "SignInWithApple", "Direct", "Dev"]
+MergeProvider = Literal[
+    "Google", "SignInWithApple", "Direct", "Passkey", "Silent", "Dev"
+]
 merge_providers: FrozenSet[MergeProvider] = frozenset(
-    (
-        "Google",
-        "SignInWithApple",
-        "Direct",
-        "Dev",
-    )
+    ("Google", "SignInWithApple", "Direct", "Passkey", "Silent", "Dev")
 )
 
 

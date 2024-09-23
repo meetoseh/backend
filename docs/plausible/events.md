@@ -33,8 +33,9 @@ Template:
     - `instructor (string)`: the name of the instructor
   - idempotency: `pageview--frontend-ssr-web/routers/journeys/components/SharedUnlockedClassApp.tsx`
   - see also:
-    - `frontend-ssr-web/uikit/ProvidersList--click`
+    - `frontend-ssr-web/uikit/ContinueOnWeb--click`
     - `frontend-ssr-web/uikit/DownloadAppLinks--click`
+    - USED PREVIOUSLY: `frontend-ssr-web/uikit/ProvidersList--click`
 - `/frontend-ssr-web/routers/journeys/components/ShareLinkApp.tsx`
   - Used when people directly navigate to the sitemap-included share pages for
     classes, e.g., https://oseh.io/shared/3-part-breath
@@ -44,8 +45,9 @@ Template:
     - `code (string)`: the share code they used
   - idempotency: `pageview--frontend-ssr-web/routers/journeys/components/ShareLinkApp.tsx`
   - see also:
-    - `frontend-ssr-web/uikit/ProvidersList--click`
+    - `frontend-ssr-web/uikit/ContinueOnWeb--click`
     - `frontend-ssr-web/uikit/DownloadAppLinks--click`
+    - USED PREVIOUSLY: `frontend-ssr-web/uikit/ProvidersList--click`
 - `/frontend-ssr-web/routers/courses/components/CoursePublicPageApp.tsx`
   - Used when people directly navigate to the sitemap-included share pages for
     courses, e.g., https://oseh.io/shared/series/sleep-vibes
@@ -54,8 +56,9 @@ Template:
     - `instructor (string)`: the name of the instructor
   - idempotency: `pageview--frontend-ssr-web/routers/courses/components/CoursePublicPageApp.tsx`
   - see also:
-    - `frontend-ssr-web/uikit/ProvidersList--click`
+    - `frontend-ssr-web/uikit/ContinueOnWeb--click`
     - `frontend-ssr-web/uikit/DownloadAppLinks--click`
+    - USED PREVIOUSLY: `frontend-ssr-web/uikit/ProvidersList--click`
 
 ## Custom Events
 
@@ -73,7 +76,7 @@ This list starts with the name of the custom event
   - Invoked when a user adds an item to their todo list on ExampleApp
   - props: none
   - idempotency: omitted
-- `frontend-ssr-web/uikit/ProvidersList--click`
+- `frontend-ssr-web/uikit/ProvidersList--click` DEPRECATED
   - Invoked when the standard uikit providers list (sign in with X buttons)
     has one of its buttons clicked and we are about to redirect
   - props:
@@ -86,3 +89,7 @@ This list starts with the name of the custom event
   - props:
     - `provider (string)`: one of `GooglePlay`, `AppleAppStore`
   - idempotency: `click--frontend-ssr-web/uikit/DownloadAppLinks`
+- `frontend-ssr-web/uikit/ContinueOnWeb--click`
+  - Invoked when the standard uikit continue on web button is clicked
+  - props: none
+  - idempotency: `click--frontend-ssr-web/uikit/ContinueOnWeb`

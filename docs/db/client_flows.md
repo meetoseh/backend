@@ -44,6 +44,8 @@ See also: [client flows](../concepts/clients_flows/README.md)
     Oseh+ (for stripe), or completing a Oseh+ purchase (for native)
   - `post_checkout_failure`: this must be the trigger after completing a checkout and not having
     Oseh+ (for stripe), or for completing a checkout for something other than Oseh+ (for native)
+  - `touch_link_{identifier}`: the client clicked a touch link of the given type, e.g., unsubscribe.
+    Includes the code and page extra in the server parameters.
 - `name (text null)`: The human readable name of the flow for the admin area
 - `description (text null)`: A description of the flow for the admin area
 - `client_schema (text not null)`: A valid openapi 3.0.3 schema object for the

@@ -148,7 +148,7 @@ async def apply_touch_link(
             trigger=TrustedTrigger(
                 flow_slug=trigger,
                 client_parameters={},
-                server_parameters=link.page_extra,
+                server_parameters={"code": args.code, **link.page_extra},
             ),
         )
         return await _realize(screen)

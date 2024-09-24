@@ -219,11 +219,6 @@ async def _bulk_load_journeys(
         candidate_uids_for_user.append(uid)
         metadata_uids_for_user.append(raw)
 
-    del uid
-    del raw_resp
-    del raw_bytes
-    del raw
-
     if not candidate_uids_for_user:
         return
 

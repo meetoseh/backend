@@ -357,7 +357,7 @@ async def get_monthly_active_users(
                 monthly_cached.close()
 
             as_monthly_chart = ReadMonthlyActiveUsersResponse.model_validate_json(
-                typing_cast(Union[bytes, bytearray, memoryview], as_bytes)
+                typing_cast(bytes, as_bytes)
             )
             as_daily_chart = convert_monthly_to_daily(as_monthly_chart, unix_date)
             encoded = as_daily_chart.__pydantic_serializer__.to_json(as_daily_chart)

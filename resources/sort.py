@@ -186,7 +186,7 @@ def cleanup_sort(
         key_type = Literal[key]  # type: ignore
         cleaned_sort.append(
             SortItem[key_type, valid_items[key]](  # type: ignore
-                unique_keys[0], SortDir.ASCENDING, None, None
+                unique_keys[0], SortDir.ASCENDING, None, None  # type: ignore
             )
         )
     else:

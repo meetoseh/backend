@@ -206,7 +206,7 @@ async def _lookup_email_image_in_remote_cache(
     if raw is None:
         return None
     assert isinstance(raw, (bytes, memoryview, bytearray))
-    return raw
+    return cast(bytes, raw)
 
 
 async def _write_email_image_to_remote_cache(

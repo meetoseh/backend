@@ -13,7 +13,7 @@ from pypika.terms import (
 from pypika.queries import Table, Query
 from pypika.utils import builder, format_alias_sql
 from pypika.enums import Comparator
-from typing import Any, Dict, Iterator, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union, cast
 
 
 def question_mark_list(num: int) -> str:
@@ -242,7 +242,7 @@ class ShieldFields(Criterion):
 
     def negate(self):
         self.container = self.container.negate()
-        return self
+        return cast(Any, self)
 
     def _fields(self):
         return []

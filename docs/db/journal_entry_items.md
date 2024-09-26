@@ -75,6 +75,9 @@ feedback without us having to store sensitive details unencrypted
       - `"paragraph"`: has a single field, `value`, which is a string consisting of the text
         within the paragraph.
       - `"journey"`: has a single field, `uid`, which is the uid of the journey that was linked.
+      - `"voice_note"`: has a single field, `voice_note_uid`, which is the uid of the voice note
+        that was linked. Note that the voice note might still be processing when this is added.
+        See the redis key `voice_notes:processing` and related `voice_notes:processing:{uid}` keys
     - `"ui"`: has two additional fields, `conceptually` and `flow`:
       - `conceptually`: the semantically meaningful description of what we were trying to do.
         enum discriminated object by `type`:

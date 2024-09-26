@@ -52,7 +52,7 @@ CREATE TABLE voice_notes (
     user_journal_master_key_id INTEGER NOT NULL REFERENCES user_journal_master_keys(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     transcript_s3_file_id INTEGER NOT NULL REFERENCES s3_files(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     transcription_source TEXT NOT NULL,
-    audio_content_file_id INTEGER NOT NULL REFERENCES s3_files(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE RESTRICT ON UPDATE CASCADE,
     created_at REAL NOT NULL
 );
 

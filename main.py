@@ -57,6 +57,7 @@ import client_screens.router
 import client_flows.router
 import journals.router
 import general_feedback.router
+import voice_notes.router
 import asyncio
 from loguru import logger
 from typing import cast as typing_cast
@@ -282,6 +283,11 @@ app.include_router(
     general_feedback.router.router,
     prefix="/api/1/general_feedback",
     tags=["general_feedback"],
+)
+app.include_router(
+    voice_notes.router.router,
+    prefix="/api/1/voice_notes",
+    tags=["voice_notes"],
 )
 app.router.redirect_slashes = False
 

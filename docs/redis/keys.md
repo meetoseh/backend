@@ -1704,7 +1704,7 @@ fraudulent behavior. Fraudulent behavior typically falls into two categories:
 
 ## Silent Auth namespace
 
-- `silentauth:challenges:{public_id}` where the `public_id` is the public id for referencing 
+- `silentauth:challenges:{public_id}` where the `public_id` is the public id for referencing
   the challenge returned to the client (currently, always as if by
   `secrets.token_urlsafe(32)`) goes to a byte string as follows (currently,
   always 896 bytes):
@@ -3730,6 +3730,61 @@ These are regular keys used by the personalization module
 - `personalization:instructor_category_biases:{emotion}:{premium}` goes to a special serialization
   for `List[InstructorCategoryAndBias]` used in
   [step 1](../../personalization/lib/s01_find_combinations.py)
+
+## Voice Notes namespace
+
+A voice note is an audio file uploaded by a user, which we then transcode & transcribe.
+We assign the voice note a uid immediately and the client can choose to use the local
+audio file for arbitrarily long instead of waiting for us to finish processing. Only
+after successfully transcoding and transcribing the audio file is it included as a row
+in the `voice_notes` table.
+
+- `voice_notes:processing` goes to a sorted set where the keys are reserved voice note
+  uids and the scores are the timestamps when the corresponding voice note uid was
+  reserved.
+
+- `voice_notes:processing:{uid}` goes to a hash containing information about the voice
+  note that is being processed with the given uid. This hash exists iff there is a
+  corresponding entry in `voice_notes:processing`. The hash keys are:
+
+  - `uid`: the uid of the voice note, repeated
+  - `job_progress_uid`: the uid being used to track the progress of all related jobs
+  - `user_sub`: the user who the voice note will belong to after processing
+  - `started_at`: the unix timestamp, in seconds since the epoch, when the user reserved
+    the voice note uid and we created this hash
+  - `upload_success_job_at`: either the special string `not_yet` or the unix timestamp
+    when the upload success job was started
+  - `stitched_s3_key`: either the special string `not_yet` or s3 key containing the stitched
+    file upload
+  - `transcribe_job_queued_at`: either the special string `not_yet` or the unix timestamp
+    when the transcribe job was queued
+  - `encrypted_transcription_vtt`: either the special string `not_yet` or the VTT transcription of
+    the voice note, encrypted with a journal master key
+  - `transcription_vtt_journal_master_key_uid`: either the special string
+    `not_yet` or the uid for the journal master key used to encrypt the
+    transcription VTT
+  - `transcription_source`: either the special string `not_yet` or a json object representing
+    the value for the `transcription_source` column in `voice_notes`, e.g.,
+    `{"type":"ai","model":"whisper-1","version":"live"}`
+  - `transcribe_job_finished_at`: either the special string `not_yet` or the unix timestamp
+    when the transcribe job was finished. if set, so too should `transcription_vtt` and
+    `transcription_source`
+  - `transcode_job_queued_at`: either the special string `not_yet` or the unix timestamp
+    when the transcode job was queued
+  - `transcode_content_file_uid`: either the special string `not_yet` or the uid of the
+    content_file db row that based on the uploaded audio file
+  - `transcode_job_finished_at`: either the special string `not_yet` or the unix timestamp
+    when the transcode job was finished
+  - `finalize_job_queued_at`: either the special string `not_yet` or the unix timestamp
+    when the finalize job was queued
+
+- `voice_notes:stuck_recently` goes to the number of stuck warnings emitted since there
+  was a 24 hour period without any stuck warnings. Always has an expiration set to 24 hours
+  after the last warning.
+
+- `voice_notes:warned_stuck:{uid}` goes to an arbitrary value if we've already warned slack
+  that the voice note with the given uid has been processing for too long. Always has an
+  expiration set to 48 hours after the voice note was reserved.
 
 ## pubsub keys
 

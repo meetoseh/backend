@@ -65,3 +65,7 @@ existing keys.
 - `s3_files/journey_embeddings/{uid}`: Contains the binary encoded journey embeddings
   for a sequence of journeys. Consists of padded journey uids (usually 3 0s followed by
   29 characters), then the embedding. See [journey_embeddings](../db/journey_embeddings.md)
+- `s3_files/voice_notes/stitched/{uid}/{rnd}`: contains the stitched uploaded audio file of the
+  voice note with the given uid while the voice note is processing
+- `s3_files/voice_notes/transcripts/{uid}/{rnd}.vtt.fernet`: contains the transcript of the voice note
+  with the given uid. This is encrypted with a journal master key.

@@ -1,6 +1,7 @@
 """contains convenient functions for authorizing voice note access"""
 
 from dataclasses import dataclass
+import secrets
 import time
 from typing import Any, Dict, Literal, Optional
 from fastapi.responses import Response
@@ -113,6 +114,7 @@ async def create_jwt(
             "aud": "oseh-voice-note",
             "iat": now - 1,
             "exp": now + duration,
+            "jti": secrets.token_urlsafe(4),
         },
         os.environ["OSEH_VOICE_NOTE_JWT_SECRET"],
         algorithm="HS256",

@@ -51,4 +51,7 @@ class OperationOrder(IntEnum):
     move_user_journal_client_keys = auto()
     move_opt_in_group_users__transfer = auto()
     move_opt_in_group_users__delete = auto()
+    move_user_goals__transfer = auto()
+    move_user_goals__delete = auto()
+    move_voice_notes = auto()
     move_created_at = auto()

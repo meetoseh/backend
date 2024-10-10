@@ -252,8 +252,7 @@ alphabetical order, with logs moved to the bottom:
       - `disabled`: goes to a list of email addresses (strings)
       - `rows`: the length of verified
 
-19. We do not transfer `user_goals`; instead the frontend should prompt again
-20. `move_user_identities`
+19. `move_user_identities`
     - `context`
       - `merging`: goes to a list of json objects with the following keys from
         `user_identities`
@@ -261,15 +260,15 @@ alphabetical order, with logs moved to the bottom:
         - `provider`
         - `sub`
       - `rows`: the length of merging
-21. We do not transfer `user_interests`, though they might be incidentally changed from the
+20. We do not transfer `user_interests`, though they might be incidentally changed from the
     new visitors.
-22. `move_user_journeys`
-23. `move_user_likes` we ignore duplicates
-24. `move_user_phone_numbers__disable_without_hint`: see `move_user_email_addresses__disable_without_hint`; `email` -> `phone`
-25. `move_user_phone_numbers__transfer`: see `move_user_email_addresses__transfer`; `email` -> `phone`
-26. `move_user_phone_numbers__verify`: see `move_user_email_addresses__verify`
-27. `move_user_phone_numbers__disable`: see `move_user_email_addresses__disable`
-28. `move_user_profile_pictures`: the general idea is we will keep the latest on the current
+21. `move_user_journeys`
+22. `move_user_likes` we ignore duplicates
+23. `move_user_phone_numbers__disable_without_hint`: see `move_user_email_addresses__disable_without_hint`; `email` -> `phone`
+24. `move_user_phone_numbers__transfer`: see `move_user_email_addresses__transfer`; `email` -> `phone`
+25. `move_user_phone_numbers__verify`: see `move_user_email_addresses__verify`
+26. `move_user_phone_numbers__disable`: see `move_user_email_addresses__disable`
+27. `move_user_profile_pictures`: the general idea is we will keep the latest on the current
     account but copy over the merging account as non-latest. However, if the oroginal account
     doesn't have a latest item, we'll set the original accounts latest profile picture as well
 
@@ -280,20 +279,20 @@ alphabetical order, with logs moved to the bottom:
         profile picture, false otherwise. If true we just update the user_id column, if false
         we first set latest to 0 on all of them before updating the user_id column
 
-29. `move_user_push_tokens`
-30. `move_user_revenue_cat_ids`
+28. `move_user_push_tokens`
+29. `move_user_revenue_cat_ids`
 
     - `context`
       - `rows`: the number of rows to move over
       - `merging`: a list of strings representing revenue cat ids that are being merged
 
-31. We do not merge `user_tokens`; if they are using api-only auth, they can regenerate them
-32. `move_user_touch_link_clicks`
-33. We do not merge `user_touch_point_states` as there is no straight-forward algorithm to do so
-34. `move_user_touches`
-35. `move_vip_chat_requests__user_id`: refers to the `user_id` column only
-36. `move_vip_chat_requests__added_by_user_id`: refers to the `added_by_user_id` column only
-37. `move_visitor_users`: This record will exist if there are any visitors associated with
+30. We do not merge `user_tokens`; if they are using api-only auth, they can regenerate them
+31. `move_user_touch_link_clicks`
+32. We do not merge `user_touch_point_states` as there is no straight-forward algorithm to do so
+33. `move_user_touches`
+34. `move_vip_chat_requests__user_id`: refers to the `user_id` column only
+35. `move_vip_chat_requests__added_by_user_id`: refers to the `added_by_user_id` column only
+36. `move_visitor_users`: This record will exist if there are any visitors associated with
     the merging user, regardless of if they are actually moved over. Furthermore, within SQL
     we don't change the `user_id` column; instead we delete the records and bump the version
     on the corresponding visitors, then after the transaction we go back to check this row
@@ -303,7 +302,7 @@ alphabetical order, with logs moved to the bottom:
       - `uids`: a list of strings corresponding to visitor uids associated with the merging
         user
       - `rows`: length of uids
-38. `delete_user_daily_reminders`: we simply delete the user daily reminders of
+37. `delete_user_daily_reminders`: we simply delete the user daily reminders of
     the merging user so that we can look at this log entry after and use it to
     update user daily reminder registration stats.
 
@@ -316,18 +315,18 @@ alphabetical order, with logs moved to the bottom:
       - `channels`: a list of channels (strings, e.g., `"sms"`) being deleted
       - `rows`: the length of channels
 
-39. `move_contact_method_log`: all entries have their reason updated to have a new top level
+38. `move_contact_method_log`: all entries have their reason updated to have a new top level
     key inserted: the `_merged_{sub}` of the merging account (to avoid duplicates in the case
     of sequential merges) and the value is a json object with the following keys:
     - `original`: sub of the original user
     - `operation_uid`: the uid of the merge operation
     - `merged_at`: the canonical timestamp of when the merge occurred
-40. `move_daily_reminder_settings_log`: same strategy as `contact_method_log`
-41. we do not copy over `user_timezone_log` and we do not update `timezone` on users
-42. `move_merge_account_log`: same strategy as `contact_method_log`
-43. `move_user_touch_debug_log`: standard update
-44. `move_user_client_screens_log`: standard update
-45. `delete_user_client_screens`: we will reset both the merging user and the original
+39. `move_daily_reminder_settings_log`: same strategy as `contact_method_log`
+40. we do not copy over `user_timezone_log` and we do not update `timezone` on users
+41. `move_merge_account_log`: same strategy as `contact_method_log`
+42. `move_user_touch_debug_log`: standard update
+43. `move_user_client_screens_log`: standard update
+44. `delete_user_client_screens`: we will reset both the merging user and the original
     users client screen queue. this is done defensively; generally a `merge` client flow
     should be triggered after which will have `replaces=True` which obviates the need
     for this step
@@ -335,22 +334,30 @@ alphabetical order, with logs moved to the bottom:
     - `context`:
       - `original`: the number of rows deleted from the original user
       - `merging`: the number of rows deleted from the merging user
-46. `move_journal_entries`: standard update
-47. `move_user_journal_master_keys`: standard update
-48. `move_user_journal_client_keys`: standard update
-49. `move_opt_in_group_users__transfer`: the opt-in groups that were simply transfered
+45. `move_journal_entries`: standard update
+46. `move_user_journal_master_keys`: standard update
+47. `move_user_journal_client_keys`: standard update
+48. `move_opt_in_group_users__transfer`: the opt-in groups that were simply transfered
     over because they existed on the merging user but not on the original user.
     - `context`
       - `transfered`: goes to a list of group uids that were transfered over
         - `uid`: the opt in group uid
       - `rows`: the length of transfered
-50. `move_opt_in_group_users__delete`: the opt-in groups that were deleted from the
+49. `move_opt_in_group_users__delete`: the opt-in groups that were deleted from the
     merging user because they were already associated with the original user
     - `context`
       - `deleted`: goes to a list of group uids that were deleted
         - `uid`: the opt in group uid
       - `rows`: the length of deleted
-51. `move_created_at`: we set the `created_at` timestamp of the original user to the
+50. `move_user_goals__transfer`: if the original user no goal set and the merging
+    user does, transfer the goal from the merging user to the original user
+    - `context`
+      - `days_per_week`: the number of days per week moved over
+51. `move_user_goals__delete`: if the merging user still has a goal set, delete it
+    - `context`
+      - `days_per_week`: the days per week on the deleted record
+52. `move_voice_notes`: standard update
+53. `move_created_at`: we set the `created_at` timestamp of the original user to the
     earlier of the original users created at and the merging users created at. this may
     mean that, incidentally, some computed attribution information is excluded.
     - `context`:

@@ -463,13 +463,18 @@ async def raw_read_journal_entries(
         pending_items.append(current_item)
         current_item = None
 
-    inspect_result = DataToClientInspectResult(pro=False, journeys=set())
+    inspect_result = DataToClientInspectResult(
+        pro=False, journeys=set(), voice_notes=set()
+    )
     for entry in pending_items:
         for entry_item in entry.server_items:
             inspect_data_to_client(entry_item, out=inspect_result)
 
     ctx = DataToClientContext(
-        user_sub=client_key.user_sub, has_pro=None, memory_cached_journeys=dict()
+        user_sub=client_key.user_sub,
+        has_pro=None,
+        memory_cached_journeys=dict(),
+        memory_cached_voice_notes=dict(),
     )
     await bulk_prepare_data_to_client(itgs, ctx=ctx, inspect=inspect_result)
 

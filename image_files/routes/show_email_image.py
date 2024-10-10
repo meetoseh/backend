@@ -184,7 +184,7 @@ async def _lookup_email_image_in_local_cache(
     if result is None:
         return None
     assert isinstance(result, (bytes, memoryview, bytearray))
-    return result
+    return cast(bytes, result)
 
 
 async def _write_email_image_to_local_cache(

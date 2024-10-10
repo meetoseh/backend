@@ -1,7 +1,7 @@
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field
 from auth import auth_any
@@ -20,6 +20,7 @@ from journals.entries.routes.edit_reflection_question import (
     ERROR_BAD_STATE_RESPONSE,
 )
 from lib.journals.edit_entry_item import (
+    EditEntryItemDecryptedTextToParagraphsAndVoiceNotes,
     EditEntryItemDecryptedTextToTextualItem,
     edit_entry_item,
 )
@@ -51,6 +52,18 @@ class EditReflectionResponseRequest(BaseModel):
     )
     entry_counter: int = Field(
         description="The entry counter of the item within the journal to edit"
+    )
+    reflection_response_format: Literal["text", "parts"] = Field(
+        "text",
+        description=(
+            "Describes how you are formatting the reflection response in encrypted_reflection_response:\n"
+            "- `text`: the response should be interpreted as plain text with paragraphs separated with newlines\n"
+            "- `parts`: the response is a JSON array of JSON objects, where each object is discriminated by "
+            "type, and the valid types are:\n"
+            "  - `paragraph`: a paragraph of text. has the additional key `value` for the text\n"
+            "  - `voice_note`: a voice note belonging to the user. has the additional key"
+            "`voice_note_uid` containing the uid of the voice note\n"
+        ),
     )
     encrypted_reflection_response: str = Field(
         description="The new value of the reflection response, encrypted with the client key"
@@ -125,8 +138,12 @@ async def edit_reflection_response(
             platform=args.platform,
             encrypted_text=args.encrypted_reflection_response,
             expected_type="reflection-response",
-            decrypted_text_to_item=EditEntryItemDecryptedTextToTextualItem(
-                "reflection-response", "self"
+            decrypted_text_to_item=(
+                EditEntryItemDecryptedTextToTextualItem("reflection-response", "self")
+                if args.reflection_response_format == "text"
+                else EditEntryItemDecryptedTextToParagraphsAndVoiceNotes(
+                    itgs, "reflection-response", "self", std_auth_result.result.sub
+                )
             ),
         )
         if edit_result.type == "user_not_found":

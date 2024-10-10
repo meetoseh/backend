@@ -325,7 +325,7 @@ def _create_example_for_type(t: type) -> Union[None, int, float, str, bool, list
     return None
 
 
-class _FilterItemModelMeta(type(BaseModel)):
+class _FilterItemModelMeta(type(BaseModel)):  # type: ignore
     """We use a custom metaclass for FilterItemModel to keep track of the type,
     since it would otherwise be impossible (afaik) in python 3.9
     """
@@ -340,7 +340,7 @@ class _FilterItemModelMeta(type(BaseModel)):
             return res
 
         class _CustomFilterItemModel(FilterItemModel):
-            value: Union[t, List[t], None] = Field(
+            value: Union[t, List[t], None] = Field(  # type: ignore
                 None,
                 title="Value",
                 description=(

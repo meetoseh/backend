@@ -14,6 +14,7 @@ from oauth.lib.merging.core import create_merging_queries
 from oauth.lib.merging.log import MergeFreeformLog, merge_freeform_log
 from oauth.lib.merging.operation_order import OperationOrder
 from oauth.lib.merging.query import MergeContext, MergeQuery
+from users.lib.entitlements import get_entitlement
 
 
 async def attempt_confirm_merge(
@@ -228,6 +229,21 @@ async def attempt_confirm_merge(
                 )
                 await handle_error(exc, extra_info=f"{idx=}")
                 last_err = exc
+
+        await log.out.write(b"\n\n--RESTORING PURCHASES--\n")
+        pro_entitlement = await get_entitlement(
+            itgs, user_sub=original_user.sub, identifier="pro", force=True
+        )
+        if pro_entitlement is None:
+            await log.out.write(b"pro entitlement is None\n")
+        else:
+            await log.out.write(b"pro entitlement found:\n")
+            await log.out.write(
+                pro_entitlement.__pydantic_serializer__.to_json(
+                    pro_entitlement, indent=2
+                )
+            )
+            await log.out.write(b"\n")
 
         await log.out.write(b"\n\n---STORING STATS---\n")
         await log.out.write(b"stats:\n{\n")

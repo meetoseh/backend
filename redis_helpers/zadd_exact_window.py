@@ -100,7 +100,7 @@ async def zadd_exact_window(
     )
     if res is redis:
         return None
-    assert res == "OK"
+    assert res == "OK" or res == b"OK"
     return "OK"
 
 

@@ -39,10 +39,20 @@ async def peek_screen(
     async with Itgs() as itgs:
         auth_result = await auth.auth_any(itgs, authorization)
         if auth_result.result is None:
+            slack = await itgs.slack()
+            await slack.send_oseh_bot_message(
+                f"peek screen: detected invalid token, likely going to cause someone to logout:\n\n"
+                f"```\n{authorization}\n```"
+            )
             return auth_result.error_response
 
         user_created_at = await get_user_created_at(itgs, sub=auth_result.result.sub)
         if user_created_at is None:
+            slack = await itgs.slack()
+            await slack.send_oseh_bot_message(
+                f"peek screen: couldn't get user created at time, likely causing a preventable logout:\n\n"
+                f"```\n{authorization}\n```"
+            )
             return AUTHORIZATION_UNKNOWN_TOKEN
         await on_user_is_active(
             itgs,

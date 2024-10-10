@@ -39,6 +39,41 @@ the user is deleted.
   order.
 - `audio_content_file_id (integer not null references s3_files(id))`: Where the
   audio of the voice note is stored, transcoded so that it can be quickly served.
+- `time_vs_avg_signal_intensity_s3_file_id (integer not null references s3_files(id))`
+  Points to an s3 file containing an encrypted (with the journal master key)
+  json lines formatted structure as follows:
+
+  ```json
+  {"type": "tvi", "version": 1}
+  {"audio_file_sha512": "string", "duration_seconds": 0, "duration_samples": 0, "computed_at": 0.0}
+  [0.0, 0.0, 0.0]
+  {
+    "bin_infos": [
+      { "start_seconds_incl": 0.0, "end_seconds_excl": 0.0, "start_sample_incl": 0, "end_sample_excl": 0 }
+    ]
+  }
+  ```
+
+  where
+
+  - The first line is acting as a header to indicate the format. Currently, only
+    version 1 is supported. Currently, the header must always be
+    `b'{"type": "tvi", "version": 1}\n'`
+  - The second line is metadata about the audio file processed
+  - The following lines are a repetition of the following pattern, any number of times:
+    - The actual time vs intensity graph with N bins partioning the audio file.
+      Since there are an integer number of samples, if the samples
+      are not evenly divisible by N the final bin will be up to N-1 samples smaller
+      than the rest
+    - Metadata about the bins
+
+  The general idea is that when parsing this file, if speed is the most important, the
+  first line can be checked for format, the second line can be skipped, and then take
+  the actual graph lines (skipping the metadata). This balances the file being relatively
+  easy to understand/debug with not doing unnecessary json decoding
+
+  always ends on a newline
+
 - `created_at (real not null)`: when this voice note was created in seconds since
   the unix epoch
 
@@ -49,10 +84,11 @@ CREATE TABLE voice_notes (
     id INTEGER PRIMARY KEY,
     uid TEXT UNIQUE NOT NULL,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE ON UPDATE RESTRICT,
-    user_journal_master_key_id INTEGER NOT NULL REFERENCES user_journal_master_keys(id) ON DELETE RESTRICT ON UPDATE CASCADE,
-    transcript_s3_file_id INTEGER NOT NULL REFERENCES s3_files(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    user_journal_master_key_id INTEGER NOT NULL REFERENCES user_journal_master_keys(id) ON DELETE CASCADE ON UPDATE RESTRICT,
+    transcript_s3_file_id INTEGER NOT NULL REFERENCES s3_files(id) ON DELETE CASCADE ON UPDATE RESTRICT,
     transcription_source TEXT NOT NULL,
-    audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+    audio_content_file_id INTEGER NOT NULL REFERENCES content_files(id) ON DELETE CASCADE ON UPDATE RESTRICT,
+    time_vs_avg_signal_intensity_s3_file_id INTEGER NOT NULL REFERENCES s3_files(id) ON DELETE CASCADE ON UPDATE RESTRICT,
     created_at REAL NOT NULL
 );
 
@@ -67,4 +103,8 @@ CREATE INDEX voice_notes_transcript_s3_file_id_index ON voice_notes(transcript_s
 
 /* Foreign key, search */
 CREATE INDEX voice_notes_audio_content_file_id_index ON voice_notes(audio_content_file_id);
+
+/* Foreign key, search */
+CREATE INDEX voice_notes_tvi_s3_file_id_index ON voice_notes(time_vs_avg_signal_intensity_s3_file_id);
+
 ```

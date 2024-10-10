@@ -5,6 +5,7 @@ from itgs import Itgs
 from dataclasses import dataclass
 
 from lib.journals.conversation_stream import JournalChatJobConversationStream
+from lib.journals.data_to_client import DataToClientContext
 from lib.journals.journal_chat_redis_packet import (
     EventBatchPacketDataItemDataThinkingSpinner,
     JournalChatRedisPacketPassthrough,
@@ -666,10 +667,17 @@ async def add_journal_entry_chat(
     stats = JournalChatJobStats(RedisStatsPreparer())
     stats.incr_requested(unix_date=system_unix_date, type=b"system_chat")
 
+    ctx = DataToClientContext(
+        user_sub=user_sub,
+        has_pro=None,
+        memory_cached_journeys=dict(),
+        memory_cached_voice_notes=dict(),
+    )
     stream = JournalChatJobConversationStream(
         journal_entry_uid=journal_entry_uid,
         user_sub=user_sub,
         pending_moderation="ignore",
+        ctx=ctx,
     )
     await stream.start()
 
@@ -912,10 +920,17 @@ async def add_journal_entry_reflection_question(
     stats = JournalChatJobStats(RedisStatsPreparer())
     stats.incr_requested(unix_date=system_unix_date, type=b"reflection_question")
 
+    ctx = DataToClientContext(
+        user_sub=user_sub,
+        has_pro=None,
+        memory_cached_journeys=dict(),
+        memory_cached_voice_notes=dict(),
+    )
     stream = JournalChatJobConversationStream(
         journal_entry_uid=journal_entry_uid,
         user_sub=user_sub,
         pending_moderation="ignore",
+        ctx=ctx
     )
     await stream.start()
 
@@ -1404,10 +1419,17 @@ async def add_journal_entry_summary(
     stats = JournalChatJobStats(RedisStatsPreparer())
     stats.incr_requested(unix_date=system_unix_date, type=b"summarize")
 
+    ctx = DataToClientContext(
+        user_sub=user_sub,
+        has_pro=None,
+        memory_cached_journeys=dict(),
+        memory_cached_voice_notes=dict(),
+    )
     stream = JournalChatJobConversationStream(
         journal_entry_uid=journal_entry_uid,
         user_sub=user_sub,
         pending_moderation="ignore",
+        ctx=ctx,
     )
     await stream.start()
 

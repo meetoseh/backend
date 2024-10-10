@@ -1,3 +1,4 @@
+import io
 import socket
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
@@ -295,6 +296,7 @@ async def delete_account(force: bool, authorization: Optional[str] = Header(None
             await cleanup_user_push_tokens(itgs, auth_result.result.sub)
             await cleanup_user_emails(itgs, auth_result.result.sub)
             await cleanup_user_phones(itgs, auth_result.result.sub)
+            await cleanup_voice_notes(itgs, auth_result.result.sub)
             await cleanup_user_journal_master_keys(itgs, auth_result.result.sub)
             await cleanup_user_journal_client_keys(itgs, auth_result.result.sub)
             await cleanup_siwo_email_log(itgs, auth_result.result.sub)
@@ -586,6 +588,65 @@ async def cleanup_siwo_identities(itgs: Itgs, sub: str) -> None:
         """,
         (sub,),
     )
+
+
+async def cleanup_voice_notes(itgs: Itgs, sub: str) -> None:
+    """If the user with the given sub exists, all associated voice notes are
+    deleted
+    """
+    conn = await itgs.conn()
+    cursor = conn.cursor()
+
+    while True:
+        response = await cursor.execute(
+            """
+SELECT
+    voice_notes.uid,
+    content_files.uid,
+    transcript_s3_files.key,
+    tvi_s3_files.key
+FROM users, voice_notes, content_files, s3_files AS transcript_s3_files, s3_files AS tvi_s3_files
+WHERE
+    users.sub = ?
+    AND voice_notes.user_id = users.id
+    AND voice_notes.audio_content_file_id = content_files.id
+    AND voice_notes.transcript_s3_file_id = transcript_s3_files.id
+    AND voice_notes.time_vs_avg_signal_intensity_s3_file_id = tvi_s3_files.id
+ORDER BY voice_notes.uid ASC
+LIMIT 10
+            """,
+            (sub,),
+        )
+        if not response.results:
+            break
+
+        voice_note_uids: List[str] = []
+        content_file_uids: List[str] = []
+        s3_file_keys: List[str] = []
+
+        for row in response.results:
+            voice_note_uids.append(cast(str, row[0]))
+            content_file_uids.append(cast(str, row[1]))
+            s3_file_keys.append(cast(str, row[2]))
+            s3_file_keys.append(cast(str, row[3]))
+
+        sql = io.StringIO()
+        sql.write("WITH batch(uid) AS (VALUES (?)")
+        for _ in range(1, len(voice_note_uids)):
+            sql.write(", (?)")
+        sql.write(
+            ") DELETE FROM voice_notes WHERE EXISTS (SELECT 1 FROM batch WHERE voice_notes.uid = batch.uid)"
+        )
+        await cursor.execute(sql.getvalue(), voice_note_uids)
+
+        jobs = await itgs.jobs()
+        redis = await itgs.redis()
+        async with redis.pipeline() as pipe:
+            for key in s3_file_keys:
+                await jobs.enqueue_in_pipe(pipe, "runners.delete_s3_file", key=key)
+            for uid in content_file_uids:
+                await jobs.enqueue_in_pipe(pipe, "runners.delete_content_file", uid=uid)
+            await pipe.execute()
 
 
 @asynccontextmanager

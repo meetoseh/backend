@@ -83,14 +83,17 @@ async def create_voice_note(
                     b"started_at": started_at_bytes,
                     b"upload_success_job_at": b"not_yet",
                     b"stitched_s3_key": b"not_yet",
+                    b"journal_master_key_uid": b"not_yet",
                     b"transcribe_job_queued_at": b"not_yet",
                     b"encrypted_transcription_vtt": b"not_yet",
-                    b"transcription_vtt_journal_master_key_uid": b"not_yet",
                     b"transcription_source": b"not_yet",
                     b"transcribe_job_finished_at": b"not_yet",
                     b"transcode_job_queued_at": b"not_yet",
                     b"transcode_content_file_uid": b"not_yet",
                     b"transcode_job_finished_at": b"not_yet",
+                    b"analyze_job_queued_at": b"not_yet",
+                    b"encrypted_time_vs_intensity": b"not_yet",
+                    b"analyze_job_finished_at": b"not_yet",
                     b"finalize_job_queued_at": b"not_yet",
                 },
             )
@@ -106,9 +109,7 @@ async def create_voice_note(
                 "voice_note_uid": voice_note_uid,
             },
             failure_job_name="runners.delete_file_upload",
-            failure_job_kwargs={
-                "voice_note_uid": voice_note_uid,
-            },
+            failure_job_kwargs={},
             job_progress_uid=job_progress_uid,
         )
 

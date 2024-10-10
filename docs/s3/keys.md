@@ -69,3 +69,5 @@ existing keys.
   voice note with the given uid while the voice note is processing
 - `s3_files/voice_notes/transcripts/{uid}/{rnd}.vtt.fernet`: contains the transcript of the voice note
   with the given uid. This is encrypted with a journal master key.
+- `s3_files/voice_notes/time_vs_intensity/{uid}/{rnd}.jsonlines.fernet`: contains time vs intensity
+  graphs of the voice with the given uid. This is encrypted with a journal master key.

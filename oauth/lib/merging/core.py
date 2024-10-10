@@ -55,7 +55,9 @@ class _Ctx:
     confirm_required_step_result: str
     operation_uid: str
     original_user_sub: str
-    merging_provider: Literal["Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"]
+    merging_provider: Literal[
+        "Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"
+    ]
     merging_provider_sub: str
     email_hint: Optional[str]
     phone_hint: Optional[str]
@@ -70,7 +72,9 @@ async def create_merging_queries(
     confirm_required_step_result: str,
     operation_uid: str,
     original_user_sub: str,
-    merging_provider: Literal["Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"],
+    merging_provider: Literal[
+        "Direct", "Google", "SignInWithApple", "Passkey", "Silent", "Dev"
+    ],
     merging_provider_sub: str,
     email_hint: Optional[str],
     phone_hint: Optional[str],
@@ -295,6 +299,14 @@ async def create_merging_queries(
         ),
         *await _move_opt_in_group_users__transfer(itgs, ctx),
         *await _move_opt_in_group_users__delete(itgs, ctx),
+        *await _move_user_goals__transfer(itgs, ctx),
+        *await _move_user_goals__delete(itgs, ctx),
+        *await _create_standard_move_merge_queries(
+            itgs,
+            ctx,
+            table_name="voice_notes",
+            operation_order=OperationOrder.move_voice_notes,
+        ),
         *await _create_move_created_at_queries(itgs, ctx),
         *await _delete_merging_user(itgs, ctx),
     ]
@@ -3235,6 +3247,249 @@ async def _move_opt_in_group_users__delete(
         ),
     ]
 
+
+async def _move_user_goals__transfer(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQuery]:
+    log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
+    await octx.log.write(
+        b"- move_user_goals__transfer -\n"
+        b"computed:\n"
+        b"  log_uid: " + log_uid.encode("ascii") + b"\n"
+    )
+    logged: Optional[bool] = None
+
+    async def handler(step: Literal["log", "move"], mctx: MergeContext) -> None:
+        nonlocal logged
+
+        if step == "log":
+            assert logged is None, "handler called twice for log step"
+            logged = not not mctx.result.rows_affected
+
+            if not logged:
+                return
+
+            await mctx.log.write(
+                b"logged: true\n"
+                b"interpretation: we logged that we intended to transfer the user_goals"
+                b"\ngoing to fetch details on what we intended to transfered\n"
+            )
+
+            conn = await itgs.conn()
+            cursor = conn.cursor("weak")
+            resp = await _log_and_execute_query(
+                cursor,
+                "SELECT reason FROM merge_account_log WHERE uid=?",
+                (log_uid,),
+                mctx.log,
+            )
+            assert resp.results, resp
+            assert len(resp.results) == 1, resp
+            assert len(resp.results[0]) == 1, resp
+
+            parsed_reason = json.loads(resp.results[0][0])
+            assert isinstance(parsed_reason, dict), resp
+            await mctx.log.write(
+                b"parsed_reason:\n"
+                + json.dumps(parsed_reason, indent=2).encode("utf-8")
+                + b"\n"
+            )
+
+            days_per_week = parsed_reason["context"]["days_per_week"]
+
+            assert isinstance(days_per_week, int), resp
+
+            await mctx.log.write(
+                b"reason is correctly shaped for days_per_week="
+                + str(days_per_week).encode("ascii")
+                + b"\n"
+            )
+            return
+
+        assert step == "move", step
+        assert logged is not None, "move step handler called before log step"
+
+        num_moved = mctx.result.rows_affected or 0
+        await mctx.log.write(b"num_moved: " + str(num_moved).encode("ascii") + b"\n")
+        if num_moved <= 0:
+            assert (
+                not logged
+            ), f"logged that we intended to transfer user_goals, but none were moved"
+        else:
+            assert (
+                logged
+            ), f"moved some user_goals, but didn't log that we intended to move any"
+            assert (
+                num_moved == 1
+            ), f"logged that we intended to transfer 1 user_goals row, but moved {num_moved}"
+        await mctx.log.write(b"log and move steps matched\n")
+
+    ctes, ctes_qargs = _merging_user_and_original_user_ctes(octx)
+    ctes += (
+        ", query_ctx(id, days_per_week) AS ("
+        "SELECT"
+        " user_goals.id,"
+        " user_goals.days_per_week "
+        "FROM user_goals, merging_user "
+        "WHERE"
+        "  user_goals.user_id = merging_user.id"
+        "  AND NOT EXISTS ("
+        "   SELECT 1 FROM user_goals AS ug, original_user"
+        "   WHERE"
+        "    ug.user_id = original_user.id"
+        "  )"
+        ") "
+    )
+    return [
+        MergeQuery(
+            query=(
+                f"{ctes}INSERT INTO merge_account_log ("
+                " uid, user_id, operation_uid, operation_order, phase, step, step_result, reason, created_at"
+                ") SELECT"
+                " ?, original_user.id, ?, ?, 'merging', 'move_user_goals__transfer', 'xfer',"
+                " json_insert("
+                "  '{}'"
+                "  , '$.context.days_per_week', query_ctx.days_per_week"
+                " ), ? "
+                "FROM merging_user, original_user, query_ctx"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+                octx.operation_uid,
+                OperationOrder.move_user_goals__transfer.value,
+                octx.merge_at,
+            ],
+            handler=partial(handler, "log"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes}UPDATE user_goals "
+                "SET user_id = original_user.id "
+                "FROM original_user, query_ctx "
+                "WHERE"
+                " user_goals.id = query_ctx.id"
+            ),
+            qargs=[*ctes_qargs],
+            handler=partial(handler, "move"),
+        ),
+    ]
+
+async def _move_user_goals__delete(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQuery]:
+    log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
+    await octx.log.write(
+        b"- move_user_goals__delete -\n"
+        b"computed:\n"
+        b"  log_uid: " + log_uid.encode("ascii") + b"\n"
+    )
+    logged: Optional[bool] = None
+
+    async def handler(step: Literal["log", "delete"], mctx: MergeContext) -> None:
+        nonlocal logged
+
+        if step == "log":
+            assert logged is None, "handler called twice for log step"
+            logged = not not mctx.result.rows_affected
+
+            if not logged:
+                return
+
+            await mctx.log.write(
+                b"logged: true\n"
+                b"interpretation: we logged that we intended to delete the user_goals row"
+                b"\ngoing to fetch details on what we intended to transfered\n"
+            )
+
+            conn = await itgs.conn()
+            cursor = conn.cursor("weak")
+            resp = await _log_and_execute_query(
+                cursor,
+                "SELECT reason FROM merge_account_log WHERE uid=?",
+                (log_uid,),
+                mctx.log,
+            )
+            assert resp.results, resp
+            assert len(resp.results) == 1, resp
+            assert len(resp.results[0]) == 1, resp
+
+            parsed_reason = json.loads(resp.results[0][0])
+            assert isinstance(parsed_reason, dict), resp
+            await mctx.log.write(
+                b"parsed_reason:\n"
+                + json.dumps(parsed_reason, indent=2).encode("utf-8")
+                + b"\n"
+            )
+
+            days_per_week = parsed_reason["context"]["days_per_week"]
+
+            assert isinstance(days_per_week, int), resp
+
+            await mctx.log.write(
+                b"reason is correctly shaped for days_per_week="
+                + str(days_per_week).encode("ascii")
+                + b"\n"
+            )
+            return
+
+        assert step == "delete", step
+        assert logged is not None, "delete step handler called before log step"
+
+        num_deleted = mctx.result.rows_affected or 0
+        await mctx.log.write(b"num_deleted: " + str(num_deleted).encode("ascii") + b"\n")
+        if num_deleted <= 0:
+            assert (
+                not logged
+            ), f"logged that we intended to delete user_goals, but none were deleted"
+        else:
+            assert (
+                logged
+            ), f"deleted some user_goals, but didn't log that we intended to move any"
+            assert (
+                num_deleted == 1
+            ), f"logged that we intended to delete 1 user_goals row, but deleted {num_deleted}"
+        await mctx.log.write(b"log and delete steps matched\n")
+
+    ctes, ctes_qargs = _merging_user_and_original_user_ctes(octx)
+    ctes += (
+        ", query_ctx(id, days_per_week) AS ("
+        "SELECT"
+        " user_goals.id,"
+        " user_goals.days_per_week "
+        "FROM user_goals, merging_user "
+        "WHERE"
+        "  user_goals.user_id = merging_user.id"
+        ") "
+    )
+    return [
+        MergeQuery(
+            query=(
+                f"{ctes}INSERT INTO merge_account_log ("
+                " uid, user_id, operation_uid, operation_order, phase, step, step_result, reason, created_at"
+                ") SELECT"
+                " ?, original_user.id, ?, ?, 'merging', 'move_user_goals__delete', 'delete',"
+                " json_insert("
+                "  '{}'"
+                "  , '$.context.days_per_week', query_ctx.days_per_week"
+                " ), ? "
+                "FROM merging_user, original_user, query_ctx"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+                octx.operation_uid,
+                OperationOrder.move_user_goals__delete.value,
+                octx.merge_at,
+            ],
+            handler=partial(handler, "log"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes}DELETE FROM user_goals "
+                "WHERE"
+                " user_goals.id = (SELECT id FROM query_ctx)"
+            ),
+            qargs=[*ctes_qargs],
+            handler=partial(handler, "delete"),
+        ),
+    ]
 
 async def _create_move_created_at_queries(
     itgs: Itgs, octx: _Ctx, /

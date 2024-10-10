@@ -3,29 +3,17 @@ import secrets
 import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
-from typing import Annotated, Optional, Literal
-
+from typing import Annotated, Optional, Literal, cast
 from auth import auth_any
 from error_middleware import handle_warning
 from itgs import Itgs
-from journals.entries.routes.sync_journal_entry import (
-    ERROR_404_TYPES,
-    ERROR_429_TYPES,
-    ERROR_JOURNAL_ENTRY_NOT_FOUND_RESPONSE,
-    ERROR_KEY_UNAVAILABLE_RESPONSE,
-    ERROR_RATELIMITED_RESPONSE,
-    SyncJournalEntryResponse,
-)
 import journals.entry_auth
 from lib.journals.client_keys import get_journal_client_key
-from lib.journals.conversation_stream import JournalChatJobConversationStream
-from lib.journals.data_to_client import DataToClientContext
-from lib.journals.edit_entry_item import (
-    EditEntryItemDecryptedTextToParagraphsAndVoiceNotes,
-    EditEntryItemDecryptedTextToTextualItem,
-)
 from lib.journals.journal_entry_item_data import (
     JournalEntryItemData,
+    JournalEntryItemDataDataTextual,
+    JournalEntryItemProcessingBlockedReason,
+    JournalEntryItemTextualPartVoiceNote,
 )
 from lib.journals.master_keys import get_journal_master_key_for_encryption
 from models import (
@@ -45,8 +33,11 @@ import cryptography.fernet
 router = APIRouter()
 
 
-class CreateReflectionResponseRequest(BaseModel):
+class CreateJournalEntryUserVoiceNoteRequest(BaseModel):
     platform: VisitorSource = Field(description="the platform the client is running on")
+    version: Optional[int] = Field(
+        None, description="the screen version code of the client; for compatibility"
+    )
     journal_entry_uid: str = Field(
         description="The UID of the journal entry the user is responding to"
     )
@@ -59,66 +50,126 @@ class CreateReflectionResponseRequest(BaseModel):
             "the users message"
         )
     )
-    reflection_response_format: Literal["text", "parts"] = Field(
-        "text",
+    encrypted_voice_note_uid: str = Field(
+        description="the Fernet-encrypted voice note uid, which is base64url encoded"
+    )
+
+
+class CreateJournalEntryUserVoiceNoteResponse(BaseModel):
+    journal_chat_jwt: str = Field(
         description=(
-            "Describes how you are formatting the reflection response in encrypted_reflection_response:\n"
-            "- `text`: the response should be interpreted as plain text with paragraphs separated with newlines\n"
-            "- `parts`: the response is a JSON array of JSON objects, where each object is discriminated by "
-            "type, and the valid types are:\n"
-            "  - `paragraph`: a paragraph of text. has the additional key `value` for the text\n"
-            "  - `voice_note`: a voice note belonging to the user. has the additional key"
-            "`voice_note_uid` containing the uid of the voice note\n"
-        ),
+            "the JWT to provide to the websocket endpoint /api/2/journals/chat to "
+            "retrieve the systems response"
+        )
     )
-    encrypted_reflection_response: str = Field(
-        description="the Fernet-encrypted reflection response, which is base64url encoded"
+    journal_entry_uid: str = Field(
+        description="the same journal entry UID that was provided, for consistency of response format with the greeting endpoint"
+    )
+    journal_entry_jwt: str = Field(
+        description="a new, refreshed JWT that allows the user to respond to the journal entry"
     )
 
 
-ERROR_409_TYPES = Literal["bad_state"]
-ERROR_BAD_STATE_RESPONSE = Response(
+ERROR_400_TYPES = Literal["bad_encryption"]
+ERROR_BAD_ENCRYPTION = Response(
+    content=StandardErrorResponse[ERROR_400_TYPES](
+        type="bad_encryption",
+        message="The provided encrypted message was invalid",
+    ).model_dump_json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+    status_code=400,
+)
+
+
+ERROR_404_TYPES = Literal[
+    "key_unavailable", "journal_entry_not_found", "voice_note_not_found"
+]
+ERROR_KEY_UNAVAILABLE_RESPONSE = Response(
+    content=StandardErrorResponse[ERROR_404_TYPES](
+        type="key_unavailable",
+        message="The provided journal client key is not available or is not acceptable for this transfer. Generate a new one.",
+    ).model_dump_json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+    status_code=404,
+)
+ERROR_JOURNAL_ENTRY_NOT_FOUND = Response(
+    content=StandardErrorResponse[ERROR_404_TYPES](
+        type="journal_entry_not_found",
+        message="The provided journal entry was not found",
+    ).model_dump_json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+    status_code=404,
+)
+ERROR_VOICE_NOTE_NOT_FOUND = Response(
+    content=StandardErrorResponse[ERROR_404_TYPES](
+        type="voice_note_not_found",
+        message="The provided voice note was not found",
+    ).model_dump_json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+    status_code=404,
+)
+
+
+ERROR_409_TYPES = Literal["journal_entry_bad_state"]
+ERROR_JOURNAL_ENTRY_BAD_STATE = Response(
     content=StandardErrorResponse[ERROR_409_TYPES](
-        type="bad_state",
+        type="journal_entry_bad_state",
         message="The provided journal entry is not in the correct state for this operation",
     ).model_dump_json(),
     headers={"Content-Type": "application/json; charset=utf-8"},
     status_code=409,
 )
 
+ERROR_429_TYPES = Literal["system_response_ratelimited"]
+ERROR_RATELIMITED_RESPONSE = Response(
+    content=StandardErrorResponse[ERROR_429_TYPES](
+        type="system_response_ratelimited",
+        message="You have been rate limited. Your response has been stored, but no system message is coming. Please try again later. Oseh+ users have less stringent limits",
+    ).model_dump_json(),
+    headers={"Content-Type": "application/json; charset=utf-8"},
+    status_code=429,
+)
+
 
 @router.post(
-    "/reflection/",
-    response_model=SyncJournalEntryResponse,
+    "/chat/voice_note",
+    response_model=CreateJournalEntryUserVoiceNoteResponse,
     responses={
         "404": {
-            "description": """Further distinguished using `type`:
-
-- `key_unavailable`: the provided journal client key is not available or is not acceptable for this transfer. Generate a new one.
-- `journal_entry_not_found`: there is no journal entry with that uid despite valid authorization; it has been deleted.
-""",
             "model": StandardErrorResponse[ERROR_404_TYPES],
+            "description": "Either the provided journal client key is not available or is not acceptable for this transfer, or the journal entry could not be found.",
         },
         "409": {
-            "description": "The provided journal entry is not in the correct state for this operation",
             "model": StandardErrorResponse[ERROR_409_TYPES],
+            "description": "The provided journal entry is not in the correct state for this operation",
         },
         "429": {
-            "description": "You have been rate limited. Please try again later. Oseh+ users have less stringent limits",
             "model": StandardErrorResponse[ERROR_429_TYPES],
+            "description": (
+                "The user has been rate limited. The response has been stored, "
+                "but no system message is coming. Oseh+ users have less stringent limits.\n\n"
+                "You should wait a bit and use POST /api/1/journals/chat/retry_system_response to try and "
+                "get a response from the system"
+            ),
         },
         **STANDARD_ERRORS_BY_CODE,
     },
 )
-async def create_reflection_response(
-    args: CreateReflectionResponseRequest,
+async def create_journal_entry_user_chat(
+    args: CreateJournalEntryUserVoiceNoteRequest,
     authorization: Annotated[Optional[str], Header()] = None,
 ):
-    """Adds a reflection response to a journal entry, provided it is in an appropriate
-    state to accept one (i.e., it has a reflection question without a corresponding
-    reflection response). Also flags the journal entry to be included in My Journal.
+    """Adds a new user voice note to the journal entry with the indicated uid,
+    as authorized by the given JWT, so long as the journal entry is in the
+    correct state for the operation (i.e., the last message was a greeting
+    from the system).
 
-    Requires standard authorization for the user who owns the given journal entry.
+    The client must connect over TLS as well as encrypt the voice note uid with
+    a journal client key, whose UID is indicated in the request. This is
+    just for consistency as the voice note uid is already an opaque object.
+
+    Requires standard authorization for the same user as in the journal entry
+    JWT to prevent indirectly extending user JWTs via journal entry JWTs.
     """
     async with Itgs() as itgs:
         std_auth_result = await auth_any(itgs, authorization)
@@ -178,8 +229,8 @@ async def create_reflection_response(
             return ERROR_KEY_UNAVAILABLE_RESPONSE
 
         try:
-            reflection_response_bytes = journal_client_key.journal_client_key.decrypt(
-                args.encrypted_reflection_response, ttl=120
+            voice_note_uid_bytes = journal_client_key.journal_client_key.decrypt(
+                args.encrypted_voice_note_uid, ttl=120
             )
         except cryptography.fernet.InvalidToken:
             await handle_warning(
@@ -189,36 +240,55 @@ async def create_reflection_response(
                 f"their message.",
                 is_urgent=True,
             )
-            return Response(status_code=500)
+            return ERROR_BAD_ENCRYPTION
 
-        decrypted_text_to_item = (
-            EditEntryItemDecryptedTextToTextualItem("reflection-response", "self")
-            if args.reflection_response_format == "text"
-            else EditEntryItemDecryptedTextToParagraphsAndVoiceNotes(
-                itgs, "reflection-response", "self", std_auth_result.result.sub
-            )
-        )
-
-        user_sub = std_auth_result.result.sub
         try:
-            reflection_response_parts_res = await decrypted_text_to_item(
-                reflection_response_bytes,
-                error_ctx=lambda: f"user `{user_sub}` creating reflection response to `{args.journal_entry_uid}` on `{args.platform}`",
-            )
-        except Exception as e:
+            voice_note_uid = voice_note_uid_bytes.decode("utf-8", errors="strict")
+        except UnicodeDecodeError as e:
             await handle_warning(
-                f"{__name__}:invalid_parts",
+                f"{__name__}:invalid_token",
                 f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using the journal client "
                 f"key `{args.journal_client_key_uid}` for platform `{args.platform}`, but the decrypted data was "
                 f"not valid ({str(e)})",
             )
-            return Response(status_code=500)
+            return ERROR_BAD_ENCRYPTION
 
-        if reflection_response_parts_res.type != "success":
-            # a warning was already issued with context
-            return Response(status_code=500)
+        # We'll check redis for the voice note in the processing pseudo-set; if not
+        # in there we'll check the db, and if neither work we fail
 
-        reflection_response_data = reflection_response_parts_res.data
+        redis = await itgs.redis()
+        voice_note_owned_by_user_sub_bytes = cast(bytes, await redis.hget(
+            b"voice_notes:processing:" + voice_note_uid_bytes, b"user_sub"  # type: ignore
+        ))
+        if voice_note_owned_by_user_sub_bytes is not None and voice_note_owned_by_user_sub_bytes != std_auth_result.result.sub.encode("utf-8"):
+            await handle_warning(
+                f"{__name__}:voice_note_wrong_owner_redis",
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using a voice "
+                f"note that was found in the processing pseudo-set but was not owned by them; it was owned "
+                f"by {voice_note_owned_by_user_sub_bytes.decode('utf-8')}",
+            )
+            return ERROR_VOICE_NOTE_NOT_FOUND
+        
+        if voice_note_owned_by_user_sub_bytes is None:
+            conn = await itgs.conn()
+            cursor = conn.cursor('weak')
+            response = await cursor.execute(
+                """
+SELECT 1 FROM voice_notes, users
+WHERE
+    voice_notes.uid = ?
+    AND users.sub = ?
+    AND voice_notes.user_id = users.id
+                """,
+                (voice_note_uid, std_auth_result.result.sub),
+            )
+            if not response.results:
+                await handle_warning(
+                    f"{__name__}:voice_note_not_found",
+                    f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using a voice "
+                    f"note that was not found in the processing pseudo-set or the database",
+                )
+                return ERROR_VOICE_NOTE_NOT_FOUND
 
         journal_master_key = await get_journal_master_key_for_encryption(
             itgs, user_sub=std_auth_result.result.sub, now=time.time()
@@ -233,98 +303,40 @@ async def create_reflection_response(
                 status_code=503 if journal_master_key.type == "s3_error" else 500
             )
 
-        if (
-            reflection_response_data.data.type != "textual"
-            or not reflection_response_data.data.parts
-        ):
-            await handle_warning(
-                f"{__name__}:no_message",
-                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
-                f"request but the message was empty after stripping whitespace",
-            )
-            return Response(status_code=500)
-
         master_encrypted_data = journal_master_key.journal_master_key.encrypt_at_time(
             gzip.compress(
                 JournalEntryItemData.__pydantic_serializer__.to_json(
-                    reflection_response_data
+                    JournalEntryItemData(
+                        type="chat",
+                        data=JournalEntryItemDataDataTextual(
+                            type="textual",
+                            parts=[
+                                JournalEntryItemTextualPartVoiceNote(
+                                    type="voice_note", voice_note_uid=voice_note_uid
+                                )
+                            ],
+                        ),
+                        processing_block=JournalEntryItemProcessingBlockedReason(
+                            reasons=["unchecked"]
+                        ),
+                        display_author="self",
+                    )
                 ),
                 mtime=0,
             ),
             int(time.time()),
         ).decode("ascii")
 
-        del reflection_response_parts_res
-        del reflection_response_data
-        del reflection_response_bytes
-
-        ctx = DataToClientContext(
-            user_sub=std_auth_result.result.sub,
-            has_pro=None,
-            memory_cached_journeys=dict(),
-            memory_cached_voice_notes=dict(),
-        )
-
-        stream = JournalChatJobConversationStream(
-            journal_entry_uid=args.journal_entry_uid,
-            user_sub=std_auth_result.result.sub,
-            pending_moderation="ignore",
-            ctx=ctx,
-        )
-        await stream.start()
-
-        have_reflection_question = False
-        while True:
-            next_item = await stream.load_next_item(timeout=5)
-            if next_item.type == "timeout":
-                await stream.cancel()
-                await handle_warning(
-                    f"{__name__}:timeout",
-                    f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
-                    f"request but we timed out waiting for the next item in the conversation stream",
-                )
-                return Response(status_code=503)
-
-            if next_item.type == "finished":
-                break
-
-            if next_item.type != "item":
-                await stream.cancel()
-                await handle_warning(
-                    f"{__name__}:bad_stream_item",
-                    f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
-                    f"request but we failed to load the items in their stream: {next_item.type}",
-                    exc=next_item.error,
-                )
-                return Response(status_code=500)
-
-            if next_item.item.data.type == "reflection-question":
-                have_reflection_question = True
-            elif next_item.item.data.type == "reflection-response":
-                have_reflection_question = False
-
-        if not have_reflection_question:
-            await handle_warning(
-                f"{__name__}:bad_state",
-                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
-                f"request but the journal entry was not in the correct state to accept a reflection response",
-            )
-            return ERROR_BAD_STATE_RESPONSE
-
         conn = await itgs.conn()
         cursor = conn.cursor()
 
         new_journal_entry_item_uid = f"oseh_jei_{secrets.token_urlsafe(16)}"
-        new_journal_entry_item_entry_counter = len(stream.loaded) + 1
         new_journal_entry_item_created_at = time.time()
         new_journal_entry_item_created_unix_date = (
             unix_dates.unix_timestamp_to_unix_date(
                 new_journal_entry_item_created_at, tz=user_tz
             )
         )
-
-        del stream
-
         response = await cursor.executeunified3(
             (
                 (  # user_not_found
@@ -361,24 +373,13 @@ WHERE
     users.sub = ?
     AND users.id = journal_entries.user_id
     AND journal_entries.uid = ?
-    AND ? = (
+    AND 1 = (
         SELECT COUNT(*) FROM journal_entry_items
         WHERE
             journal_entry_items.journal_entry_id = journal_entries.id
     )
-    AND NOT EXISTS (
-        SELECT 1 FROM journal_entry_items
-        WHERE
-            journal_entry_items.journal_entry_id = journal_entries.id
-            AND journal_entry_items.entry_counter >= ?
-    )
                     """,
-                    (
-                        std_auth_result.result.sub,
-                        args.journal_entry_uid,
-                        new_journal_entry_item_entry_counter - 1,
-                        new_journal_entry_item_entry_counter,
-                    ),
+                    (std_auth_result.result.sub, args.journal_entry_uid),
                 ),
                 (  # insert
                     """
@@ -394,7 +395,13 @@ INSERT INTO journal_entry_items (
 SELECT
     ?,
     journal_entries.id,
-    ?,
+    1 + (
+        SELECT 
+            MAX(jei.entry_counter) 
+        FROM journal_entry_items AS jei
+        WHERE 
+            jei.journal_entry_id = journal_entries.id
+    ),
     user_journal_master_keys.id,
     ?,
     ?,
@@ -406,36 +413,26 @@ WHERE
     AND journal_entries.uid = ?
     AND user_journal_master_keys.uid = ?
     AND user_journal_master_keys.user_id = users.id
-    AND ? = (
+    AND 1 = (
         SELECT COUNT(*) FROM journal_entry_items AS jei
         WHERE
             jei.journal_entry_id = journal_entries.id
     )
-    AND NOT EXISTS (
-        SELECT 1 FROM journal_entry_items AS jei
-        WHERE
-            jei.journal_entry_id = journal_entries.id
-            AND jei.entry_counter >= ?
-    )
                     """,
                     (
                         new_journal_entry_item_uid,
-                        new_journal_entry_item_entry_counter,
                         master_encrypted_data,
                         new_journal_entry_item_created_at,
                         new_journal_entry_item_created_unix_date,
                         std_auth_result.result.sub,
                         args.journal_entry_uid,
                         journal_master_key.journal_master_key_uid,
-                        new_journal_entry_item_entry_counter - 1,
-                        new_journal_entry_item_entry_counter,
                     ),
                 ),
                 (  # update
                     """
 UPDATE journal_entries
 SET
-  flags = (journal_entries.flags & (~1)),
   canonical_at = ?,
   canonical_unix_date = ?
 WHERE
@@ -477,7 +474,7 @@ WHERE
             assert (
                 response[5].rows_affected is None or response[5].rows_affected < 1
             ), response
-            return ERROR_JOURNAL_ENTRY_NOT_FOUND_RESPONSE
+            return ERROR_JOURNAL_ENTRY_NOT_FOUND
 
         if not response[2].results:
             assert (
@@ -500,7 +497,7 @@ WHERE
             assert (
                 response[5].rows_affected is None or response[5].rows_affected < 1
             ), response
-            return ERROR_BAD_STATE_RESPONSE
+            return ERROR_JOURNAL_ENTRY_BAD_STATE
 
         if response[4].rows_affected is None or response[4].rows_affected < 1:
             assert (
@@ -517,11 +514,16 @@ WHERE
         assert response[5].rows_affected == 1, response
 
         queue_job_at = time.time()
-        queue_job_result = await lib.journals.start_journal_chat_job.sync_journal_entry(
-            itgs,
-            user_sub=std_auth_result.result.sub,
-            journal_entry_uid=args.journal_entry_uid,
-            now=queue_job_at,
+        queue_job_result = (
+            await lib.journals.start_journal_chat_job.add_journal_entry_chat(
+                itgs,
+                user_sub=std_auth_result.result.sub,
+                journal_entry_uid=args.journal_entry_uid,
+                now=queue_job_at,
+                include_previous_history=(
+                    args.version is not None and args.version > 73
+                ),
+            )
         )
         if queue_job_result.type != "success":
             await handle_warning(
@@ -552,7 +554,7 @@ WHERE
             audience="oseh-journal-entry",
         )
         return Response(
-            content=SyncJournalEntryResponse(
+            content=CreateJournalEntryUserVoiceNoteResponse(
                 journal_chat_jwt=chat_jwt,
                 journal_entry_uid=args.journal_entry_uid,
                 journal_entry_jwt=entry_jwt,

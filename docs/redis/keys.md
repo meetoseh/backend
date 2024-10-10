@@ -3733,11 +3733,12 @@ These are regular keys used by the personalization module
 
 ## Voice Notes namespace
 
-A voice note is an audio file uploaded by a user, which we then transcode & transcribe.
-We assign the voice note a uid immediately and the client can choose to use the local
-audio file for arbitrarily long instead of waiting for us to finish processing. Only
-after successfully transcoding and transcribing the audio file is it included as a row
-in the `voice_notes` table.
+A voice note is an audio file uploaded by a user, which we then transcode,
+transcribe, and analyze. We assign the voice note a uid immediately and the
+client can choose to use the local audio file for arbitrarily long instead of
+waiting for us to finish processing. Only after successfully transcoding,
+transcribing, and analyzing the audio file is it included as a row in the
+`voice_notes` table.
 
 - `voice_notes:processing` goes to a sorted set where the keys are reserved voice note
   uids and the scores are the timestamps when the corresponding voice note uid was
@@ -3754,15 +3755,14 @@ in the `voice_notes` table.
     the voice note uid and we created this hash
   - `upload_success_job_at`: either the special string `not_yet` or the unix timestamp
     when the upload success job was started
+  - `journal_master_key_uid`: either the special string `not_yet` or the uid for
+    the journal master key for encryption within this voice note
   - `stitched_s3_key`: either the special string `not_yet` or s3 key containing the stitched
     file upload
   - `transcribe_job_queued_at`: either the special string `not_yet` or the unix timestamp
     when the transcribe job was queued
   - `encrypted_transcription_vtt`: either the special string `not_yet` or the VTT transcription of
     the voice note, encrypted with a journal master key
-  - `transcription_vtt_journal_master_key_uid`: either the special string
-    `not_yet` or the uid for the journal master key used to encrypt the
-    transcription VTT
   - `transcription_source`: either the special string `not_yet` or a json object representing
     the value for the `transcription_source` column in `voice_notes`, e.g.,
     `{"type":"ai","model":"whisper-1","version":"live"}`
@@ -3775,6 +3775,13 @@ in the `voice_notes` table.
     content_file db row that based on the uploaded audio file
   - `transcode_job_finished_at`: either the special string `not_yet` or the unix timestamp
     when the transcode job was finished
+  - `analyze_job_queued_at`: either the special string `not_yet` or the unix timestamp
+    when the analyze job was queued
+  - `encrypted_time_vs_intensity`: either the special string `not_yet`, or a valid json
+    lines data for the s3 file for `time_vs_avg_signal_intensity_s3_file_id` (see the
+    table documentation for `voice_notes`)
+  - `analyze_job_finished_at`: either the special string `not_yet` or the unix timestamp
+    when the analyze job was finished
   - `finalize_job_queued_at`: either the special string `not_yet` or the unix timestamp
     when the finalize job was queued
 
@@ -3785,6 +3792,8 @@ in the `voice_notes` table.
 - `voice_notes:warned_stuck:{uid}` goes to an arbitrary value if we've already warned slack
   that the voice note with the given uid has been processing for too long. Always has an
   expiration set to 48 hours after the voice note was reserved.
+
+see also: `ps:voice_notes:transcripts:{uid}`
 
 ## pubsub keys
 
@@ -4158,8 +4167,22 @@ in the `voice_notes` table.
   report when one of the locks on a client flow graph analysis was changed, i.e., a reader
   or writer lock was acquired or releasd. Messages are formatted as `(uint32, blob, uint64, uint16, uint8)`
   where the parts are:
+
   - length of the client flow graph analysis uid
   - the client flow graph analysis uid
   - the value of `client_flow_graph_analysis:version` for the changed analysis
   - the new number of readers
   - the new number of writers (1 or 0)
+
+- `ps:voice_notes:transcripts:{uid}` is used to deliver the encrypted transcript vtt
+  for a voice note as soon as it's available. Generally this is only listened to when
+  looking at a journal entry that references a voice note which might not have been
+  stored in the database yet, and where minimizing latency is important.
+  Messages are formatted at
+  `(uint32, blob, uint32, blob, uint64, blob)` where the parts are:
+  - length of the voice note uid
+  - the voice note uid
+  - length of the journal master key uid
+  - the journal master key uid
+  - length of the encrypted vtt transcript
+  - the encrypted vtt transcript

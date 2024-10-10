@@ -1,6 +1,10 @@
 import gzip
+import hmac
+import io
 import time
-from typing import Callable, Literal, Protocol, Union, cast
+from typing import Callable, List, Literal, Protocol, Union, cast
+
+from pydantic import TypeAdapter
 
 from error_middleware import handle_warning
 from itgs import Itgs
@@ -11,6 +15,8 @@ from lib.journals.journal_entry_item_data import (
     JournalEntryItemDataDataTextual,
     JournalEntryItemProcessingBlockedReason,
     JournalEntryItemTextualPartParagraph,
+    JournalEntryItemTextualPartVoiceNote,
+    JournalEntryItemTextualPart,
 )
 from lib.journals.master_keys import (
     get_journal_master_key_for_encryption,
@@ -191,13 +197,6 @@ class EditEntryItemDecryptedTextToTextualItem:
             return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
 
         decrypted_text_str = decrypted_text_str.strip()
-        if decrypted_text_str == "":
-            await handle_warning(
-                f"{__name__}:empty_payload",
-                f"{error_ctx()}, but the payload was empty (unstripped length: {len(decrypted_text_str)})",
-            )
-            return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
-
         paragraphs = break_paragraphs(decrypted_text_str)
 
         return EditEntryItemDecryptedTextToItemResultSuccess(
@@ -208,6 +207,160 @@ class EditEntryItemDecryptedTextToTextualItem:
                         JournalEntryItemTextualPartParagraph(type="paragraph", value=p)
                         for p in paragraphs
                     ],
+                    type="textual",
+                ),
+                type=self.type,
+                processing_block=JournalEntryItemProcessingBlockedReason(
+                    reasons=["unchecked"]
+                ),
+                display_author=self.display_author,
+            ),
+        )
+
+
+paragraphs_and_voice_notes_adapter = cast(
+    TypeAdapter[
+        List[
+            Union[
+                JournalEntryItemTextualPartVoiceNote,
+                JournalEntryItemTextualPartParagraph,
+            ]
+        ]
+    ],
+    TypeAdapter(
+        List[
+            Union[
+                JournalEntryItemTextualPartVoiceNote,
+                JournalEntryItemTextualPartParagraph,
+            ]
+        ]
+    ),
+)
+
+
+class EditEntryItemDecryptedTextToParagraphsAndVoiceNotes:
+    """Takes in a JSON list of
+    JournalEntryItemTextualPartVoiceNote|JournalEntryItemTextualPartParagraph
+    """
+
+    def __init__(
+        self,
+        itgs: Itgs,
+        type: Literal["chat", "reflection-question", "reflection-response"],
+        display_author: Literal["self", "other"],
+        user_sub: str,
+    ):
+        self.itgs = itgs
+        self.type: Literal["chat", "reflection-question", "reflection-response"] = type
+        self.display_author: Literal["self", "other"] = display_author
+        self.user_sub = user_sub
+
+    async def __call__(
+        self, payload: bytes, /, *, error_ctx: Callable[[], str]
+    ) -> EditEntryItemDecryptedTextToItemResult:
+        try:
+            result = paragraphs_and_voice_notes_adapter.validate_json(payload)
+        except Exception as e:
+            await handle_warning(
+                f"{__name__}:decryption_failure",
+                f"{error_ctx()} Could not interpret the payload as paragraphs and voice notes",
+                exc=e,
+            )
+            return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
+
+        voice_note_uids: List[str] = []
+        for part in result:
+            if part.type == "voice_note":
+                voice_note_uids.append(part.voice_note_uid)
+            elif part.type == "paragraph":
+                part.value = part.value.strip()
+
+        result = [
+            part for part in result if part.type != "paragraph" or part.value != ""
+        ]
+
+        unverified = set(voice_note_uids)
+        if unverified:
+            conn = await self.itgs.conn()
+            cursor = conn.cursor()
+
+            batch_cte = io.StringIO()
+            batch_cte.write("WITH batch(uid) AS (VALUES (?)")
+            for _ in range(1, len(voice_note_uids)):
+                batch_cte.write(", (?)")
+            batch_cte.write(")")
+            response = await cursor.execute(
+                batch_cte.getvalue()
+                + """
+SELECT
+    voice_notes.uid
+FROM batch, voice_notes
+WHERE
+    batch.uid = voice_notes.uid
+    AND voice_notes.user_id = (SELECT users.id FROM users WHERE users.sub=?)
+                """,
+                voice_note_uids + [self.user_sub],
+                read_consistency="none",
+            )
+            for row in response.results or []:
+                unverified.discard(row[0])
+
+        if unverified:
+            unver_list = list(unverified)
+            redis = await self.itgs.redis()
+            async with redis.pipeline() as pipe:
+                for uid in unver_list:
+                    await pipe.hget(f"voice_notes:processing:{uid}".encode("utf-8"), b"user_sub")  # type: ignore
+                response = cast(List[bytes], await pipe.execute())
+
+            exp_user_sub = self.user_sub.encode("utf-8")
+            for uid, user_sub in zip(unver_list, response):
+                if user_sub is None:
+                    continue
+                if not hmac.compare_digest(user_sub, exp_user_sub):
+                    await handle_warning(
+                        f"{__name__}:voice_note:unauthorized",
+                        f"{error_ctx()} tried to reference voice note {uid}, but it does not belong to them",
+                    )
+                    return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
+                unverified.discard(uid)
+
+        if unverified:
+            conn = await self.itgs.conn()
+            cursor = conn.cursor()
+            batch_cte = io.StringIO()
+            batch_cte.write("WITH batch(uid) AS (VALUES (?)")
+            for _ in range(1, len(voice_note_uids)):
+                batch_cte.write(", (?)")
+            batch_cte.write(")")
+            response = await cursor.execute(
+                batch_cte.getvalue()
+                + """
+SELECT
+    voice_notes.uid
+FROM batch, voice_notes
+WHERE
+    batch.uid = voice_notes.uid
+    AND voice_notes.user_id = (SELECT users.id FROM users WHERE users.sub=?)
+                """,
+                voice_note_uids + [self.user_sub],
+                read_consistency="weak",
+            )
+            for row in response.results or []:
+                unverified.discard(row[0])
+
+        if unverified:
+            await handle_warning(
+                f"{__name__}:voice_note:not_found",
+                f"{error_ctx()} tried to reference voice notes {unverified}, but they do not exist",
+            )
+            return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
+
+        return EditEntryItemDecryptedTextToItemResultSuccess(
+            type="success",
+            data=JournalEntryItemData(
+                data=JournalEntryItemDataDataTextual(
+                    parts=cast(List[JournalEntryItemTextualPart], result),
                     type="textual",
                 ),
                 type=self.type,

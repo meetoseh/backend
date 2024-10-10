@@ -1,5 +1,6 @@
 import asyncio
 import io
+import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -11,6 +12,7 @@ from models import AUTHORIZATION_UNKNOWN_TOKEN, STANDARD_ERRORS_BY_CODE
 from lifespan import lifespan_handler
 from itgs import Itgs
 import perpetual_pub_sub as pps
+from lib.journals.encode_float import encode_float
 
 
 router = APIRouter()
@@ -31,6 +33,15 @@ class TranscriptPhrase(BaseModel):
     )
     phrase: str = Field(description="The text of the phrase")
 
+    def model_dump_for_integrity(self, out: io.BytesIO) -> None:
+        out.write(b'{"ends_at": ')
+        out.write(encode_float(self.ends_at).encode("ascii"))
+        out.write(b', "phrase": ')
+        out.write(json.dumps(self.phrase).encode("utf-8"))
+        out.write(b', "starts_at": ')
+        out.write(encode_float(self.starts_at).encode("ascii"))
+        out.write(b"}")
+
 
 class Transcript(BaseModel):
     """A transcript of a recording"""
@@ -43,6 +54,17 @@ class Transcript(BaseModel):
     phrases: List[TranscriptPhrase] = Field(
         description="The phrases in this transcript, in ascending order of start time"
     )
+
+    def model_dump_for_integrity(self, out: io.BytesIO) -> None:
+        out.write(b'{"phrases": [')
+        if self.phrases:
+            self.phrases[0].model_dump_for_integrity(out)
+            for i in range(1, len(self.phrases)):
+                out.write(b", ")
+                self.phrases[i].model_dump_for_integrity(out)
+        out.write(b'], "uid": "')
+        out.write(self.uid.encode("ascii"))
+        out.write(b'"}')
 
 
 @router.get(

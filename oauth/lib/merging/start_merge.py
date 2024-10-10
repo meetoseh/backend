@@ -31,6 +31,7 @@ from oauth.lib.merging.operation_order import OperationOrder
 from oauth.lib.merging.query import MergeContext, MergeQuery
 import oauth.lib.merging.start_merge_auth as start_merge_auth
 import oauth.lib.merging.confirm_merge_auth as confirm_merge_auth
+from users.lib.entitlements import get_entitlement
 from users.me.routes.read_daily_reminder_settings import (
     EMAIL_PREFERRED_CHANNELS,
     SMS_PREFERRED_CHANNELS,
@@ -408,6 +409,21 @@ async def attempt_start_merge(
                 )
                 await handle_error(exc, extra_info=f"{idx=}")
                 last_err = exc
+
+        await log.out.write(b"\n\n--RESTORING PURCHASES--\n")
+        pro_entitlement = await get_entitlement(
+            itgs, user_sub=original_user.sub, identifier="pro", force=True
+        )
+        if pro_entitlement is None:
+            await log.out.write(b"pro entitlement is None\n")
+        else:
+            await log.out.write(b"pro entitlement found:\n")
+            await log.out.write(
+                pro_entitlement.__pydantic_serializer__.to_json(
+                    pro_entitlement, indent=2
+                )
+            )
+            await log.out.write(b"\n")
 
         await log.out.write(b"\n\n---STORING STATS---\n")
         await log.out.write(b"stats:\n{\n")

@@ -1,6 +1,19 @@
-from typing import List, Literal, Tuple
+from typing import List, Literal, Tuple, TYPE_CHECKING
 from dataclasses import dataclass
 from typing_extensions import TypedDict
+import importlib
+
+if TYPE_CHECKING:
+    from transcripts.routes.show import (
+        Transcript as ExternalTranscript,
+        TranscriptPhrase as ExternalTranscriptPhrase,
+    )
+
+    create_external_transcript = ExternalTranscript
+    create_external_transcript_phrase = ExternalTranscriptPhrase
+else:
+    create_external_transcript = None
+    create_external_transcript_phrase = None
 
 
 @dataclass
@@ -169,6 +182,29 @@ class Transcript:
             if tr.end.in_seconds() + margin_late >= time:
                 result.append(idx)
         return result
+
+    def to_external(self, /, *, uid: str) -> "ExternalTranscript":
+        """Converts this transcript to the external representation given the
+        external identifier
+        """
+        global create_external_transcript, create_external_transcript_phrase
+
+        if create_external_transcript is None:
+            mod = importlib.import_module("transcripts.routes.show")
+            create_external_transcript = mod.Transcript
+            create_external_transcript_phrase = mod.TranscriptPhrase
+
+        return create_external_transcript(
+            uid=uid,
+            phrases=[
+                create_external_transcript_phrase(
+                    starts_at=phrase[0].start.in_seconds(),
+                    ends_at=phrase[0].end.in_seconds(),
+                    phrase=phrase[1],
+                )
+                for phrase in self.phrases
+            ],
+        )
 
 
 def parse_vtt_transcript(raw: str) -> Transcript:

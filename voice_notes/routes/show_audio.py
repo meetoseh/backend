@@ -171,11 +171,11 @@ async def show_voice_note_audio(
                     b"user_sub",  # type: ignore
                 ),
             )
-            if (
-                found_in_processing is not None
-                and found_in_processing != std_auth_result.result.sub.encode("utf-8")
-            ):
-                return ERROR_VOICE_NOTE_NOT_FOUND_RESPONSE
+            if found_in_processing is not None:
+                if found_in_processing != std_auth_result.result.sub.encode("utf-8"):
+                    return ERROR_VOICE_NOTE_NOT_FOUND_RESPONSE
+                return ERROR_VOICE_NOTE_PROCESSING_RESPONSE
+
             db_info = await _get_from_db(
                 itgs,
                 voice_note_uid=args.voice_note_uid,
@@ -197,7 +197,7 @@ async def show_voice_note_audio(
                 f"{__name__}:master_key:{master_key.type}",
                 f"failed to get master key {db_info.user_journal_master_key_uid} for user {std_auth_result.result.sub}",
             )
-            return ERROR_VOICE_NOTE_PROCESSING_RESPONSE
+            return ERROR_VOICE_NOTE_NOT_FOUND_RESPONSE
 
         files = await itgs.files()
         out = io.BytesIO()
@@ -210,7 +210,7 @@ async def show_voice_note_audio(
                 f"{__name__}:tvi_header",
                 f"bad header for tvi file at {db_info.tvi_s3_file_key} for user {std_auth_result.result.sub}",
             )
-            return ERROR_VOICE_NOTE_PROCESSING_RESPONSE
+            return Response(status_code=500)
 
         bins: List[List[float]] = []
         try:

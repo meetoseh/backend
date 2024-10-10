@@ -149,9 +149,11 @@ async def show_voice_note_transcript(
             try:
                 await voice_note_metadata_task
             except asyncio.CancelledError:
-                current_task = asyncio.current_task()
-                if current_task is not None and current_task.cancelling() > 0:
-                    raise
+                # PY 3.11
+                # current_task = asyncio.current_task()
+                # if current_task is not None and current_task.cancelling() > 0:
+                #     raise
+                raise
             await handle_warning(
                 f"{__name__}:timeout",
                 f"User `{std_auth_result.result.sub}` had a JWT for access to the voice note "

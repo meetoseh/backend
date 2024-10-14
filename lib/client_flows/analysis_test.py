@@ -28,6 +28,7 @@ async def main():
         journal_entries_in_history_today=0,
         has_oseh_plus=False,
         platform="ios",
+        has_recoverable_identity=False,
     )
     async with lifespan.top_level_lifespan_handler(None), Itgs() as itgs:
         print("Detecting and cleaning up any leaked keys...")

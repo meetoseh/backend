@@ -95,6 +95,7 @@ class ClientFlowAnalysisEnvironment(BaseModel):
         description="How many journal entries they made today"
     )
     has_oseh_plus: bool = Field(description="If they have oseh+")
+    has_recoverable_identity: bool = Field(description="If they have a sign in with google, apple, or email identity attached")
     platform: VisitorSource = Field(description="The platform they are on")
 
     def to_redis_identifier(self) -> bytes:
@@ -116,7 +117,12 @@ class ClientFlowAnalysisEnvironment(BaseModel):
         raw.write(str(int(self.has_oseh_plus)).encode("ascii"))
         raw.write(b', "platform": "')
         raw.write(self.platform.encode("ascii"))
-        raw.write(b'"}')
+        raw.write(b'", "has_recoverable_identity": ')
+        if self.has_recoverable_identity:
+            raw.write(b'true')
+        else:
+            raw.write(b'false')
+        raw.write(b'}')
 
         return base64.urlsafe_b64encode(hashlib.sha256(raw.getvalue()).digest())
 
@@ -128,6 +134,7 @@ class ClientFlowAnalysisEnvironment(BaseModel):
             journal_entries_in_history_today=Wrapped(
                 self.journal_entries_in_history_today
             ),
+            has_recoverable_identity=Wrapped(self.has_recoverable_identity),
         )
 
     def to_predicate_params(self) -> ClientFlowPredicateParams:

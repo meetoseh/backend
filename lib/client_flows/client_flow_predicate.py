@@ -58,6 +58,10 @@ class ClientFlowPredicate(BaseModel):
         None,
         description="The number of journal entries added to the users journal created today",
     )
+    has_recoverable_identity: Optional[FilterItemModel[bool]] = Field(
+        None,
+        description="If the user has a recoverable identity (not Silent or Passkey)",
+    )
     or_predicate: Optional["ClientFlowPredicate"] = Field(
         None,
         description="If this is not None, then this predicate is satisfied if either this predicate or the or_predicate is satisfied. Short-circuits, outside first",
@@ -86,6 +90,7 @@ class CheckFlowPredicateContext:
     last_journey_rating: Optional[Wrapped[Optional[int]]] = None
     journeys_today: Optional[Wrapped[int]] = None
     journal_entries_in_history_today: Optional[Wrapped[int]] = None
+    has_recoverable_identity: Optional[Wrapped[bool]] = None
 
 
 class ClientFlowPredicateParams(TypedDict):
@@ -216,6 +221,14 @@ async def _check_flow_predicate_non_recursive(
             journal_entries_in_history_today
         ):
             return False
+    if rule.has_recoverable_identity is not None:
+        has_recoverable_identity = await _get_has_recoverable_identity(
+            itgs, user_sub=user_sub, ctx=ctx
+        )
+        if not rule.has_recoverable_identity.to_result().check_constant(
+            has_recoverable_identity
+        ):
+            return False
     return True
 
 
@@ -326,6 +339,34 @@ WHERE
     journal_entries_in_history_today = cast(int, response.results[0][0])
     ctx.journal_entries_in_history_today = Wrapped(journal_entries_in_history_today)
     return journal_entries_in_history_today
+
+
+async def _get_has_recoverable_identity(
+    itgs: Itgs, /, *, user_sub: str, ctx: CheckFlowPredicateContext
+) -> bool:
+    if ctx.has_recoverable_identity is not None:
+        return ctx.has_recoverable_identity.value
+
+    conn = await itgs.conn()
+    cursor = conn.cursor("weak")
+    response = await cursor.execute(
+        """
+SELECT 1 FROM users, user_identities
+WHERE
+    users.sub = ?
+    AND user_identities.user_id = users.id
+    AND user_identities.provider IN (
+        'SignInWithApple',
+        'Google', 
+        'Direct'
+    )
+LIMIT 1
+        """,
+        (user_sub,),
+    )
+    has_recoverable_identity = bool(response.results)
+    ctx.has_recoverable_identity = Wrapped(has_recoverable_identity)
+    return has_recoverable_identity
 
 
 async def _get_user_tz(

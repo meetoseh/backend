@@ -692,10 +692,11 @@ async def _safe_cancel(task: asyncio.Task) -> None:
     try:
         await task
     except asyncio.CancelledError:
-        current_task = asyncio.current_task()
         # PY 3.11
+        # current_task = asyncio.current_task()
         # if current_task is not None and current_task.cancelling() > 0:
         #     raise
+        ...
 
 
 async def _batch_load_voice_notes_from_db(

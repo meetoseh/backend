@@ -146,6 +146,11 @@ async def show_voice_note_transcript(
                 voice_note_metadata_task, timeout=5
             )
         except asyncio.TimeoutError:
+            await handle_warning(
+                f"{__name__}:timeout",
+                f"User `{std_auth_result.result.sub}` had a JWT for access to the voice note "
+                f"with uid `{args.voice_note_uid}`, but we could not find the transcript in time",
+            )
             try:
                 await voice_note_metadata_task
             except asyncio.CancelledError:
@@ -153,12 +158,7 @@ async def show_voice_note_transcript(
                 # current_task = asyncio.current_task()
                 # if current_task is not None and current_task.cancelling() > 0:
                 #     raise
-                raise
-            await handle_warning(
-                f"{__name__}:timeout",
-                f"User `{std_auth_result.result.sub}` had a JWT for access to the voice note "
-                f"with uid `{args.voice_note_uid}`, but we could not find the transcript in time",
-            )
+                ...
             return Response(
                 status_code=503,
                 headers={

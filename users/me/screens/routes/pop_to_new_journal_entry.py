@@ -119,9 +119,14 @@ async def pop_to_new_journal_entry(
             return await _realize(screen)
 
         queue_job_at = time.time()
-        queue_job_result = await lib.journals.start_journal_chat_job.create_journal_entry_with_greeting(
-            itgs, user_sub=std_auth_result.result.sub, now=queue_job_at
-        )
+        if args.trigger.parameters.initialize_with == "greeting":
+            queue_job_result = await lib.journals.start_journal_chat_job.create_journal_entry_with_greeting(
+                itgs, user_sub=std_auth_result.result.sub, now=queue_job_at
+            )
+        else:
+            queue_job_result = await lib.journals.start_journal_chat_job.create_journal_entry_with_reflection_question(
+                itgs, user_sub=std_auth_result.result.sub, now=queue_job_at
+            )
 
         if queue_job_result.type != "success":
             await handle_warning(

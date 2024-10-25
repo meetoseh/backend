@@ -357,7 +357,21 @@ alphabetical order, with logs moved to the bottom:
     - `context`
       - `days_per_week`: the days per week on the deleted record
 52. `move_voice_notes`: standard update
-53. `move_created_at`: we set the `created_at` timestamp of the original user to the
+53. `move_name`: we set the `given_name` and `family_name` of the original user to the
+    values on the merging user if they are null on the original user but not null on
+    the merging user.
+    - `context`:
+      - `original_given_name`: the given name of the original user
+      - `merging_given_name`: the given name of the merging user
+      - `given_name_assignment_required`: true if `merging_given_name` is not null and
+        `original_given_name` is null, false otherwise
+      - `original_family_name`: the family name of the original user
+      - `merging_family_name`: the family name of the merging user
+      - `family_name_assignment_required`: true if `merging_family_name` is not null and
+        `original_family_name` is null, false otherwise
+54. `move_admin`: we set `admin` to `1` on the original user if it was 0 and it is `1`
+    on the merging user
+55. `move_created_at`: we set the `created_at` timestamp of the original user to the
     earlier of the original users created at and the merging users created at. this may
     mean that, incidentally, some computed attribution information is excluded.
     - `context`:

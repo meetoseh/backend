@@ -308,6 +308,8 @@ async def create_merging_queries(
             operation_order=OperationOrder.move_voice_notes,
         ),
         *await _create_move_created_at_queries(itgs, ctx),
+        *await _create_move_name_queries(itgs, ctx),
+        *await _create_move_admin_queries(itgs, ctx),
         *await _delete_merging_user(itgs, ctx),
     ]
 
@@ -3373,6 +3375,7 @@ async def _move_user_goals__transfer(itgs: Itgs, octx: _Ctx, /) -> Sequence[Merg
         ),
     ]
 
+
 async def _move_user_goals__delete(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQuery]:
     log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
     await octx.log.write(
@@ -3433,7 +3436,9 @@ async def _move_user_goals__delete(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQ
         assert logged is not None, "delete step handler called before log step"
 
         num_deleted = mctx.result.rows_affected or 0
-        await mctx.log.write(b"num_deleted: " + str(num_deleted).encode("ascii") + b"\n")
+        await mctx.log.write(
+            b"num_deleted: " + str(num_deleted).encode("ascii") + b"\n"
+        )
         if num_deleted <= 0:
             assert (
                 not logged
@@ -3490,6 +3495,7 @@ async def _move_user_goals__delete(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQ
             handler=partial(handler, "delete"),
         ),
     ]
+
 
 async def _create_move_created_at_queries(
     itgs: Itgs, octx: _Ctx, /
@@ -3641,6 +3647,399 @@ async def _create_move_created_at_queries(
         MergeQuery(
             query=(
                 f"{ctes} UPDATE users SET created_at=merging_user.created_at "
+                "FROM merge_account_log, merging_user, original_user "
+                "WHERE"
+                " merge_account_log.uid = ?"
+                " AND json_extract(merge_account_log.reason, '$.context.assignment_required')"
+                " AND users.id = original_user.id"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+            ],
+            handler=partial(handler, "assign"),
+        ),
+    ]
+
+
+async def _create_move_name_queries(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQuery]:
+    log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
+    await octx.log.write(
+        b"- move_name -\n"
+        b"computed:\n"
+        b"  log_uid: " + log_uid.encode("ascii") + b"\n"
+    )
+
+    logged: Optional[bool] = None
+    merging_given_name: Optional[str] = None
+    original_given_name: Optional[str] = None
+    expected_given_name_assignment: Optional[bool] = None
+    merging_family_name: Optional[str] = None
+    original_family_name: Optional[str] = None
+    expected_family_name_assignment: Optional[bool] = None
+
+    async def handler(
+        step: Literal["log", "assign_given_name", "assign_family_name"],
+        mctx: MergeContext,
+    ):
+        nonlocal logged, merging_given_name, original_given_name, expected_given_name_assignment, merging_family_name, original_family_name, expected_family_name_assignment
+
+        if step == "log":
+            assert logged is None, "handler called twice for log step"
+            assert merging_given_name is None, "merging_given_name set before log step"
+            assert (
+                original_given_name is None
+            ), "original_given_name set before log step"
+            assert (
+                expected_given_name_assignment is None
+            ), "expected_given_name_assignment set before log step"
+            assert (
+                merging_family_name is None
+            ), "merging_family_name set before log step"
+            assert (
+                original_family_name is None
+            ), "original_family_name set before log step"
+            assert (
+                expected_family_name_assignment is None
+            ), "expected_family_name_assignment set before log step"
+
+            logged = not not mctx.result.rows_affected
+            if not logged and not mctx.merging_expected:
+                return
+
+            assert logged is True, "we always log this step to not lose name"
+
+            conn = await itgs.conn()
+            cursor = conn.cursor("weak")
+
+            resp = await _log_and_execute_query(
+                cursor,
+                "SELECT json_extract(reason, '$.context') FROM merge_account_log WHERE uid=?",
+                (log_uid,),
+                mctx.log,
+            )
+            assert resp.results, resp
+            assert len(resp.results) == 1, resp
+            assert len(resp.results[0]) == 1, resp
+            raw_context = resp.results[0][0]
+            parsed_context = json.loads(raw_context)
+            assert isinstance(parsed_context, dict), resp
+            assert "merging_given_name" in parsed_context, resp
+            assert "original_given_name" in parsed_context, resp
+            assert "given_name_assignment_required" in parsed_context, resp
+            assert "merging_family_name" in parsed_context, resp
+            assert "original_family_name" in parsed_context, resp
+            assert "family_name_assignment_required" in parsed_context, resp
+
+            merging_given_name = parsed_context["merging_given_name"]
+            original_given_name = parsed_context["original_given_name"]
+            expected_given_name_assignment = parsed_context[
+                "given_name_assignment_required"
+            ]
+            merging_family_name = parsed_context["merging_family_name"]
+            original_family_name = parsed_context["original_family_name"]
+            expected_family_name_assignment = parsed_context[
+                "family_name_assignment_required"
+            ]
+
+            assert merging_given_name is None or isinstance(
+                merging_given_name, str
+            ), resp
+            assert original_given_name is None or isinstance(
+                original_given_name, str
+            ), resp
+            assert expected_given_name_assignment is (
+                merging_given_name is not None and original_given_name is None
+            ), resp
+            assert merging_family_name is None or isinstance(
+                merging_family_name, str
+            ), resp
+            assert original_family_name is None or isinstance(
+                original_family_name, str
+            ), resp
+            assert expected_family_name_assignment is (
+                merging_family_name is not None and original_family_name is None
+            ), resp
+
+            await mctx.log.write(
+                b"parsed_context:\n"
+                + json.dumps(parsed_context, indent=2).encode("utf-8")
+                + b"\n"
+            )
+            return
+
+        assert step in ("assign_given_name", "assign_family_name"), step
+        affected_rows = mctx.result.rows_affected or 0
+
+        assert logged is not None, "assign step handler called before log step"
+        if not logged:
+            assert affected_rows == 0, f"{affected_rows=} != 0"
+            return
+
+        assert (
+            expected_given_name_assignment is not None
+        ), "assign step handler expected expected_given_name_assignment"
+        assert (
+            expected_family_name_assignment is not None
+        ), "assign step handler expected expected_family_name_assignment"
+
+        expected_assignment = (
+            expected_given_name_assignment
+            if step == "assign_given_name"
+            else expected_family_name_assignment
+        )
+
+        assert affected_rows == int(
+            expected_assignment
+        ), f"{affected_rows=} != {expected_assignment=}"
+        await mctx.log.write(
+            b"affected_rows: "
+            + str(affected_rows).encode("ascii")
+            + b"\n"
+            + b"matches expected assignment\n"
+        )
+
+        conn = await itgs.conn()
+        cursor = conn.cursor("weak")
+        resp = await _log_and_execute_query(
+            cursor,
+            (
+                "SELECT given_name FROM users WHERE sub=?"
+                if step == "assign_given_name"
+                else "SELECT family_name FROM users WHERE sub=?"
+            ),
+            (octx.original_user_sub,),
+            mctx.log,
+        )
+        assert resp.results, resp
+        assert len(resp.results) == 1, resp
+        assert len(resp.results[0]) == 1, resp
+        after_merge_value = resp.results[0][0]
+        assert after_merge_value is None or isinstance(after_merge_value, str), resp
+
+        if step == "assign_given_name":
+            if expected_given_name_assignment:
+                assert (
+                    after_merge_value == merging_given_name
+                ), f"{after_merge_value=} != {merging_given_name=}"
+            else:
+                assert (
+                    after_merge_value == original_given_name
+                ), f"{after_merge_value=} != {original_given_name=}"
+        else:
+            if expected_family_name_assignment:
+                assert (
+                    after_merge_value == merging_family_name
+                ), f"{after_merge_value=} != {merging_family_name=}"
+            else:
+                assert (
+                    after_merge_value == original_family_name
+                ), f"{after_merge_value=} != {original_family_name=}"
+
+    ctes, ctes_qargs = _merging_user_and_original_user_ctes(
+        octx,
+        merging_user_given_name=True,
+        original_user_given_name=True,
+        merging_user_family_name=True,
+        original_user_family_name=True,
+    )
+    return [
+        MergeQuery(
+            query=(
+                f"{ctes} INSERT INTO merge_account_log ("
+                " uid, user_id, operation_uid, operation_order, phase, step, step_result, reason, created_at"
+                ") SELECT"
+                " ?, original_user.id, ?, ?, 'merging', 'move_name', 'xfer',"
+                " json_insert("
+                "  '{}'"
+                "  , '$.context.merging_given_name', merging_user.given_name"
+                "  , '$.context.original_given_name', original_user.given_name"
+                "  , '$.context.given_name_assignment_required', json(iif(merging_user.given_name IS NOT NULL AND original_user.given_name IS NULL, 'true', 'false'))"
+                "  , '$.context.merging_family_name', merging_user.family_name"
+                "  , '$.context.original_family_name', original_user.family_name"
+                "  , '$.context.family_name_assignment_required', json(iif(merging_user.family_name IS NOT NULL AND original_user.family_name IS NULL, 'true', 'false'))"
+                " ), ? "
+                "FROM merging_user, original_user"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+                octx.operation_uid,
+                OperationOrder.move_name.value,
+                octx.merge_at,
+            ],
+            handler=partial(handler, "log"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes} UPDATE users SET given_name=merging_user.given_name "
+                "FROM merge_account_log, merging_user, original_user "
+                "WHERE"
+                " merge_account_log.uid = ?"
+                " AND json_extract(merge_account_log.reason, '$.context.given_name_assignment_required')"
+                " AND users.id = original_user.id"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+            ],
+            handler=partial(handler, "assign_given_name"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes} UPDATE users SET family_name=merging_user.family_name "
+                "FROM merge_account_log, merging_user, original_user "
+                "WHERE"
+                " merge_account_log.uid = ?"
+                " AND json_extract(merge_account_log.reason, '$.context.family_name_assignment_required')"
+                " AND users.id = original_user.id"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+            ],
+            handler=partial(handler, "assign_family_name"),
+        ),
+    ]
+
+
+async def _create_move_admin_queries(itgs: Itgs, octx: _Ctx, /) -> Sequence[MergeQuery]:
+    log_uid = f"oseh_mal_{secrets.token_urlsafe(16)}"
+    await octx.log.write(
+        b"- move_admin -\n"
+        b"computed:\n"
+        b"  log_uid: " + log_uid.encode("ascii") + b"\n"
+    )
+
+    logged: Optional[bool] = None
+    merging_admin: Optional[bool] = None
+    original_admin: Optional[bool] = None
+    expected_assignment: Optional[bool] = None
+
+    async def handler(step: Literal["log", "assign"], mctx: MergeContext):
+        nonlocal logged, merging_admin, original_admin, expected_assignment
+
+        if step == "log":
+            assert logged is None, "handler called twice for log step"
+            assert merging_admin is None, "merging_admin set before log step"
+            assert original_admin is None, "original_admin set before log step"
+            assert (
+                expected_assignment is None
+            ), "expected_assignment set before log step"
+
+            logged = not not mctx.result.rows_affected
+            if not logged and not mctx.merging_expected:
+                return
+
+            assert logged is True, "we always log this step to not lose admin status"
+
+            conn = await itgs.conn()
+            cursor = conn.cursor("weak")
+
+            resp = await _log_and_execute_query(
+                cursor,
+                "SELECT json_extract(reason, '$.context') FROM merge_account_log WHERE uid=?",
+                (log_uid,),
+                mctx.log,
+            )
+            assert resp.results, resp
+            assert len(resp.results) == 1, resp
+            assert len(resp.results[0]) == 1, resp
+            raw_context = resp.results[0][0]
+            parsed_context = json.loads(raw_context)
+            assert isinstance(parsed_context, dict), resp
+            assert "original_admin" in parsed_context, resp
+            assert "merging_admin" in parsed_context, resp
+            assert "assignment_required" in parsed_context, resp
+
+            merging_admin = parsed_context["merging_admin"]
+            original_admin = parsed_context["original_admin"]
+            expected_assignment = parsed_context["assignment_required"]
+
+            assert isinstance(merging_admin, bool), resp
+            assert isinstance(original_admin, bool), resp
+            assert isinstance(expected_assignment, bool), resp
+            assert expected_assignment is (
+                merging_admin is True and original_admin is False
+            ), resp
+
+            await mctx.log.write(
+                b"parsed_context:\n"
+                + json.dumps(parsed_context, indent=2).encode("utf-8")
+                + b"\n"
+            )
+            return
+
+        assert step == "assign", step
+        affected_rows = mctx.result.rows_affected or 0
+
+        assert logged is not None, "assign step handler called before log step"
+        if not logged:
+            assert affected_rows == 0, f"{affected_rows=} != 0"
+            return
+
+        assert merging_admin is not None, "assign step handler expected merging_admin"
+        assert original_admin is not None, "assign step handler expected original_admin"
+        assert (
+            expected_assignment is not None
+        ), "assign step handler expected expected_assignment"
+
+        assert affected_rows == int(
+            expected_assignment
+        ), f"{affected_rows=} != {expected_assignment=}"
+        await mctx.log.write(
+            b"affected_rows: "
+            + str(affected_rows).encode("ascii")
+            + b"\n"
+            + b"matches expected assignment\n"
+        )
+
+        conn = await itgs.conn()
+        cursor = conn.cursor("weak")
+        resp = await _log_and_execute_query(
+            cursor,
+            "SELECT admin FROM users WHERE sub=?",
+            (octx.original_user_sub,),
+            mctx.log,
+        )
+        assert resp.results, resp
+        assert len(resp.results) == 1, resp
+        assert len(resp.results[0]) == 1, resp
+        admin_after_merge = resp.results[0][0]
+        assert isinstance(admin_after_merge, (int, bool)), resp
+        assert (not not admin_after_merge) is (merging_admin or original_admin), resp
+        await mctx.log.write(b"confirmed that admin is set if either was set before\n")
+
+    ctes, ctes_qargs = _merging_user_and_original_user_ctes(
+        octx, merging_user_admin=True, original_user_admin=True
+    )
+    return [
+        MergeQuery(
+            query=(
+                f"{ctes} INSERT INTO merge_account_log ("
+                " uid, user_id, operation_uid, operation_order, phase, step, step_result, reason, created_at"
+                ") SELECT"
+                " ?, original_user.id, ?, ?, 'merging', 'move_created_at', 'xfer',"
+                " json_insert("
+                "  '{}'"
+                "  , '$.context.original_admin', json(iif(original_user.admin, 'true', 'false'))"
+                "  , '$.context.merging_admin', json(iif(merging_user.admin, 'true', 'false'))"
+                "  , '$.context.assignment_required', json(iif(NOT original_user.admin AND merging_user.admin, 'true', 'false'))"
+                " ), ? "
+                "FROM merging_user, original_user"
+            ),
+            qargs=[
+                *ctes_qargs,
+                log_uid,
+                octx.operation_uid,
+                OperationOrder.move_created_at.value,
+                octx.merge_at,
+            ],
+            handler=partial(handler, "log"),
+        ),
+        MergeQuery(
+            query=(
+                f"{ctes} UPDATE users SET admin=merging_user.admin "
                 "FROM merge_account_log, merging_user, original_user "
                 "WHERE"
                 " merge_account_log.uid = ?"
@@ -3854,30 +4253,60 @@ def _merging_user_and_original_user_ctes(
     original_user_sub: bool = False,
     merging_user_created_at: bool = False,
     original_user_created_at: bool = False,
+    merging_user_given_name: bool = False,
+    original_user_given_name: bool = False,
+    merging_user_family_name: bool = False,
+    original_user_family_name: bool = False,
+    merging_user_admin: bool = False,
+    original_user_admin: bool = False,
 ) -> Tuple[str, List[Any]]:
     merging_user_columns = "id"
     if merging_user_sub:
         merging_user_columns += ", sub"
     if merging_user_created_at:
         merging_user_columns += ", created_at"
+    if merging_user_given_name:
+        merging_user_columns += ", given_name"
+    if merging_user_family_name:
+        merging_user_columns += ", family_name"
+    if merging_user_admin:
+        merging_user_columns += ", admin"
 
     merging_user_select = "users.id"
     if merging_user_sub:
         merging_user_select += ", users.sub"
     if merging_user_created_at:
         merging_user_select += ", users.created_at"
+    if merging_user_given_name:
+        merging_user_select += ", users.given_name"
+    if merging_user_family_name:
+        merging_user_select += ", users.family_name"
+    if merging_user_admin:
+        merging_user_select += ", users.admin"
 
     original_user_columns = "id"
     if original_user_sub:
         original_user_columns += ", sub"
     if original_user_created_at:
         original_user_columns += ", created_at"
+    if original_user_given_name:
+        original_user_columns += ", given_name"
+    if original_user_family_name:
+        original_user_columns += ", family_name"
+    if original_user_admin:
+        original_user_columns += ", admin"
 
     original_user_select = "users.id"
     if original_user_sub:
         original_user_select += ", users.sub"
     if original_user_created_at:
         original_user_select += ", users.created_at"
+    if original_user_given_name:
+        original_user_select += ", users.given_name"
+    if original_user_family_name:
+        original_user_select += ", users.family_name"
+    if original_user_admin:
+        original_user_select += ", users.admin"
 
     return (
         f"WITH merging_user({merging_user_columns}) AS ("

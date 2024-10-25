@@ -54,4 +54,6 @@ class OperationOrder(IntEnum):
     move_user_goals__transfer = auto()
     move_user_goals__delete = auto()
     move_voice_notes = auto()
+    move_name = auto()
+    move_admin = auto()
     move_created_at = auto()

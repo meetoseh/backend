@@ -14,7 +14,6 @@ from typing import (
     Tuple,
     cast,
 )
-import aiohttp
 from typing_extensions import TypedDict
 import anyio
 from pydantic import BaseModel, Field, TypeAdapter
@@ -327,8 +326,6 @@ async def attempt_start_merge(
             )
 
         await log.out.write(b"\n\n---EXECUTING QUERIES---\n")
-        conn = await itgs.conn()
-        cursor = conn.cursor()
 
         started_executing_at = time.perf_counter()
         async with Itgs() as itgs2:

@@ -6,7 +6,6 @@ import time
 import traceback
 from typing import Any, List, Literal, Optional, Sequence, cast
 
-import aiohttp
 from error_middleware import handle_error
 from itgs import Itgs
 import auth as std_auth
@@ -152,8 +151,6 @@ async def attempt_confirm_merge(
                 + b"\n\n"
             )
         await log.out.write(b"\n\n---EXECUTING QUERIES---\n")
-        conn = await itgs.conn()
-        cursor = conn.cursor()
 
         started_executing_at = time.perf_counter()
 

@@ -5,6 +5,8 @@ import socket
 import time
 import traceback
 from typing import Any, List, Literal, Optional, Sequence, cast
+
+import aiohttp
 from error_middleware import handle_error
 from itgs import Itgs
 import auth as std_auth
@@ -154,9 +156,23 @@ async def attempt_confirm_merge(
         cursor = conn.cursor()
 
         started_executing_at = time.perf_counter()
-        result = await cursor.executemany2(
-            [q.query for q in queries], [q.qargs for q in queries], raise_on_error=False
-        )
+
+        async with Itgs() as itgs2:
+            # temporary workaround to increase timeout for this query
+            conn2 = await itgs2.conn()
+            assert conn2.session is not None
+            await conn2.session.__aexit__(None, None, None)
+            conn2.session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(connect=10, total=600)
+            )
+            await conn2.session.__aenter__()
+            cursor2 = conn2.cursor()
+            result = await cursor2.executemany2(
+                [q.query for q in queries],
+                [q.qargs for q in queries],
+                raise_on_error=False,
+            )
+
         execution_time = time.perf_counter() - started_executing_at
         await log.out.write(
             b"execution time: " + f"{execution_time:.3f}".encode("ascii") + b"s\n"

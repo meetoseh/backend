@@ -450,14 +450,21 @@ async def raw_read_journal_entries(
                 master_keys_by_uid[row_user_journal_master_key_uid] = _row_master_key
                 row_master_key = _row_master_key
 
-            decrypted_data = JournalEntryItemData.model_validate_json(
-                gzip.decompress(
-                    row_master_key.journal_master_key.decrypt(
-                        row_journal_entry_item_master_encrypted_data, ttl=None
+            try:
+                decrypted_data = JournalEntryItemData.model_validate_json(
+                    gzip.decompress(
+                        row_master_key.journal_master_key.decrypt(
+                            row_journal_entry_item_master_encrypted_data, ttl=None
+                        )
                     )
                 )
-            )
-            current_item.server_items.append(decrypted_data)
+                current_item.server_items.append(decrypted_data)
+            except Exception as e:
+                await handle_warning(
+                    f"{__name__}:failed_decrypt",
+                    f"failed to decrypt journal entry `{row_journal_entry_uid}`, entry counter `{row_journal_entry_item_counter}` for user `{client_key.user_sub}`",
+                    exc=e,
+                )
 
     if current_item is not None:
         pending_items.append(current_item)

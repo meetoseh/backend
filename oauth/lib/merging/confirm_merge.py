@@ -160,12 +160,7 @@ async def attempt_confirm_merge(
         async with Itgs() as itgs2:
             # temporary workaround to increase timeout for this query
             conn2 = await itgs2.conn()
-            assert conn2.session is not None
-            await conn2.session.__aexit__(None, None, None)
-            conn2.session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(connect=10, total=600)
-            )
-            await conn2.session.__aenter__()
+            conn2.timeout = 600
             cursor2 = conn2.cursor()
             result = await cursor2.executemany2(
                 [q.query for q in queries],

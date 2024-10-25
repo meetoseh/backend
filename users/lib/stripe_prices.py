@@ -211,6 +211,8 @@ async def convert_stripe_price_to_purchases_store_product(
 async def get_stripe_price(
     itgs: Itgs,
     product_id: str,
+    *,
+    force: bool = False,
 ) -> Optional[AbridgedStripePrice]:
     """Fetches the abridged stripe price information for the stripe product with
     the given id. This uses a 2-layer cooperative cache to reduce latency and
@@ -224,13 +226,14 @@ async def get_stripe_price(
         (AbrigedStripePrice, None): the abridged stripe price information for the
             stripe product with the given id, or None if no such product exists
     """
-    raw = await read_stripe_price_from_local_cache(itgs, product_id)
-    if raw is not None:
-        return _convert_from_stored(raw)
-    raw = await read_stripe_price_from_remote_cache(itgs, product_id)
-    if raw is not None:
-        await write_stripe_price_to_local_cache(itgs, product_id, raw)
-        return _convert_from_stored(raw)
+    if not force:
+        raw = await read_stripe_price_from_local_cache(itgs, product_id)
+        if raw is not None:
+            return _convert_from_stored(raw)
+        raw = await read_stripe_price_from_remote_cache(itgs, product_id)
+        if raw is not None:
+            await write_stripe_price_to_local_cache(itgs, product_id, raw)
+            return _convert_from_stored(raw)
     price = await read_stripe_price_from_source(itgs, product_id)
     if price is not None:
         raw = _convert_to_stored(price)

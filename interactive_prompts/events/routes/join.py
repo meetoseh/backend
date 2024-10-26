@@ -85,7 +85,9 @@ async def join_interactive_prompt(
                 user_sub=auth_result.result.user_sub,
                 session_uid=args.session_uid,
                 event_type="join",
-                event_data=NameEventData(name=display_name),
+                event_data=NameEventData(
+                    name=display_name if display_name is not None else "Anonymous"
+                ),
                 prompt_time=args.prompt_time,
                 prefix_sum_updates=[
                     interactive_prompts.events.helper.PrefixSumUpdate(

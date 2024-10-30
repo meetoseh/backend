@@ -140,17 +140,17 @@ async def read_partial_push_ticket_stats(authorization: Optional[str] = Header(N
                 queued=int(item[0]) if item[0] is not None else 0,
                 succeeded=int(item[1]) if item[1] is not None else 0,
                 abandoned=int(item[2]) if item[2] is not None else 0,
-                failed_due_to_device_not_registered=int(item[3])
-                if item[3] is not None
-                else 0,
-                failed_due_to_client_error_other=int(item[4])
-                if item[4] is not None
-                else 0,
+                failed_due_to_device_not_registered=(
+                    int(item[3]) if item[3] is not None else 0
+                ),
+                failed_due_to_client_error_other=(
+                    int(item[4]) if item[4] is not None else 0
+                ),
                 failed_due_to_internal_error=int(item[5]) if item[5] is not None else 0,
                 retried=int(item[6]) if item[6] is not None else 0,
-                failed_due_to_client_error_429=int(item[7])
-                if item[7] is not None
-                else 0,
+                failed_due_to_client_error_429=(
+                    int(item[7]) if item[7] is not None else 0
+                ),
                 failed_due_to_server_error=int(item[8]) if item[8] is not None else 0,
                 failed_due_to_network_error=int(item[9]) if item[9] is not None else 0,
             )

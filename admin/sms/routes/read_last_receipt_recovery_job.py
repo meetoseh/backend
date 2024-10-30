@@ -109,9 +109,11 @@ async def read_last_receipt_recovery_job(authorization: Optional[str] = Header(N
                 lost=int(result[7]),
                 permanent_error=int(result[8]),
                 transient_error=int(result[9]),
-                stop_reason=result[10].decode("utf-8")
-                if isinstance(result[10], bytes)
-                else result[10],
+                stop_reason=(
+                    result[10].decode("utf-8")
+                    if isinstance(result[10], bytes)
+                    else result[10]
+                ),
                 purgatory_size=num_in_purgatory,
             ).model_dump_json(),
             status_code=200,

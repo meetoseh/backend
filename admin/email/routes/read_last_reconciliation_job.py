@@ -102,9 +102,11 @@ async def read_last_reconciliation_job(authorization: Optional[str] = Header(Non
                 bounced_but_abandoned=int(result[7]),
                 complaint_and_found=int(result[8]),
                 complaint_and_abandoned=int(result[9]),
-                stop_reason=result[10].decode("utf-8")
-                if isinstance(result[10], bytes)
-                else result[10],
+                stop_reason=(
+                    result[10].decode("utf-8")
+                    if isinstance(result[10], bytes)
+                    else result[10]
+                ),
                 in_purgatory=purgatory_size,
             ).model_dump_json(),
             status_code=200,

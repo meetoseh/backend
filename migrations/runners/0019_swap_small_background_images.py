@@ -2,6 +2,7 @@
 them with a default image. Specifically, this is adding support for 13.3' macs with
 a native resolution of 2560x1600
 """
+
 from typing import List, Optional, Tuple, cast as typing_cast
 
 # Used to have a cache for external daily events back when we had daily events.
@@ -14,8 +15,7 @@ import socket
 
 
 # Stub for gone function
-async def evict_external_daily_event(*args, **kwargs):
-    ...
+async def evict_external_daily_event(*args, **kwargs): ...
 
 
 min_width = 2560

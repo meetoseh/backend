@@ -1,4 +1,5 @@
 """Adds introductory journeys"""
+
 from itgs import Itgs
 
 

@@ -40,7 +40,9 @@ async def up(itgs: Itgs) -> None:
                             sms(
                                 "Ready to relax? Drop in and choose today's journey. {url}"
                             ),
-                            sms("Hi from Oseh 👋 Take your mindful moment today. {url}"),
+                            sms(
+                                "Hi from Oseh 👋 Take your mindful moment today. {url}"
+                            ),
                             sms(
                                 "Hi from Oseh 👋 It’s time to tune in 🧘 – let’s go. {url}"
                             ),
@@ -48,8 +50,12 @@ async def up(itgs: Itgs) -> None:
                             sms(
                                 "Here’s your gentle reminder to take a mindful minute. {url}"
                             ),
-                            sms("Hi from Oseh 👋 Change your mood in 60 seconds. {url}"),
-                            sms("Hi from Oseh 👋 Stop and take a mindful minute. {url}"),
+                            sms(
+                                "Hi from Oseh 👋 Change your mood in 60 seconds. {url}"
+                            ),
+                            sms(
+                                "Hi from Oseh 👋 Stop and take a mindful minute. {url}"
+                            ),
                             sms(
                                 "Ready to relax? Drop in and choose today’s journey. {url}"
                             ),

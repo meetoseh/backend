@@ -4,13 +4,11 @@ import io
 
 
 @overload
-async def response_to_bytes(response: Literal[None]) -> None:
-    ...
+async def response_to_bytes(response: Literal[None]) -> None: ...
 
 
 @overload
-async def response_to_bytes(response: Response) -> bytes:
-    ...
+async def response_to_bytes(response: Response) -> bytes: ...
 
 
 async def response_to_bytes(response: Optional[Response]) -> Optional[bytes]:

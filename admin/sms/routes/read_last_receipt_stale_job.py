@@ -72,9 +72,11 @@ async def read_last_receipt_stale_job(authorization: Optional[str] = Header(None
                 finished_at=float(result[1]),
                 running_time=float(result[2]),
                 callbacks_queued=int(result[3]),
-                stop_reason=result[4].decode("utf-8")
-                if isinstance(result[4], bytes)
-                else result[4],
+                stop_reason=(
+                    result[4].decode("utf-8")
+                    if isinstance(result[4], bytes)
+                    else result[4]
+                ),
                 recovery_queue_size=recovery_queue_size,
             ).model_dump_json(),
             status_code=200,

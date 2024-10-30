@@ -70,9 +70,11 @@ async def read_last_stale_receipt_detection_job(
                 finished_at=float(result[1]),
                 running_time=float(result[2]),
                 abandoned=int(result[3]),
-                stop_reason=result[4].decode("utf-8")
-                if isinstance(result[4], bytes)
-                else result[4],
+                stop_reason=(
+                    result[4].decode("utf-8")
+                    if isinstance(result[4], bytes)
+                    else result[4]
+                ),
             ).model_dump_json(),
             status_code=200,
             headers={

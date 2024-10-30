@@ -123,36 +123,36 @@ async def read_partial_push_receipt_stats(authorization: Optional[str] = Header(
             PartialDayPushReceiptStats(
                 succeeded=int(item[0]) if item[0] is not None else 0,
                 abandoned=int(item[1]) if item[1] is not None else 0,
-                failed_due_to_device_not_registered=int(item[2])
-                if item[2] is not None
-                else 0,
-                failed_due_to_message_too_big=int(item[3])
-                if item[3] is not None
-                else 0,
-                failed_due_to_message_rate_exceeded=int(item[4])
-                if item[4] is not None
-                else 0,
-                failed_due_to_mismatched_sender_id=int(item[5])
-                if item[5] is not None
-                else 0,
-                failed_due_to_invalid_credentials=int(item[6])
-                if item[6] is not None
-                else 0,
-                failed_due_to_client_error_other=int(item[7])
-                if item[7] is not None
-                else 0,
+                failed_due_to_device_not_registered=(
+                    int(item[2]) if item[2] is not None else 0
+                ),
+                failed_due_to_message_too_big=(
+                    int(item[3]) if item[3] is not None else 0
+                ),
+                failed_due_to_message_rate_exceeded=(
+                    int(item[4]) if item[4] is not None else 0
+                ),
+                failed_due_to_mismatched_sender_id=(
+                    int(item[5]) if item[5] is not None else 0
+                ),
+                failed_due_to_invalid_credentials=(
+                    int(item[6]) if item[6] is not None else 0
+                ),
+                failed_due_to_client_error_other=(
+                    int(item[7]) if item[7] is not None else 0
+                ),
                 failed_due_to_internal_error=int(item[8]) if item[8] is not None else 0,
                 retried=int(item[9]) if item[9] is not None else 0,
-                failed_due_to_not_ready_yet=int(item[10])
-                if item[10] is not None
-                else 0,
+                failed_due_to_not_ready_yet=(
+                    int(item[10]) if item[10] is not None else 0
+                ),
                 failed_due_to_server_error=int(item[11]) if item[11] is not None else 0,
-                failed_due_to_client_error_429=int(item[12])
-                if item[12] is not None
-                else 0,
-                failed_due_to_network_error=int(item[13])
-                if item[13] is not None
-                else 0,
+                failed_due_to_client_error_429=(
+                    int(item[12]) if item[12] is not None else 0
+                ),
+                failed_due_to_network_error=(
+                    int(item[13]) if item[13] is not None else 0
+                ),
             )
             for item in result
         ]

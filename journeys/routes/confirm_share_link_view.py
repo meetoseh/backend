@@ -69,9 +69,9 @@ async def confirm_share_link_view(
             return await share_links_confirm_view(
                 redis,
                 args.view_uid,
-                user_sub=auth_result.result.sub
-                if auth_result.result is not None
-                else None,
+                user_sub=(
+                    auth_result.result.sub if auth_result.result is not None else None
+                ),
                 visitor=cleaned_visitor,
                 confirmed_at=request_at,
             )
@@ -185,9 +185,11 @@ async def confirm_share_link_view(
                         AND journey_share_link_views.created_at > ?
                     """,
                     (
-                        auth_result.result.sub
-                        if auth_result.result is not None
-                        else None,
+                        (
+                            auth_result.result.sub
+                            if auth_result.result is not None
+                            else None
+                        ),
                         cleaned_visitor,
                         request_at,
                         args.view_uid,
@@ -245,9 +247,11 @@ async def confirm_share_link_view(
         stats.incr_view_client_confirm_failed(
             unix_date=request_unix_date,
             extra=ViewClientConfirmFailedDatabase(
-                details="not_found"
-                if not link_view_exists
-                else ("too_old" if link_view_too_old else "already_confirmed")
+                details=(
+                    "not_found"
+                    if not link_view_exists
+                    else ("too_old" if link_view_too_old else "already_confirmed")
+                )
             ),
         )
         return Response(status_code=202)

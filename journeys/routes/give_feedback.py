@@ -14,11 +14,15 @@ from dataclasses import dataclass
 import secrets
 import time
 
-from redis_helpers.hincrby_if_exists import ensure_hincrby_if_exists_script_exists, hincrby_if_exists
+from redis_helpers.hincrby_if_exists import (
+    ensure_hincrby_if_exists_script_exists,
+    hincrby_if_exists,
+)
 from redis_helpers.run_with_prep import run_with_prep
 
 
 RatingType = Literal["loved", "liked", "disliked", "hated"]
+
 
 @dataclass
 class FeedbackVersion:
@@ -185,7 +189,10 @@ async def give_feedback(
                                 AND journeys.uid = ?
                         ) AS b1
                     """,
-                    (std_auth_result.result.sub, journey_auth_result.result.journey_uid)
+                    (
+                        std_auth_result.result.sub,
+                        journey_auth_result.result.journey_uid,
+                    ),
                 ),
                 (
                     """
@@ -207,7 +214,7 @@ async def give_feedback(
                         std_auth_result.result.sub,
                         journey_auth_result.result.journey_uid,
                     ),
-                )
+                ),
             )
         )
         assert response[0].results, response
@@ -224,10 +231,11 @@ async def give_feedback(
                 },
             )
 
-
         rating_is_unique = not bool(response[0].results[0])
         rating_type = feedback_version.rating_types[args.response - 1]
-        await _update_cached_ratings(itgs, journey_auth_result.result.journey_uid, rating_type, rating_is_unique)
+        await _update_cached_ratings(
+            itgs, journey_auth_result.result.journey_uid, rating_type, rating_is_unique
+        )
 
         jobs = await itgs.jobs()
         await jobs.enqueue(
@@ -241,26 +249,23 @@ async def give_feedback(
 
 
 async def _update_cached_ratings(
-    itgs: Itgs,
-    journey_uid: str,
-    rating_type: RatingType,
-    rating_is_unique: bool
+    itgs: Itgs, journey_uid: str, rating_type: RatingType, rating_is_unique: bool
 ) -> None:
     keys: List[bytes] = [f"journeys:feedback:total:{journey_uid}".encode("utf-8")]
     if rating_is_unique:
         keys.append(f"journeys:feedback:unique:{journey_uid}".encode("utf-8"))
 
     redis = await itgs.redis()
-    
+
     async def _prepare(force: bool):
         await ensure_hincrby_if_exists_script_exists(redis, force=force)
-    
+
     async def _execute():
         async with redis.pipeline() as pipe:
             pipe.multi()
             for key in keys:
-                await hincrby_if_exists(pipe, key, rating_type.encode('utf-8'), 1)
+                await hincrby_if_exists(pipe, key, rating_type.encode("utf-8"), 1)
                 await pipe.expire(key, 600, gt=True)
             await pipe.execute()
-    
+
     await run_with_prep(_prepare, _execute)

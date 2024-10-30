@@ -1,6 +1,5 @@
 """Provides utility functions for working with image file jwts"""
 
-
 from typing import Any, Dict, Literal, Optional
 from error_middleware import handle_error
 from fastapi.responses import Response

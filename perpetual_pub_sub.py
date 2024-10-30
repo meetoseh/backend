@@ -11,6 +11,7 @@ This is not suitable for connections which have a lot of traffic - they should
 continue to have a dedicated connection. This is not suitable for short-lived
 subscriptions, which should also use a dedicated connection.
 """
+
 import time
 from typing import (
     AsyncIterator,

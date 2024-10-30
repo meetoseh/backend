@@ -6,6 +6,7 @@ the given way.
 This is generally appropriate for prefilling forms where only a single
 phone number can be provided, such as a stripe payment form.
 """
+
 from itgs import Itgs
 from auth import AuthResult
 from typing import Literal, Optional, Tuple, Union

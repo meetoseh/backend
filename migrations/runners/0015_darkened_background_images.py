@@ -1,4 +1,5 @@
 """Adds darkened background images to all journeys, then triggers the job to redo processing"""
+
 from itgs import Itgs
 import asyncio
 

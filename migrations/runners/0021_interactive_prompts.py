@@ -1,6 +1,7 @@
 """This adds a layer of indirection, by breaking out the lobby portion of a
 journey into its own interactive_prompt abstraction.
 """
+
 from itgs import Itgs
 import secrets
 import time

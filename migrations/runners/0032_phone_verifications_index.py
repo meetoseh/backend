@@ -1,4 +1,5 @@
 """Adds an index for the read_daily_phone_verifications query"""
+
 from itgs import Itgs
 
 

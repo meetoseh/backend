@@ -1,4 +1,5 @@
 """Adds lobbies to journeys to reduce distractions during the actual content"""
+
 from typing import List, Optional
 from itgs import Itgs
 import secrets

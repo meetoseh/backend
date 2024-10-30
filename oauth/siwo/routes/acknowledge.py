@@ -115,9 +115,9 @@ async def acknowledge_elevation(
 
 
 def select_send_strategy(elevate_reason: str) -> Tuple[float, bool]:
-    deterrence_level: Literal[
-        "none", "slowdown", "bogus_sometimes", "bogus_often"
-    ] = "none"
+    deterrence_level: Literal["none", "slowdown", "bogus_sometimes", "bogus_often"] = (
+        "none"
+    )
     if elevate_reason in ("visitor", "visitor_ratelimit"):
         deterrence_level = "bogus_often"
     if elevate_reason == "global":

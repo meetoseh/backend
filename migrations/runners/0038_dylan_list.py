@@ -4,8 +4,7 @@ from itgs import Itgs
 
 # Used to have a klaviyo integration
 class KlaviyoStub:
-    async def add_profile_to_list(self, profile_id: List[str], list_id: str):
-        ...
+    async def add_profile_to_list(self, profile_id: List[str], list_id: str): ...
 
 
 async def up(itgs: Itgs):

@@ -1,4 +1,5 @@
 """Handles updating when the repository is updated"""
+
 from itgs import Itgs
 import perpetual_pub_sub as pps
 from error_middleware import handle_error

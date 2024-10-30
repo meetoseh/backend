@@ -1,5 +1,6 @@
 """Adds timezones to user notification settings and adds the basic klaviyo-related tables
 """
+
 import json
 from itgs import Itgs
 

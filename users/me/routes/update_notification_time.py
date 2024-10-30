@@ -50,17 +50,17 @@ router = APIRouter()
 
 
 class UpdateNotificationTimeArgs(BaseModel):
-    notification_time: Optional[
-        Literal["morning", "afternoon", "evening", "any"]
-    ] = Field(
-        None,
-        description=(
-            "This field will be removed in a future release. If specified and time_range is not "
-            "specified, used as a preset in time_range."
-        ),
-        json_schema_extra={
-            "deprecated": True,
-        },
+    notification_time: Optional[Literal["morning", "afternoon", "evening", "any"]] = (
+        Field(
+            None,
+            description=(
+                "This field will be removed in a future release. If specified and time_range is not "
+                "specified, used as a preset in time_range."
+            ),
+            json_schema_extra={
+                "deprecated": True,
+            },
+        )
     )
     days_of_week: List[DayOfWeek] = Field(
         default_factory=lambda: list(SORTED_DAYS_OF_WEEK_FOR_MASK),
@@ -137,31 +137,35 @@ async def update_notification_time(
         if await need_set_timezone(
             itgs, user_sub=auth_result.result.sub, timezone=args.timezone
         ):
-            queries.extend(_update_timezone(
-                args.timezone,
-                timezone_technique,
-                auth_result=auth_result,
-                now=now,
-            ))
-        
-        queries.extend([
-            *(
-                v
-                for channel in (
-                    ("email", "sms", "push")
-                    if args.channel == "all"
-                    else (args.channel,)
-                )
-                for v in _update_settings_for_channel(
-                    channel,
-                    args.time_range,
-                    day_of_week_mask,
+            queries.extend(
+                _update_timezone(
+                    args.timezone,
+                    timezone_technique,
                     auth_result=auth_result,
                     now=now,
-                    unix_date=unix_date,
                 )
-            ),
-        ])
+            )
+
+        queries.extend(
+            [
+                *(
+                    v
+                    for channel in (
+                        ("email", "sms", "push")
+                        if args.channel == "all"
+                        else (args.channel,)
+                    )
+                    for v in _update_settings_for_channel(
+                        channel,
+                        args.time_range,
+                        day_of_week_mask,
+                        auth_result=auth_result,
+                        now=now,
+                        unix_date=unix_date,
+                    )
+                ),
+            ]
+        )
 
         conn = await itgs.conn()
         cursor = conn.cursor("none")
@@ -523,20 +527,22 @@ def _update_settings_for_channel(
                             "    WHERE suppressed_emails.email_address = uea.email COLLATE NOCASE"
                             "   )"
                             if channel == "email"
-                            else "  SELECT 1 FROM user_phone_numbers AS upn"
-                            "  WHERE"
-                            "   upn.user_id = users.id"
-                            "   AND upn.receives_notifications"
-                            "   AND upn.verified"
-                            "   AND NOT EXISTS ("
-                            "    SELECT 1 FROM suppressed_phone_numbers"
-                            "    WHERE suppressed_phone_numbers.phone_number = upn.phone_number"
-                            "   )"
-                            if channel == "sms"
-                            else "  SELECT 1 FROM user_push_tokens AS upn"
-                            "  WHERE"
-                            "   upn.user_id = users.id"
-                            "   AND upn.receives_notifications"
+                            else (
+                                "  SELECT 1 FROM user_phone_numbers AS upn"
+                                "  WHERE"
+                                "   upn.user_id = users.id"
+                                "   AND upn.receives_notifications"
+                                "   AND upn.verified"
+                                "   AND NOT EXISTS ("
+                                "    SELECT 1 FROM suppressed_phone_numbers"
+                                "    WHERE suppressed_phone_numbers.phone_number = upn.phone_number"
+                                "   )"
+                                if channel == "sms"
+                                else "  SELECT 1 FROM user_push_tokens AS upn"
+                                "  WHERE"
+                                "   upn.user_id = users.id"
+                                "   AND upn.receives_notifications"
+                            )
                         )
                         + " )"
                     ),

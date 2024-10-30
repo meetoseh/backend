@@ -120,9 +120,9 @@ async def read_last_unconfirmed_view_sweep_job(
                         raw_result[6].decode("utf-8"),
                     ),
                     unconfirmed_length=unconfirmed_length,
-                    oldest_unconfirmed_at=None
-                    if not oldest_unconfirmed
-                    else oldest_unconfirmed[0][1],
+                    oldest_unconfirmed_at=(
+                        None if not oldest_unconfirmed else oldest_unconfirmed[0][1]
+                    ),
                 ),
             ),
             status_code=200,

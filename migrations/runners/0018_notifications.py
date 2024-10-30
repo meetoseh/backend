@@ -1,4 +1,5 @@
 """Adds table related to notifications."""
+
 from itgs import Itgs
 
 

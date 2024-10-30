@@ -7,6 +7,7 @@ migrations at the same time.
 It is strongly recommended that migrations be run in a separate process to
 avoid slowing the boot time for the underlying web server.
 """
+
 from itgs import Itgs
 from typing import List, Set
 from error_middleware import handle_error

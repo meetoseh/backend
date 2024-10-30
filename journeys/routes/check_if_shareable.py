@@ -80,7 +80,10 @@ async def check_if_shareable(
                 journeys.uid = ?
                 AND journeys.deleted_at IS NULL
             """,
-            (int(SeriesFlags.JOURNEYS_IN_SERIES_CODE_SHAREABLE), args.uid,),
+            (
+                int(SeriesFlags.JOURNEYS_IN_SERIES_CODE_SHAREABLE),
+                args.uid,
+            ),
         )
 
         if not response.results:

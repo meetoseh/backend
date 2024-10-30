@@ -275,8 +275,7 @@ async def get_by_category_from_tree(
 class StatsFuncInner(Protocol):
     def __call__(
         self, itgs: Itgs, uid: str, bin: int, *args, **kwargs
-    ) -> Awaitable[Dict[str, Any]]:
-        ...
+    ) -> Awaitable[Dict[str, Any]]: ...
 
 
 TCallable = TypeVar("TCallable", bound=StatsFuncInner)

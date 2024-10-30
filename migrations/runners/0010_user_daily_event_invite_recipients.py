@@ -1,4 +1,5 @@
 """Adds required tables for facilitating user referrals and deep linking"""
+
 from itgs import Itgs
 
 

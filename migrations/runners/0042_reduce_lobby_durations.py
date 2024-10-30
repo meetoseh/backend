@@ -1,4 +1,5 @@
 """An example migration"""
+
 from typing import Optional
 from itgs import Itgs
 import secrets

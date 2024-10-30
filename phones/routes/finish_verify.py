@@ -521,11 +521,11 @@ async def finish_verify(
                 )
 
         debug_hint = "".join(
-            "1"
-            if len(affected) > i and affected[i]
-            else "0"
-            if len(affected) > i and not affected[i]
-            else "x"
+            (
+                "1"
+                if len(affected) > i and affected[i]
+                else "0" if len(affected) > i and not affected[i] else "x"
+            )
             for i in range(7)
         )
 

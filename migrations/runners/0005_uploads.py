@@ -1,4 +1,5 @@
 """Adds required tables for allowing users to upload files."""
+
 from itgs import Itgs
 
 

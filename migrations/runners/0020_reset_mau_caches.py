@@ -1,6 +1,7 @@
 """Resets MAU cache due to an error in how it was previously calculated. The data was
 correct but how it was fetched for formatting was incorrect.
 """
+
 from itgs import Itgs
 import unix_dates
 import time

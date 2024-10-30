@@ -1,4 +1,5 @@
 """Adds visitor-related tables so we can understand who is visiting our site."""
+
 from itgs import Itgs
 
 

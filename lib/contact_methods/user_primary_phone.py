@@ -4,6 +4,7 @@ number. This cannot be set directly but is consistent over the short term.
 
 SEE ALSO: `user_primary_email` for the email address equivalent.
 """
+
 from typing import Optional
 from pypika import Query, Table, Criterion, Not
 from pypika.terms import ExistsCriterion

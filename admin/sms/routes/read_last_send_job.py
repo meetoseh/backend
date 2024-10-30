@@ -94,9 +94,11 @@ async def read_last_send_job(authorization: Optional[str] = Header(None)):
                 num_pending=int(result[5]),
                 num_failed_permanently=int(result[6]),
                 num_failed_transiently=int(result[7]),
-                stop_reason=result[8].decode("utf-8")
-                if isinstance(result[8], bytes)
-                else result[8],
+                stop_reason=(
+                    result[8].decode("utf-8")
+                    if isinstance(result[8], bytes)
+                    else result[8]
+                ),
                 num_in_purgatory=purgatory_size,
             ).model_dump_json(),
             status_code=200,

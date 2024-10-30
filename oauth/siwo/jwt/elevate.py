@@ -1,4 +1,5 @@
 """Module for working with Sign in with Oseh Elevation JWTs"""
+
 from dataclasses import dataclass
 import time
 from typing import Any, Dict, Literal, Optional, Union, cast as typing_cast

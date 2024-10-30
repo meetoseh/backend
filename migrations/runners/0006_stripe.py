@@ -1,4 +1,5 @@
 """Adds stripe-related tables"""
+
 from itgs import Itgs
 
 

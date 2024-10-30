@@ -1,6 +1,5 @@
 """See start_merge_auth for details on how and when this is used."""
 
-
 from typing import Any, Dict, Literal, Optional
 from error_middleware import handle_error
 from fastapi.responses import Response

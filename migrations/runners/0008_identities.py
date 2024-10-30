@@ -1,4 +1,5 @@
 """Creates user identities related tables, for dropping cognito"""
+
 from itgs import Itgs
 
 

@@ -1,4 +1,5 @@
 """Creates stats-related tables"""
+
 from itgs import Itgs
 
 

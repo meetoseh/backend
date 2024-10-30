@@ -1,6 +1,7 @@
 """Module for working with email verification codes, i.e., codes requested using
 a sign in with oseh JWT
 """
+
 from itgs import Itgs
 
 

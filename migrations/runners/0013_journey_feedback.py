@@ -1,4 +1,5 @@
 """Adds journey feedback table"""
+
 from itgs import Itgs
 
 

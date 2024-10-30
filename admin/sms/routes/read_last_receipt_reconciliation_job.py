@@ -108,9 +108,11 @@ async def read_last_receipt_reconciliation_job(
                 started_at=float(result[0]),
                 finished_at=float(result[1]),
                 running_time=float(result[2]),
-                stop_reason=result[3].decode("utf-8")
-                if isinstance(result[3], bytes)
-                else result[3],
+                stop_reason=(
+                    result[3].decode("utf-8")
+                    if isinstance(result[3], bytes)
+                    else result[3]
+                ),
                 attempted=int(result[4]),
                 pending=int(result[5]),
                 succeeded=int(result[6]),

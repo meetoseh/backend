@@ -8,3 +8,4 @@ dev-*.bat
 /tmp
 /*.log
 /*.pem
+/analyse.bat

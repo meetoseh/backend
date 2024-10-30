@@ -257,10 +257,17 @@ async def create_journal_entry_user_chat(
         # in there we'll check the db, and if neither work we fail
 
         redis = await itgs.redis()
-        voice_note_owned_by_user_sub_bytes = cast(bytes, await redis.hget(
-            b"voice_notes:processing:" + voice_note_uid_bytes, b"user_sub"  # type: ignore
-        ))
-        if voice_note_owned_by_user_sub_bytes is not None and voice_note_owned_by_user_sub_bytes != std_auth_result.result.sub.encode("utf-8"):
+        voice_note_owned_by_user_sub_bytes = cast(
+            bytes,
+            await redis.hget(
+                b"voice_notes:processing:" + voice_note_uid_bytes, b"user_sub"  # type: ignore
+            ),
+        )
+        if (
+            voice_note_owned_by_user_sub_bytes is not None
+            and voice_note_owned_by_user_sub_bytes
+            != std_auth_result.result.sub.encode("utf-8")
+        ):
             await handle_warning(
                 f"{__name__}:voice_note_wrong_owner_redis",
                 f"User `{std_auth_result.result.sub}` tried to respond to a journal entry using a voice "
@@ -268,10 +275,10 @@ async def create_journal_entry_user_chat(
                 f"by {voice_note_owned_by_user_sub_bytes.decode('utf-8')}",
             )
             return ERROR_VOICE_NOTE_NOT_FOUND
-        
+
         if voice_note_owned_by_user_sub_bytes is None:
             conn = await itgs.conn()
-            cursor = conn.cursor('weak')
+            cursor = conn.cursor("weak")
             response = await cursor.execute(
                 """
 SELECT 1 FROM voice_notes, users

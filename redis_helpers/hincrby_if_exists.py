@@ -44,7 +44,10 @@ async def ensure_hincrby_if_exists_script_exists(
             correct_hash == HINCRBY_IF_EXISTS_LUA_SCRIPT_HASH
         ), f"{correct_hash=} != {HINCRBY_IF_EXISTS_LUA_SCRIPT_HASH=}"
 
-    if _last_hincrby_if_exists_ensured_at is None or _last_hincrby_if_exists_ensured_at < now:
+    if (
+        _last_hincrby_if_exists_ensured_at is None
+        or _last_hincrby_if_exists_ensured_at < now
+    ):
         _last_hincrby_if_exists_ensured_at = now
 
 
@@ -62,7 +65,7 @@ async def hincrby_if_exists(
         val (int): The value to increment by
 
     Returns:
-        int, None: The new value if an increment occurred, None if no increment. 
+        int, None: The new value if an increment occurred, None if no increment.
             None if executed within a transaction, since the result is not known
             until the transaction is executed.
 

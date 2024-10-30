@@ -1,6 +1,7 @@
 """Module for working with security check codes, i.e., codes requested during
 the check account step
 """
+
 from dataclasses import dataclass
 from typing import Literal, Optional
 from itgs import Itgs

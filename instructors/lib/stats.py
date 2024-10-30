@@ -2,6 +2,7 @@
 accurate. This does not include functions for rolling data from redis to
 rqlite, since that is done by the jobs repo.
 """
+
 from itgs import Itgs
 from redis_helpers.set_if_lower import set_if_lower, ensure_set_if_lower_script_exists
 import unix_dates

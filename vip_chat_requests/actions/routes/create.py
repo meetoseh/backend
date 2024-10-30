@@ -15,9 +15,9 @@ router = APIRouter()
 
 class StoreVipChatRequestActionRequest(BaseModel):
     uid: str = Field(description="The UID of the vip chat request that's shown")
-    action: Literal[
-        "open", "click_cta", "click_x", "click_done", "close_window"
-    ] = Field(description="The action that was performed")
+    action: Literal["open", "click_cta", "click_x", "click_done", "close_window"] = (
+        Field(description="The action that was performed")
+    )
 
 
 ERROR_404_TYPES = Literal["not_found"]

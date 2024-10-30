@@ -1,6 +1,7 @@
 """This module is meant to be invoked directly to create a new
 direct account
 """
+
 import hashlib
 import secrets
 from itgs import Itgs

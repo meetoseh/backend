@@ -3,6 +3,7 @@ classes per day, to using a library of classes. However, still in the interest
 of simplicity, rather than users browsing classes, they instead select from a
 handful of emotion words and then are automatically placed into a class.
 """
+
 from itgs import Itgs
 from temp_files import temp_file
 import time

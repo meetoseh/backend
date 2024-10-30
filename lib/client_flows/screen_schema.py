@@ -1025,9 +1025,9 @@ async def convert_journal_entry_uid(
     """Converts the journal entry UID to the expected format for the client. If it
     does not exist or does not belong to the user, logs an error and returns None
     """
-    if journal_entry_uid == 'oseh_jne_placeholder':
+    if journal_entry_uid == "oseh_jne_placeholder":
         return None
-    
+
     conn = await itgs.conn()
     cursor = conn.cursor("weak")
     response = await cursor.execute(

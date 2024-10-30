@@ -1,4 +1,5 @@
 """Adds the necessary schema for describing content (images, audio, video)"""
+
 from itgs import Itgs
 
 

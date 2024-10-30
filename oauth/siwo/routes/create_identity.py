@@ -146,9 +146,9 @@ async def create_identity(
             stats.incr_create_attempted(unix_date=create_unix_date)
             stats.incr_create_succeeded(
                 unix_date=create_unix_date,
-                precondition=b"code"
-                if auth_result.result.hidden_state.used_code
-                else b"no_code",
+                precondition=(
+                    b"code" if auth_result.result.hidden_state.used_code else b"no_code"
+                ),
             )
 
         return Response(

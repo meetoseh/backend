@@ -173,9 +173,11 @@ async def start_journey_from_public_link(
                     view_uid,
                     now,
                     visitor_uid,
-                    auth_result.result.sub
-                    if auth_result is not None and auth_result.result is not None
-                    else None,
+                    (
+                        auth_result.result.sub
+                        if auth_result is not None and auth_result.result is not None
+                        else None
+                    ),
                     args.code,
                 ),
             )

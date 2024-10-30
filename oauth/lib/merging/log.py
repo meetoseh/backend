@@ -2,6 +2,7 @@
 is compressed and uploaded to s3 so it can be used as a reference later. This
 module helps with that process.
 """
+
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import secrets

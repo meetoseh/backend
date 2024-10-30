@@ -245,9 +245,9 @@ async def get_journey_subcategory_view_stats_from_source(
         ):
             for subcategory, total in raw.items():
                 subcategory_str = str(subcategory, "utf-8")
-                total_views_by_subcategory[
-                    subcategory_str
-                ] = total_views_by_subcategory.get(subcategory_str, 0) + int(total)
+                total_views_by_subcategory[subcategory_str] = (
+                    total_views_by_subcategory.get(subcategory_str, 0) + int(total)
+                )
 
         subcats = list(total_views_by_subcategory.keys())
         async with redis.pipeline() as pipe:
@@ -266,9 +266,9 @@ async def get_journey_subcategory_view_stats_from_source(
             itertools.product(range(earliest_unrotated_unix_date, unix_date), subcats),
             data,
         ):
-            total_unique_views_by_subcategory[
-                subcategory
-            ] = total_unique_views_by_subcategory.get(subcategory, 0) + int(raw)
+            total_unique_views_by_subcategory[subcategory] = (
+                total_unique_views_by_subcategory.get(subcategory, 0) + int(raw)
+            )
 
     if len(total_views_by_subcategory) == 0:
         return ReadJourneySubcategoryViewStatsResponse(items=[])

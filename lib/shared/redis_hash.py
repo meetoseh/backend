@@ -32,12 +32,10 @@ class RedisHash:
             self._map = raw
 
     @overload
-    def get_bytes(self, key: bytes) -> bytes:
-        ...
+    def get_bytes(self, key: bytes) -> bytes: ...
 
     @overload
-    def get_bytes(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, bytes]:
-        ...
+    def get_bytes(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, bytes]: ...
 
     def get_bytes(
         self,
@@ -62,14 +60,12 @@ class RedisHash:
         return res
 
     @overload
-    def get_str(self, key: bytes, *, encoding: str = "utf-8") -> str:
-        ...
+    def get_str(self, key: bytes, *, encoding: str = "utf-8") -> str: ...
 
     @overload
     def get_str(
         self, key: bytes, *, encoding: str = "utf-8", default: DefaultT
-    ) -> Union[DefaultT, str]:
-        ...
+    ) -> Union[DefaultT, str]: ...
 
     def get_str(
         self,
@@ -86,12 +82,10 @@ class RedisHash:
             return default
 
     @overload
-    def get_int(self, key: bytes) -> int:
-        ...
+    def get_int(self, key: bytes) -> int: ...
 
     @overload
-    def get_int(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, int]:
-        ...
+    def get_int(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, int]: ...
 
     def get_int(
         self,
@@ -107,12 +101,10 @@ class RedisHash:
             return default
 
     @overload
-    def get_float(self, key: bytes) -> float:
-        ...
+    def get_float(self, key: bytes) -> float: ...
 
     @overload
-    def get_float(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, float]:
-        ...
+    def get_float(self, key: bytes, *, default: DefaultT) -> Union[DefaultT, float]: ...
 
     def get_float(
         self,

@@ -1,6 +1,5 @@
 """Provides utility functions for working with transcript jwts"""
 
-
 from typing import Any, Dict, Literal, Optional
 from error_middleware import handle_error
 from fastapi.responses import Response

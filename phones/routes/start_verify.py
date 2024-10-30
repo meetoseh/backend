@@ -257,12 +257,13 @@ WHERE
     AND phone_verifications.user_id = users.id
                     """,
                     (auth_result.result.sub, verification.sid),
-                )
+                ),
             ),
         )
 
         affected = [
-            r.rows_affected is not None and r.rows_affected > 0 for r in response.items[:3]
+            r.rows_affected is not None and r.rows_affected > 0
+            for r in response.items[:3]
         ]
         if any((a and r.rows_affected != 1 for a, r in zip(affected, response))):
             await handle_warning(

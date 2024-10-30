@@ -383,9 +383,11 @@ async def patch_journey(
         journey_description = typing_cast(Optional[str], response.results[0][13])
         journey_prompt = typing_cast(
             Optional[Prompt],
-            parse_prompt_from_json(response.results[0][14])
-            if response.results[0][14] is not None
-            else None,
+            (
+                parse_prompt_from_json(response.results[0][14])
+                if response.results[0][14] is not None
+                else None
+            ),
         )
         blurred_image_file_uid = typing_cast(Optional[str], response.results[0][15])
         darkened_image_file_uid = typing_cast(Optional[str], response.results[0][16])
@@ -816,9 +818,11 @@ async def patch_journey(
                     flags=instructor_flags,
                 ),
                 title=args.title if args.title is not None else journey_title,
-                description=args.description
-                if args.description is not None
-                else journey_description,
+                description=(
+                    args.description
+                    if args.description is not None
+                    else journey_description
+                ),
                 prompt=args.prompt if args.prompt is not None else journey_prompt,
                 created_at=journey_created_at,
                 lobby_duration_seconds=int(journey_lobby_duration_seconds),

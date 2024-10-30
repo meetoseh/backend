@@ -18,7 +18,6 @@ issuer `oseh`, and has the audience `oseh:confirm-merge`, created
 and validated via `oauth.lib.confirm_merge_auth`
 """
 
-
 from typing import Any, Dict, Literal, Optional, TYPE_CHECKING
 from error_middleware import handle_error
 from fastapi.responses import Response

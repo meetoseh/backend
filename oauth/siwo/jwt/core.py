@@ -1,4 +1,5 @@
 """Module for working with Sign in with Oseh JWTs, i.e., after logging in"""
+
 from dataclasses import dataclass
 import time
 from typing import Any, Dict, Literal, Optional

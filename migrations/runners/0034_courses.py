@@ -1,4 +1,5 @@
 """Adds course-related tables, where a course is a programmed set of lessons."""
+
 from itgs import Itgs
 
 

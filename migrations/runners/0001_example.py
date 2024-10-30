@@ -1,4 +1,5 @@
 """An example migration"""
+
 from itgs import Itgs
 
 

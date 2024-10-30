@@ -1,4 +1,5 @@
 """Adds static public images table"""
+
 from itgs import Itgs
 
 

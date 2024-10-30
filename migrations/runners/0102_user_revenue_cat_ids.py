@@ -2,6 +2,7 @@
 to facilitate merge account flows. This migration does not delete the old
 revenue cat id column; that's done in the next migration
 """
+
 import json
 import secrets
 from typing import Optional, cast

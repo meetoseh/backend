@@ -930,7 +930,7 @@ async def add_journal_entry_reflection_question(
         journal_entry_uid=journal_entry_uid,
         user_sub=user_sub,
         pending_moderation="ignore",
-        ctx=ctx
+        ctx=ctx,
     )
     await stream.start()
 

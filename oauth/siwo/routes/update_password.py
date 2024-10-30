@@ -283,9 +283,9 @@ async def update_password(
             stats.incr_password_update_attempted(unix_date=update_unix_date)
             stats.incr_password_update_succeeded(
                 unix_date=update_unix_date,
-                precondition=b"was_unverified"
-                if email_was_unverified
-                else b"was_verified",
+                precondition=(
+                    b"was_unverified" if email_was_unverified else b"was_verified"
+                ),
             )
         if os.environ["ENVIRONMENT"] != "dev":
             slack = await itgs.slack()

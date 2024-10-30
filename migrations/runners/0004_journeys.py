@@ -1,4 +1,5 @@
 """Adds the tables required for journeys"""
+
 from itgs import Itgs
 
 

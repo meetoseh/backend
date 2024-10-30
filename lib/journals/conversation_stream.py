@@ -6,7 +6,10 @@ from typing import Dict, List, Literal, Optional, Set, Union, cast
 
 from error_middleware import handle_error
 from itgs import Itgs
-from lib.journals.data_to_client import DataToClientContext, get_journal_chat_job_voice_note_metadata
+from lib.journals.data_to_client import (
+    DataToClientContext,
+    get_journal_chat_job_voice_note_metadata,
+)
 from lib.journals.get_processing_block_for_text import get_processing_block_for_text
 from lib.journals.journal_entry_item_data import (
     JournalEntryItemData,

@@ -477,7 +477,7 @@ WHERE
                 f"request but the insert failed",
             )
             return Response(status_code=500)
-        
+
         assert response[4].rows_affected == 1, response
         assert response[5].rows_affected == 1, response
 

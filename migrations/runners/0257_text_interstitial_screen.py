@@ -133,7 +133,12 @@ SELECT
             "Text Interstitial",
             "For v>=v96, a text interstitial screen with highly configurable content",
             json.dumps(schema, sort_keys=True),
-            int(ClientScreenFlag.SHOWS_IN_ADMIN | ClientScreenFlag.SHOWS_ON_BROWSER),
+            int(
+                ClientScreenFlag.SHOWS_IN_ADMIN
+                | ClientScreenFlag.SHOWS_ON_BROWSER
+                | ClientScreenFlag.SHOWS_ON_IOS
+                | ClientScreenFlag.SHOWS_ON_ANDROID
+            ),
         ),
     )
 

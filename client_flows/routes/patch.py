@@ -428,7 +428,7 @@ async def check_flow_screens(
                         "to be a string, number, integer, boolean, or null",
                         f"a(n) {produced_type}",
                     )
-                if target_type != "string":
+                if target_type != "string" and target_type is not None:
                     raise PreconditionFailedException(
                         f"screens[{idx}].screen.variable[{req_param.idx}] input {req_param.input_path}",
                         "'string'",

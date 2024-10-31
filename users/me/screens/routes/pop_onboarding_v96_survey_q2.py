@@ -27,7 +27,7 @@ class PopOnboardingV96SurveyQ2Parameters(BaseModel):
     emotion: Annotated[str, StringConstraints(max_length=63)] = Field(
         description="The emotion they want to feel more of"
     )
-    choices: Annotated[
+    checked: Annotated[
         List[Annotated[str, StringConstraints(max_length=255)]],
         Len(min_length=1, max_length=6),
     ] = Field(
@@ -111,7 +111,7 @@ async def pop_onboarding_v96_survey_q2(
             return await _realize(screen)
 
         emotion = args.trigger.parameters.emotion
-        goals = args.trigger.parameters.choices
+        goals = args.trigger.parameters.checked
         content_parts: list = [
             {
                 "type": "header",

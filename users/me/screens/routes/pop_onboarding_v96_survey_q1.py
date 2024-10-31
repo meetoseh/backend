@@ -24,7 +24,7 @@ router = APIRouter()
 
 
 class PopOnboardingV96SurveyQ1Parameters(BaseModel):
-    choices: Annotated[
+    checked: Annotated[
         List[Annotated[str, StringConstraints(max_length=63)]],
         Len(min_length=1, max_length=1),
     ] = Field(
@@ -106,7 +106,7 @@ async def pop_onboarding_v96_survey_q1(
             )
             return await _realize(screen)
 
-        emotion = args.trigger.parameters.choices[0][4:]
+        emotion = args.trigger.parameters.checked[0][4:].lower()
 
         screen = await execute_pop(
             itgs,

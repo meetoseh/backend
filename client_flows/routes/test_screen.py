@@ -1203,7 +1203,7 @@ def _determine_if_appropriate(
 
     if req_param.usage_type == "string_formattable":
         output_type = output_schema.schema.get("type")
-        if output_type != "string":
+        if output_type != "string" and output_type is not None:
             return IsAppropriateFailure(
                 type="failure",
                 error_response=Response(

@@ -16,6 +16,7 @@ import users.me.screens.routes.pop_to_new_journal_entry
 import users.me.screens.routes.pop_to_phone_verify
 import users.me.screens.routes.pop_joining_opt_in_group
 import users.me.screens.routes.pop_unsubscribing_email
+import users.me.screens.routes.pop_onboarding_v96_survey_q1
 import users.me.screens.routes.pop_onboarding_v96_survey_q2
 
 import users.me.screens.routes.apply_touch_link
@@ -41,6 +42,8 @@ router.include_router(users.me.screens.routes.pop_to_new_journal_entry.router)
 router.include_router(users.me.screens.routes.pop_to_phone_verify.router)
 router.include_router(users.me.screens.routes.pop_joining_opt_in_group.router)
 router.include_router(users.me.screens.routes.pop_unsubscribing_email.router)
+router.include_router(users.me.screens.routes.pop_onboarding_v96_survey_q1.router)
+router.include_router(users.me.screens.routes.pop_onboarding_v96_survey_q2.router)
 
 router.include_router(users.me.screens.routes.apply_touch_link.router)
 router.include_router(users.me.screens.routes.empty_with_merge_token.router)

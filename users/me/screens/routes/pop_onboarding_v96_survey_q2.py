@@ -112,14 +112,14 @@ async def pop_onboarding_v96_survey_q2(
 
         emotion = args.trigger.parameters.emotion
         goals = args.trigger.parameters.choices
-        content: list = [
+        content_parts: list = [
             {
                 "type": "header",
                 "value": "You are just steps away from achieving your goals",
             }
         ]
         for idx, goal in enumerate(goals):
-            content.extend(
+            content_parts.extend(
                 [
                     {
                         "type": "spacer",
@@ -143,7 +143,11 @@ async def pop_onboarding_v96_survey_q2(
                 client_parameters={
                     "emotion": emotion,
                     "goals": goals,
-                    "content": content,
+                    "content": {
+                        "type": "screen-text-content",
+                        "version": 1,
+                        "parts": content_parts,
+                    },
                 },
             ),
         )

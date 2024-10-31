@@ -603,6 +603,7 @@ def fill_in_default_values(*, schema: Any, original: Any) -> FillInDefaultValues
                     raise ValueError(
                         f"no subschema matched {enum_discriminator=}={enum_value} at {pretty_path(current.original_path_to_here)}"
                     )
+                continue
 
             for unsupported_key in ["anyOf", "allOf", "oneOf", "patternProperties"]:
                 if unsupported_key in current.schema:

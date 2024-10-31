@@ -111,7 +111,7 @@ async def pop_onboarding_v96_survey_q2(
             return await _realize(screen)
 
         emotion = args.trigger.parameters.emotion
-        goals = args.trigger.parameters.checked
+        goals = [v[4:] for v in args.trigger.parameters.checked]
         content_parts: list = [
             {
                 "type": "header",

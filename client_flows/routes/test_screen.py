@@ -255,7 +255,6 @@ async def test_screen(
                     enum_path_with_special_indices,
                     screen.raw_schema,
                     args.flow_screen.screen.fixed,
-                    ignore_paths,
                 ):
                     try:
                         res = extract_schema_default_value(

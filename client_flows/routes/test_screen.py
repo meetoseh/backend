@@ -226,16 +226,36 @@ async def test_screen(
                 headers={"Content-Type": "application/json; charset=utf-8"},
             )
 
+        ignore_paths: List[List[Union[str, int]]] = []
+        for variable_input in args.flow_screen.screen.variable:
+            if variable_input.type == "copy":
+                ignore_paths.append(variable_input.output_path)
+
         discriminators: Dict[tuple, int] = dict()
         try:
             for (
                 enum_path_with_special_indices,
                 allowed_values,
             ) in screen.realizer.iter_enum_discriminators():
+                should_ignore = False
+                for ignore_path in ignore_paths:
+                    if len(enum_path_with_special_indices) < len(ignore_path):
+                        continue
+                    for idx, ignore_path_value in enumerate(ignore_path):
+                        if ignore_path_value != enum_path_with_special_indices[idx]:
+                            break
+                    else:
+                        should_ignore = True
+                        break
+
+                if should_ignore:
+                    continue
+
                 for enum_path in fix_special_enum_path_indices(
                     enum_path_with_special_indices,
                     screen.raw_schema,
                     args.flow_screen.screen.fixed,
+                    ignore_paths,
                 ):
                     try:
                         res = extract_schema_default_value(
@@ -455,6 +475,19 @@ async def test_screen(
             enum_path_with_special_indices,
             allowed_values,
         ) in screen.realizer.iter_enum_discriminators():
+            should_ignore = False
+            for ignore_path in ignore_paths:
+                if len(enum_path_with_special_indices) < len(ignore_path):
+                    continue
+                for idx, ignore_path_value in enumerate(ignore_path):
+                    if ignore_path_value != enum_path_with_special_indices[idx]:
+                        break
+                else:
+                    should_ignore = True
+                    break
+
+            if should_ignore:
+                continue
             for enum_path in fix_special_enum_path_indices(
                 enum_path_with_special_indices,
                 screen.raw_schema,

@@ -559,7 +559,7 @@ def fill_in_default_values(*, schema: Any, original: Any) -> FillInDefaultValues
                         f"expected list at {pretty_path(current.schema_path_to_here + ['oneOf'])} (have x-enum-discriminator)"
                     )
 
-                for subschema_idx, subschema in one_of:
+                for subschema_idx, subschema in enumerate(one_of):
                     if not isinstance(subschema, dict):
                         raise ValueError(
                             f"expected dict at {pretty_path(current.schema_path_to_here + ['oneOf', subschema_idx])}"

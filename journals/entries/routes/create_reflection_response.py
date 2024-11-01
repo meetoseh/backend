@@ -242,7 +242,50 @@ async def create_reflection_response(
                 f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
                 f"request but the message was empty after stripping whitespace",
             )
-            return Response(status_code=500)
+            queue_job_result = (
+                await lib.journals.start_journal_chat_job.sync_journal_entry(
+                    itgs,
+                    user_sub=std_auth_result.result.sub,
+                    journal_entry_uid=args.journal_entry_uid,
+                    now=time.time(),
+                )
+            )
+            if queue_job_result.type != "success" and queue_job_result.type != "locked":
+                await handle_warning(
+                    f"{__name__}:queue_job_failed:{queue_job_result.type}",
+                    f"User `{std_auth_result.result.sub}` responded to a journal entry with empty (so we sync), "
+                    f"but we failed to queue the job to form a response: `{queue_job_result.type}`",
+                )
+                if queue_job_result.type == "ratelimited":
+                    return ERROR_RATELIMITED_RESPONSE
+                if queue_job_result.type == "user_not_found":
+                    return AUTHORIZATION_UNKNOWN_TOKEN
+                return Response(status_code=500)
+
+            chat_jwt = await journals.chat_auth.create_jwt(
+                itgs,
+                user_sub=std_auth_result.result.sub,
+                journal_entry_uid=args.journal_entry_uid,
+                journal_chat_uid=queue_job_result.journal_chat_uid,
+                journal_client_key_uid=args.journal_client_key_uid,
+                audience="oseh-journal-chat",
+            )
+            entry_jwt = await journals.entry_auth.create_jwt(
+                itgs,
+                journal_entry_uid=args.journal_entry_uid,
+                journal_client_key_uid=args.journal_client_key_uid,
+                user_sub=std_auth_result.result.sub,
+                audience="oseh-journal-entry",
+            )
+            return Response(
+                content=SyncJournalEntryResponse(
+                    journal_chat_jwt=chat_jwt,
+                    journal_entry_uid=args.journal_entry_uid,
+                    journal_entry_jwt=entry_jwt,
+                ).model_dump_json(),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                status_code=200,
+            )
 
         master_encrypted_data = journal_master_key.journal_master_key.encrypt_at_time(
             gzip.compress(

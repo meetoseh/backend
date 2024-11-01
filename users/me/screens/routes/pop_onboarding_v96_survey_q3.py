@@ -128,10 +128,24 @@ async def pop_onboarding_v96_survey_q3(
             channel="oseh_bot",
         )
 
+        challenge_description = challenge.lower()
+        if challenge_description == "managing stress":
+            challenge_description = "with managing stress"
+        elif challenge_description == "staying focused":
+            challenge_description = "maintaining focus"
+        elif challenge_description == "finding motivation":
+            challenge_description = "finding motivation (the initial spark) and discipline (what keeps you going)"
+        elif challenge_description == "improving sleep":
+            challenge_description = "getting a good night’s sleep"
+        elif challenge_description == "feeling connected to others":
+            challenge_description = "with feeling disconnected from others"
+        elif challenge_description == "creating time for self-care":
+            challenge_description = "with creating time for self-care"
+
         content_parts: list = [
             {
                 "type": "header",
-                "value": f"We all face challenges like {challenge.lower()}. With Oseh, you’ll find personalized support to overcome it.",
+                "value": f"We all face challenges like {challenge_description}. With Oseh, you’ll find personalized support to overcome it.",
             }
         ]
 

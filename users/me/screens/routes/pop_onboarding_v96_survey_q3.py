@@ -222,6 +222,8 @@ WHERE
                             new_llm_context_created_at,
                             unix_date_for_user,
                             local_time_seconds_from_midnight,
+                            user_sub,
+                            master_key.journal_master_key_uid,
                         ],
                     ),
                 )

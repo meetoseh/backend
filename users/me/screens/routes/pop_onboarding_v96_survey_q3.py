@@ -154,7 +154,7 @@ async def pop_onboarding_v96_survey_q3(
 
             conn = await itgs.conn()
             cursor = conn.cursor()
-            await cursor.executemany3(
+            response = await cursor.executemany3(
                 (
                     (
                         """
@@ -228,6 +228,12 @@ WHERE
                     ),
                 )
             )
+
+            if response[1].rows_affected != 1:
+                await handle_warning(
+                    f"{__name__}:llm_context:failed_to_store",
+                    f"Expected 1 row affected, got {response[1].rows_affected=}",
+                )
 
         goals_joined = ", ".join(goals)
 

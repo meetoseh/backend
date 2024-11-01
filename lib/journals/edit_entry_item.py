@@ -1,6 +1,7 @@
 import gzip
 import hmac
 import io
+import secrets
 import time
 from typing import Callable, List, Literal, Protocol, Union, cast
 
@@ -126,7 +127,15 @@ class EditEntryItemResultStoreRaced:
 class EditEntryItemResultSuccess:
     type: Literal["success"]
     """
-    - `success`: the reflection question was successfully edited
+    - `success`: the journal entry item was successfully edited
+    """
+
+
+@dataclass
+class EditEntryItemResultDeleted:
+    type: Literal["deleted"]
+    """
+    - `deleted`: the journal entry item was successfully deleted
     """
 
 
@@ -141,6 +150,7 @@ EditEntryItemResult = Union[
     EditEntryItemResultEncryptNewError,
     EditEntryItemResultStoreRaced,
     EditEntryItemResultSuccess,
+    EditEntryItemResultDeleted,
 ]
 
 
@@ -154,8 +164,18 @@ class EditEntryItemDecryptedTextToItemResultSuccess:
     """The data the payload corresponds to"""
 
 
+@dataclass
+class EditEntryItemDecryptedTextToItemResultDelete:
+    type: Literal["delete"]
+    """
+    - `delete`: the referenced item should be deleted
+    """
+
+
 EditEntryItemDecryptedTextToItemResult = Union[
-    EditEntryItemResultDecryptNewError, EditEntryItemDecryptedTextToItemResultSuccess
+    EditEntryItemResultDecryptNewError,
+    EditEntryItemDecryptedTextToItemResultSuccess,
+    EditEntryItemDecryptedTextToItemResultDelete,
 ]
 
 
@@ -198,6 +218,9 @@ class EditEntryItemDecryptedTextToTextualItem:
 
         decrypted_text_str = decrypted_text_str.strip()
         paragraphs = break_paragraphs(decrypted_text_str)
+
+        if not paragraphs:
+            return EditEntryItemDecryptedTextToItemResultDelete(type="delete")
 
         return EditEntryItemDecryptedTextToItemResultSuccess(
             type="success",
@@ -356,6 +379,9 @@ WHERE
             )
             return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
 
+        if not result:
+            return EditEntryItemDecryptedTextToItemResultDelete(type="delete")
+
         return EditEntryItemDecryptedTextToItemResultSuccess(
             type="success",
             data=JournalEntryItemData(
@@ -413,6 +439,7 @@ async def edit_entry_item(
         "chat", "reflection-question", "reflection-response", "summary"
     ],
     decrypted_text_to_item: EditEntryItemDecryptedTextToItem,
+    allow_delete: bool = False,
 ) -> EditEntryItemResult:
     """Edits the journal entry item within the journal entry with the given uid
     owned by the user with the given sub to the value indicated by the encrypted
@@ -590,8 +617,162 @@ WHERE
         decrypted_text_bytes,
         error_ctx=lambda: f"User `{user_sub}` tried to edit a(n) {expected_type}",
     )
-    if parse_payload_result.type != "success":
+    if parse_payload_result.type == "decrypt_new_error":
         return parse_payload_result
+
+    if parse_payload_result.type == "delete":
+        if not allow_delete:
+            await handle_warning(
+                f"{__name__}:delete_not_allowed",
+                f"User `{user_sub}` tried to delete a(n) {expected_type}, but the operation was not allowed (set allow_delete=True to allow)",
+            )
+            return EditEntryItemResultDecryptNewError(type="decrypt_new_error")
+
+        scratch_uid = f"oseh_scr_{secrets.token_urlsafe(16)}"
+        delete_multi_response = await cursor.executemany3(
+            (
+                (
+                    """
+INSERT INTO scratch (uid)
+SELECT
+    ?
+WHERE
+    EXISTS (
+        SELECT 1 FROM journal_entry_items
+        WHERE
+            journal_entry_items.journal_entry_id = (
+                SELECT journal_entries.id
+                FROM users, journal_entries
+                WHERE
+                    users.sub = ?
+                    AND journal_entries.user_id = users.id
+                    AND journal_entries.uid = ?
+            )
+            AND journal_entry_items.entry_counter = ?
+            AND journal_entry_items.master_encrypted_data = ?
+    )
+                    """,
+                    (
+                        scratch_uid,
+                        user_sub,
+                        journal_entry_uid,
+                        entry_counter,
+                        existing_master_encrypted_data,
+                    ),
+                ),
+                (
+                    """
+DELETE FROM journal_entry_items
+WHERE
+    EXISTS (SELECT 1 FROM scratch WHERE scratch.uid = ?)
+    AND journal_entry_id = (
+        SELECT journal_entries.id
+        FROM users, journal_entries
+        WHERE
+            users.sub = ?
+            AND journal_entries.user_id = users.id
+            AND journal_entries.uid = ?
+    )
+    AND entry_counter = ?
+    AND master_encrypted_data = ?
+                """,
+                    (
+                        scratch_uid,
+                        user_sub,
+                        journal_entry_uid,
+                        entry_counter,
+                        existing_master_encrypted_data,
+                    ),
+                ),
+                (  # the choice of 2**30 is arbitrary; any number larger than the old largest will do
+                    """
+UPDATE journal_entry_items
+SET entry_counter = entry_counter + 1073741824
+WHERE
+    journal_entry_id = (
+        SELECT journal_entries.id
+        FROM users, journal_entries
+        WHERE
+            users.sub = ?
+            AND journal_entries.user_id = users.id
+            AND journal_entries.uid = ?
+    )
+    AND entry_counter > ?
+    AND EXISTS (SELECT 1 FROM scratch WHERE scratch.uid = ?)
+                    """,
+                    (
+                        user_sub,
+                        journal_entry_uid,
+                        entry_counter,
+                        scratch_uid,
+                    ),
+                ),
+                (
+                    """
+UPDATE journal_entry_items
+SET entry_counter = entry_counter - 1073741824 - 1
+WHERE
+    journal_entry_id = (
+        SELECT journal_entries.id
+        FROM users, journal_entries
+        WHERE
+            users.sub = ?
+            AND journal_entries.user_id = users.id
+            AND journal_entries.uid = ?
+    )
+    AND entry_counter > 1073741824
+    AND EXISTS (SELECT 1 FROM scratch WHERE scratch.uid = ?)
+                    """,
+                    (
+                        user_sub,
+                        journal_entry_uid,
+                        scratch_uid,
+                    ),
+                ),
+                ("DELETE FROM scratch WHERE uid = ?", (scratch_uid,)),
+            )
+        )
+
+        insert_scratch_response = delete_multi_response[0]
+        delete_entry_response = delete_multi_response[1]
+        update_entry_response = delete_multi_response[2]
+        update_entry_response_2 = delete_multi_response[3]
+        delete_scratch_response = delete_multi_response[4]
+
+        if insert_scratch_response.rows_affected != 1:
+            assert (
+                delete_entry_response.rows_affected is None
+                or delete_entry_response.rows_affected < 1
+            ), delete_multi_response
+            assert (
+                update_entry_response.rows_affected is None
+                or update_entry_response.rows_affected < 1
+            ), delete_multi_response
+            assert (
+                update_entry_response_2.rows_affected is None
+                or update_entry_response_2.rows_affected < 1
+            ), delete_multi_response
+            assert (
+                delete_scratch_response.rows_affected is None
+                or delete_scratch_response.rows_affected < 1
+            ), delete_multi_response
+            return EditEntryItemResultItemNotFound(type="journal_entry_item_not_found")
+
+        assert delete_entry_response.rows_affected == 1, delete_multi_response
+
+        updated_in_first = (
+            update_entry_response.rows_affected
+            if update_entry_response.rows_affected is not None
+            else 0
+        )
+        updated_in_second = (
+            update_entry_response_2.rows_affected
+            if update_entry_response_2.rows_affected is not None
+            else 0
+        )
+        assert updated_in_first == updated_in_second, delete_multi_response
+        assert delete_scratch_response.rows_affected == 1, delete_multi_response
+        return EditEntryItemResultDeleted(type="deleted")
 
     new_encrypted_master_data = encryption_master_key.journal_master_key.encrypt(
         gzip.compress(

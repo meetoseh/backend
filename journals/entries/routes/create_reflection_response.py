@@ -214,34 +214,7 @@ async def create_reflection_response(
             )
             return Response(status_code=500)
 
-        if reflection_response_parts_res.type != "success":
-            # a warning was already issued with context
-            return Response(status_code=500)
-
-        reflection_response_data = reflection_response_parts_res.data
-
-        journal_master_key = await get_journal_master_key_for_encryption(
-            itgs, user_sub=std_auth_result.result.sub, now=time.time()
-        )
-        if journal_master_key.type != "success":
-            await handle_warning(
-                f"{__name__}:no_master_key",
-                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
-                f"request but we could not fetch a journal master key to use: {journal_master_key.type}",
-            )
-            return Response(
-                status_code=503 if journal_master_key.type == "s3_error" else 500
-            )
-
-        if (
-            reflection_response_data.data.type != "textual"
-            or not reflection_response_data.data.parts
-        ):
-            await handle_warning(
-                f"{__name__}:no_message",
-                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
-                f"request but the message was empty after stripping whitespace",
-            )
+        if reflection_response_parts_res.type == "delete":
             queue_job_result = (
                 await lib.journals.start_journal_chat_job.sync_journal_entry(
                     itgs,
@@ -286,6 +259,36 @@ async def create_reflection_response(
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=200,
             )
+
+        if reflection_response_parts_res.type != "success":
+            # a warning was already issued with context
+            return Response(status_code=500)
+
+        reflection_response_data = reflection_response_parts_res.data
+
+        journal_master_key = await get_journal_master_key_for_encryption(
+            itgs, user_sub=std_auth_result.result.sub, now=time.time()
+        )
+        if journal_master_key.type != "success":
+            await handle_warning(
+                f"{__name__}:no_master_key",
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
+                f"request but we could not fetch a journal master key to use: {journal_master_key.type}",
+            )
+            return Response(
+                status_code=503 if journal_master_key.type == "s3_error" else 500
+            )
+
+        if (
+            reflection_response_data.data.type != "textual"
+            or not reflection_response_data.data.parts
+        ):
+            await handle_warning(
+                f"{__name__}:bad_parts",
+                f"User `{std_auth_result.result.sub}` tried to respond to a journal entry with a valid "
+                f"request but the reflection response was not in the correct format",
+            )
+            return Response(status_code=500)
 
         master_encrypted_data = journal_master_key.journal_master_key.encrypt_at_time(
             gzip.compress(

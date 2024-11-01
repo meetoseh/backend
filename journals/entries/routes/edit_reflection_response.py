@@ -145,6 +145,7 @@ async def edit_reflection_response(
                     itgs, "reflection-response", "self", std_auth_result.result.sub
                 )
             ),
+            allow_delete=True,
         )
         if edit_result.type == "user_not_found":
             return AUTHORIZATION_UNKNOWN_TOKEN
@@ -163,7 +164,11 @@ async def edit_reflection_response(
             return ERROR_KEY_UNAVAILABLE_RESPONSE
         if edit_result.type == "journal_entry_item_bad_type":
             return ERROR_BAD_STATE_RESPONSE
-        if edit_result.type != "success":
+        if edit_result.type != "success" and edit_result.type != "deleted":
+            await handle_warning(
+                f"{__name__}:edit_failed:{edit_result.type}",
+                f"User `{std_auth_result.result.sub}` tried to edit a reflection response, but we failed unexpectedly",
+            )
             return Response(
                 content=StandardErrorResponse[ERROR_500_TYPES](
                     type="contact_support",
@@ -171,6 +176,25 @@ async def edit_reflection_response(
                 ).model_dump_json(),
                 headers={"Content-Type": "application/json; charset=utf-8"},
                 status_code=500,
+            )
+
+        if edit_result.type == "deleted":
+            conn = await itgs.conn()
+            cursor = conn.cursor()
+            await cursor.execute(
+                """
+UPDATE journal_entries 
+SET flags = flags | 1 
+WHERE 
+    uid=? 
+    AND NOT EXISTS (
+        SELECT 1 FROM journal_entry_items
+        WHERE
+            journal_entry_items.journal_entry_id = journal_entries.id
+            AND journal_entry_items.entry_counter > 1
+    )
+                """,
+                (args.journal_entry_uid,),
             )
 
         queue_job_at = time.time()

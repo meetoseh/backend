@@ -1,7 +1,13 @@
+import datetime
+import json
+import secrets
+import time
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints
 from annotated_types import Len
+import pytz
+from error_middleware import handle_warning
 from lib.client_flows.executor import (
     ClientScreenQueuePeekInfo,
     TrustedTrigger,
@@ -9,16 +15,19 @@ from lib.client_flows.executor import (
     execute_peek,
     execute_pop,
 )
+from lib.journals.master_keys import get_journal_master_key_for_encryption
 from lib.shared.describe_user import enqueue_send_described_user_slack_message
 from models import STANDARD_ERRORS_BY_CODE
 from typing import Annotated, List, Optional
 from itgs import Itgs
 import auth as std_auth
+from users.lib.timezones import get_user_timezone
 import users.me.screens.auth
 import users.lib.entitlements
 from users.me.screens.lib.realize_screens import realize_screens
 from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
+import unix_dates
 
 
 router = APIRouter()
@@ -118,6 +127,105 @@ async def pop_onboarding_v96_survey_q3(
         emotion = args.trigger.parameters.emotion
         goals = args.trigger.parameters.goals
         challenge = args.trigger.parameters.checked[0][4:]
+
+        master_key = await get_journal_master_key_for_encryption(
+            itgs, user_sub=user_sub, now=time.time()
+        )
+        if master_key.type != "success":
+            await handle_warning(
+                f"{__name__}:master_key:{master_key.type}",
+                "Failed to get master key for storing v96 onboarding survey data",
+            )
+        else:
+            user_tz = await get_user_timezone(itgs, user_sub=user_sub)
+            new_llm_context_uid = f"oseh_ullm_{secrets.token_urlsafe(16)}"
+            new_llm_context_created_at = time.time()
+            unix_date_for_user = unix_dates.unix_timestamp_to_unix_date(
+                new_llm_context_created_at, tz=user_tz
+            )
+            local_time_for_user = datetime.datetime.fromtimestamp(
+                new_llm_context_created_at, pytz.utc
+            ).astimezone(user_tz)
+            local_time_seconds_from_midnight = (
+                local_time_for_user.hour * 3600
+                + local_time_for_user.minute * 60
+                + local_time_for_user.second
+            )
+
+            conn = await itgs.conn()
+            cursor = conn.cursor()
+            await cursor.executemany3(
+                (
+                    (
+                        """
+DELETE FROM user_llm_context
+WHERE
+    user_id = (SELECT users.id FROM users WHERE users.sub = ?)
+    AND user_llm_context.type = 'onboarding_v96_survey'
+                        """,
+                        [user_sub],
+                    ),
+                    (
+                        """
+INSERT INTO user_llm_context (
+    uid,
+    user_id,
+    type,
+    user_journal_master_key_id,
+    encrypted_structured_data,
+    encrypted_unstructured_data,
+    created_at,
+    created_unix_date,
+    created_local_time
+)
+SELECT
+    ?,
+    users.id,
+    'onboarding_v96_survey',
+    user_journal_master_keys.id,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?
+FROM users, user_journal_master_keys
+WHERE
+    users.sub = ?
+    AND users.id = user_journal_master_keys.user_id
+    AND user_journal_master_keys.uid = ?
+                        """,
+                        [
+                            new_llm_context_uid,
+                            master_key.journal_master_key.encrypt_at_time(
+                                json.dumps(
+                                    {
+                                        "emotion": emotion,
+                                        "goals": goals,
+                                        "challenge": challenge,
+                                    }
+                                ).encode("utf-8"),
+                                int(new_llm_context_created_at),
+                            ).decode("ascii"),
+                            master_key.journal_master_key.encrypt_at_time(
+                                (
+                                    "<survey>"
+                                    '<question author="assistant">What would you like to feel more of in your daily life?</question>'
+                                    f'<answer author="user">{emotion}</answer>'
+                                    '<question author="assistant">What are your goals?</question>'
+                                    f'<answer author="user">{", ".join(goals)}</answer>'
+                                    '<question author="assistant">What is your biggest challenge right now?</question>'
+                                    f'<answer author="user">{challenge}</answer>'
+                                    "</survey>"
+                                ).encode("utf-8"),
+                                int(new_llm_context_created_at),
+                            ).decode("ascii"),
+                            new_llm_context_created_at,
+                            unix_date_for_user,
+                            local_time_seconds_from_midnight,
+                        ],
+                    ),
+                )
+            )
 
         goals_joined = ", ".join(goals)
 

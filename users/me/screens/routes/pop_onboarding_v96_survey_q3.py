@@ -145,7 +145,7 @@ async def pop_onboarding_v96_survey_q3(
         content_parts: list = [
             {
                 "type": "header",
-                "value": f"We all face challenges like {challenge_description}. With Oseh, you’ll find personalized support to overcome it.",
+                "value": f"We all face challenges {challenge_description}. With Oseh, you’ll find personalized support to overcome it.",
             }
         ]
 

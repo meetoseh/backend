@@ -30,7 +30,7 @@ class PopOnboardingV96SurveyQ1Parameters(BaseModel):
         List[Annotated[str, StringConstraints(max_length=63)]],
         Len(min_length=1, max_length=1),
     ] = Field(
-        default_factory=lambda: ["[0] __appFix"],
+        default_factory=lambda: ["[0] __appfix"],
         description="The emotion they want to feel",
     )
 
@@ -111,7 +111,7 @@ async def pop_onboarding_v96_survey_q1(
 
         emotion = args.trigger.parameters.checked[0][4:].lower()
 
-        if emotion == "__appFix":
+        if emotion == "__appfix":
             # look for a trace on the screen
             conn = await itgs.conn()
             cursor = conn.cursor()

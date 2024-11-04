@@ -121,7 +121,7 @@ SELECT
     json_extract(user_client_screen_actions_log.event, '$.value') AS value
 FROM 
     user_client_screen_actions_log,
-    user_client_screen_log,
+    user_client_screens_log,
     users
 WHERE
     user_client_screen_actions_log.user_client_screen_log_id = user_client_screens_log.id
@@ -129,7 +129,7 @@ WHERE
     AND users.sub = ?
     AND json_extract(user_client_screen_actions_log.event, '$.action') = 'checked-changed'
 ORDER BY 
-    user_client_screen_log.created_at DESC,
+    user_client_screens_log.created_at DESC,
     user_client_screen_actions_log.created_at DESC,
     user_client_screen_actions_log.uid ASC
 LIMIT 1

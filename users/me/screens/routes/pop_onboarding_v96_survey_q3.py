@@ -24,6 +24,7 @@ import auth as std_auth
 from users.lib.timezones import get_user_timezone
 import users.me.screens.auth
 import users.lib.entitlements
+from users.me.screens.lib.extract_choices import extract_choices
 from users.me.screens.lib.realize_screens import realize_screens
 from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
@@ -46,7 +47,10 @@ class PopOnboardingV96SurveyQ3Parameters(BaseModel):
     checked: Annotated[
         List[Annotated[str, StringConstraints(max_length=255)]],
         Len(min_length=1, max_length=1),
-    ] = Field(description="Their biggest challenge right now")
+    ] = Field(
+        default_factory=lambda: ["[0] __appfix"],
+        description="Their biggest challenge right now",
+    )
 
 
 class PopOnboardingV96SurveyQ3ParametersTriggerRequest(BaseModel):
@@ -126,7 +130,15 @@ async def pop_onboarding_v96_survey_q3(
 
         emotion = args.trigger.parameters.emotion
         goals = args.trigger.parameters.goals
-        challenge = args.trigger.parameters.checked[0][4:]
+
+        checked = await extract_choices(
+            itgs,
+            user_sub=user_sub,
+            given=args.trigger.parameters.checked,
+            default=["[0] Managing stress"],
+        )
+
+        challenge = checked[0][4:]
 
         master_key = await get_journal_master_key_for_encryption(
             itgs, user_sub=user_sub, now=time.time()

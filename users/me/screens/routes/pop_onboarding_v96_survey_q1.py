@@ -1,9 +1,7 @@
-import json
 from fastapi import APIRouter, Header
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, StringConstraints
 from annotated_types import Len
-from error_middleware import handle_warning
 from lib.client_flows.executor import (
     ClientScreenQueuePeekInfo,
     TrustedTrigger,
@@ -12,11 +10,12 @@ from lib.client_flows.executor import (
     execute_pop,
 )
 from models import STANDARD_ERRORS_BY_CODE
-from typing import Annotated, List, Optional, cast
+from typing import Annotated, List, Optional
 from itgs import Itgs
 import auth as std_auth
 import users.me.screens.auth
 import users.lib.entitlements
+from users.me.screens.lib.extract_choices import extract_choices
 from users.me.screens.lib.realize_screens import realize_screens
 from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
@@ -109,53 +108,14 @@ async def pop_onboarding_v96_survey_q1(
             )
             return await _realize(screen)
 
-        emotion = args.trigger.parameters.checked[0][4:].lower()
+        checked = await extract_choices(
+            itgs,
+            user_sub=user_sub,
+            given=args.trigger.parameters.checked,
+            default=["[0] Grounded"],
+        )
 
-        if emotion == "__appfix":
-            # look for a trace on the screen
-            conn = await itgs.conn()
-            cursor = conn.cursor()
-            response = await cursor.execute(
-                """
-SELECT
-    json_extract(user_client_screen_actions_log.event, '$.value') AS value
-FROM 
-    user_client_screen_actions_log,
-    user_client_screens_log,
-    users
-WHERE
-    user_client_screen_actions_log.user_client_screen_log_id = user_client_screens_log.id
-    AND user_client_screens_log.user_id = users.id
-    AND users.sub = ?
-    AND json_extract(user_client_screen_actions_log.event, '$.type') = 'checked-changed'
-ORDER BY 
-    user_client_screens_log.created_at DESC,
-    user_client_screen_actions_log.created_at DESC,
-    user_client_screen_actions_log.uid ASC
-LIMIT 1
-                """,
-                (user_sub,),
-            )
-            if not response.results:
-                await handle_warning(
-                    f"{__name__}:no_checked_changed",
-                    f"Failed to determine what was checked for app hotfix survey q1 for user {user_sub}, using grounded",
-                )
-                emotion = "grounded"
-            else:
-                value = cast(List[str], json.loads(response.results[0][0]))
-                if value:
-                    emotion = value[0][4:].lower()
-                    await handle_warning(
-                        f"{__name__}:fallback_checked",
-                        f"Used fallback for v96 q1 for user {user_sub}: {emotion}",
-                    )
-                else:
-                    await handle_warning(
-                        f"{__name__}:no_checked",
-                        f"Failed to determine what was checked for app hotfix survey q1 for user {user_sub}, (was empty) using grounded",
-                    )
-                    emotion = "grounded"
+        emotion = checked[0][4:].lower()
 
         screen = await execute_pop(
             itgs,

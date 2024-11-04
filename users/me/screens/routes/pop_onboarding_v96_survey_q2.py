@@ -15,6 +15,7 @@ from itgs import Itgs
 import auth as std_auth
 import users.me.screens.auth
 import users.lib.entitlements
+from users.me.screens.lib.extract_choices import extract_choices
 from users.me.screens.lib.realize_screens import realize_screens
 from users.me.screens.models.peeked_screen import PeekScreenResponse
 from visitors.lib.get_or_create_visitor import VisitorSource
@@ -31,6 +32,7 @@ class PopOnboardingV96SurveyQ2Parameters(BaseModel):
         List[Annotated[str, StringConstraints(max_length=255)]],
         Len(min_length=1, max_length=6),
     ] = Field(
+        default_factory=lambda: ["[0] __appfix"],
         description="The goals they want to achieve",
     )
 
@@ -111,7 +113,15 @@ async def pop_onboarding_v96_survey_q2(
             return await _realize(screen)
 
         emotion = args.trigger.parameters.emotion
-        goals = [v[4:] for v in args.trigger.parameters.checked]
+
+        checked = await extract_choices(
+            itgs,
+            user_sub=user_sub,
+            given=args.trigger.parameters.checked,
+            default=["[0] Be more present"],
+        )
+
+        goals = [v[4:] for v in checked]
         content_parts: list = [
             {
                 "type": "header",

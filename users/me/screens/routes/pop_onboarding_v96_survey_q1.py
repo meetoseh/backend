@@ -127,7 +127,7 @@ WHERE
     user_client_screen_actions_log.user_client_screen_log_id = user_client_screens_log.id
     AND user_client_screens_log.user_id = users.id
     AND users.sub = ?
-    AND json_extract(user_client_screen_actions_log.event, '$.action') = 'checked-changed'
+    AND json_extract(user_client_screen_actions_log.event, '$.type') = 'checked-changed'
 ORDER BY 
     user_client_screens_log.created_at DESC,
     user_client_screen_actions_log.created_at DESC,

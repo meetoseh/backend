@@ -330,6 +330,9 @@ async def attempt_start_merge(
         started_executing_at = time.perf_counter()
         async with Itgs() as itgs2:
             # temporary workaround to increase timeout for this query
+            # on 11/5/2024 this query completes in ~0.1s - but the day before it took
+            # 120s just due to query planner issues (see the AS MATERIALIZED hints and
+            # select inner-queries instead of joins)
             conn2 = await itgs2.conn()
             conn2.timeout = 600
             cursor2 = conn2.cursor()

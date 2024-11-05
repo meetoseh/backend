@@ -44,7 +44,6 @@ from oauth.lib.merging.log import MergeFreeformLog, merge_freeform_log
 from functools import partial
 import os
 import socket
-from rqdb.result import BulkResult
 
 
 class EmailForConflict(BaseModel):
@@ -352,13 +351,13 @@ async def attempt_start_merge(
             #     result_items.append(result_item)
             #     if result_item.error is not None:
             #         break
+            # result = BulkResult(result_items)
 
             result = await cursor2.executemany2(
                 [q.query for q in queries],
                 [q.qargs for q in queries],
                 raise_on_error=False,
             )
-            result = BulkResult(result_items)
         execution_time = time.perf_counter() - started_executing_at
         await log.out.write(
             b"execution time: " + f"{execution_time:.3f}".encode("ascii") + b"s\n"

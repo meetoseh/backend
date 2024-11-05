@@ -3749,7 +3749,12 @@ async def _create_move_name_queries(itgs: Itgs, octx: _Ctx, /) -> Sequence[Merge
                 original_given_name, str
             ), resp
             assert expected_given_name_assignment is (
-                merging_given_name is not None and original_given_name is None
+                merging_given_name is not None
+                and (
+                    original_given_name is None
+                    or original_given_name == ""
+                    or original_given_name.lower().startswith("anon")
+                )
             ), resp
             assert merging_family_name is None or isinstance(
                 merging_family_name, str
@@ -3758,7 +3763,12 @@ async def _create_move_name_queries(itgs: Itgs, octx: _Ctx, /) -> Sequence[Merge
                 original_family_name, str
             ), resp
             assert expected_family_name_assignment is (
-                merging_family_name is not None and original_family_name is None
+                merging_family_name is not None
+                and (
+                    original_family_name is None
+                    or original_family_name == ""
+                    or original_family_name.lower().startswith("anon")
+                )
             ), resp
 
             await mctx.log.write(
@@ -3854,10 +3864,10 @@ async def _create_move_name_queries(itgs: Itgs, octx: _Ctx, /) -> Sequence[Merge
                 "  '{}'"
                 "  , '$.context.merging_given_name', merging_user.given_name"
                 "  , '$.context.original_given_name', original_user.given_name"
-                "  , '$.context.given_name_assignment_required', json(iif(merging_user.given_name IS NOT NULL AND original_user.given_name IS NULL, 'true', 'false'))"
+                "  , '$.context.given_name_assignment_required', json(iif(merging_user.given_name IS NOT NULL AND (original_user.given_name IS NULL OR original_user.given_name = '' OR original_user.given_name LIKE 'anon%'), 'true', 'false'))"
                 "  , '$.context.merging_family_name', merging_user.family_name"
                 "  , '$.context.original_family_name', original_user.family_name"
-                "  , '$.context.family_name_assignment_required', json(iif(merging_user.family_name IS NOT NULL AND original_user.family_name IS NULL, 'true', 'false'))"
+                "  , '$.context.family_name_assignment_required', json(iif(merging_user.family_name IS NOT NULL AND (original_user.family_name IS NULL OR original_user.family_name = '' OR original_user.family_name LIKE 'anon%'), 'true', 'false'))"
                 " ), ? "
                 "FROM merging_user, original_user"
             ),

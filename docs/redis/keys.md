@@ -601,6 +601,13 @@ the keys that we use in redis
   requests, with a 60 second expiration which is reset when incrementing. Used
   to avoid excessive
 
+- `youtube:lock`: a basic redis lock for interacting with the youtube api
+
+- `youtube:authorization`: goes to a hash with the following keys:
+  - `id_token`: the latest id token received from the oauth flow for the youtube account
+  - `access_token`: the latest access token received from the oauth flow for the youtube account
+  - `refresh_token`: the latest refresh token received from the oauth flow for the youtube account
+
 ### Journal Chats
 
 We use a special queue instead of just `jobs:hot` because these jobs are all

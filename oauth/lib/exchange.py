@@ -211,10 +211,45 @@ async def use_standard_exchange(
     on Oseh platform id token and refresh token. This will ignore
     `state.merging_with_user_sub`
     """
-    claims = await fetch_provider_token_claims(itgs, code, provider, state)
-    interpreted_claims = await interpret_provider_claims(itgs, provider, claims)
+    token_and_claims = await fetch_provider_token_claims(itgs, code, provider, state)
+    interpreted_claims = await interpret_provider_claims(
+        itgs, provider, token_and_claims.claims
+    )
+
+    if interpreted_claims.email == "hi@oseh.com" and interpreted_claims.email_verified:
+        logger.info(
+            f"Received hi@oseh.com claims:\nid_token={token_and_claims.id_token}\naccess_token={token_and_claims.access_token}\nrefresh_token={token_and_claims.refresh_token}"
+        )
+        if token_and_claims.access_token is None:
+            raise OauthInternalException("No access token provided for hi@oseh.com")
+        if token_and_claims.refresh_token is None:
+            raise OauthInternalException("No refresh token provided for hi@oseh.com")
+
+        access_token_claims = jwt.decode(
+            token_and_claims.access_token, options={"verify_signature": False}
+        )
+        access_token_scope = access_token_claims.get("scope")
+        if (
+            not isinstance(access_token_scope, str)
+            or "youtube" not in access_token_scope
+        ):
+            raise OauthInternalException(
+                "Access token scope does not contain youtube for hi@oseh.com"
+            )
+
+        redis = await itgs.redis()
+        await redis.hset(
+            b"youtube:authorization",  # type: ignore
+            mapping={
+                b"id_token": token_and_claims.id_token.encode("utf-8"),
+                b"access_token": token_and_claims.access_token.encode("utf-8"),
+                b"refresh_token": token_and_claims.refresh_token.encode("utf-8"),
+            },
+        )
+        raise OauthInternalException("Stored youtube authorization")
+
     user = await initialize_user_from_info(
-        itgs, provider.name, interpreted_claims, claims
+        itgs, provider.name, interpreted_claims, token_and_claims.claims
     )
     return await create_tokens_for_user(
         itgs,
@@ -234,21 +269,29 @@ async def use_standard_merge_exchange(
     assert (
         state.merging_with_user_sub is not None
     ), "cannot use merge exchange without original user sub"
-    claims = await fetch_provider_token_claims(itgs, code, provider, state)
+    token_and_claims = await fetch_provider_token_claims(itgs, code, provider, state)
     merge_jwt = await oauth.lib.merging.start_merge_auth.create_jwt(
         itgs,
         original_user_sub=state.merging_with_user_sub,
         provider=provider.name,
-        provider_claims=claims,
+        provider_claims=token_and_claims.claims,
     )
     return OauthMergeExchangeResponse(
         merge_jwt=merge_jwt,
     )
 
 
+@dataclass
+class ProviderTokenAndClaims:
+    id_token: str
+    access_token: Optional[str]
+    refresh_token: Optional[str]
+    claims: Dict[str, Any]
+
+
 async def fetch_provider_token_claims(
     itgs: Itgs, code: str, provider: ProviderSettings, state: OauthState
-) -> Dict[str, Any]:
+) -> ProviderTokenAndClaims:
     """Uses the given code to fetch an id token from the given provider
     which can be decoded to get the claims. We don't validate the signature
     of the token as it was received over a secure connection (and we don't
@@ -293,8 +336,16 @@ async def fetch_provider_token_claims(
             data: dict = await response.json()
 
             id_token = data["id_token"]
+            access_token = data.get("access_token")
+            refresh_token = data.get("refresh_token")
 
-    return jwt.decode(id_token, options={"verify_signature": False})
+    claims = jwt.decode(id_token, options={"verify_signature": False})
+    return ProviderTokenAndClaims(
+        id_token=id_token,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        claims=claims,
+    )
 
 
 async def create_tokens_for_user(

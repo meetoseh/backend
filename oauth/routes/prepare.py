@@ -20,6 +20,13 @@ class OauthPrepareRequest(BaseModel):
     provider: OauthProvider = Field(
         description="Which provider to use for authentication"
     )
+    is_youtube_account: bool = Field(
+        False,
+        description=(
+            "If set we request youtube video upload scopes; this will only "
+            "be useful if the logged in user is marked as an admin manually"
+        ),
+    )
     refresh_token_desired: bool = Field(
         description=(
             "True if a refresh token is desired, false otherwise. "
@@ -89,6 +96,7 @@ async def prepare(args: OauthPrepareRequest):
         state=state,
         nonce=nonce,
         initial_redirect_uri=initial_redirect_uri,
+        is_youtube_account=args.is_youtube_account,
     )
 
     async with Itgs() as itgs:
@@ -149,7 +157,12 @@ def get_initial_redirect_uri_for_provider(provider: OauthProvider) -> str:
 
 
 def get_provider_url(
-    provider: OauthProvider, *, state: str, nonce: str, initial_redirect_uri: str
+    provider: OauthProvider,
+    *,
+    state: str,
+    nonce: str,
+    initial_redirect_uri: str,
+    is_youtube_account: bool = False,
 ) -> str:
     """Determines the url that the user should go to to authorize with the given
     provider, given the state secret, nonce, and initial redirect uri.
@@ -160,13 +173,18 @@ def get_provider_url(
         )
 
     settings = PROVIDER_TO_SETTINGS[provider]
+    scope = settings.scope
+
+    if provider == "Google" and is_youtube_account:
+        scope += " https://www.googleapis.com/auth/youtube.upload"
+
     return (
         settings.authorization_endpoint
         + "?"
         + urlencode(
             {
                 "client_id": settings.client_id,
-                "scope": settings.scope,
+                "scope": scope,
                 "redirect_uri": initial_redirect_uri,
                 "response_type": "code",
                 "state": state,

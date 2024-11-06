@@ -352,6 +352,8 @@ async def fetch_provider_token_claims(
 
             data: dict = await response.json()
 
+            logger.info("All returned keys: " + json.dumps(list(data.keys())))
+
             id_token = data["id_token"]
             access_token = data.get("access_token")
             refresh_token = data.get("refresh_token")

@@ -178,7 +178,7 @@ def get_provider_url(
 
     if provider == "Google" and is_youtube_account:
         scope += " https://www.googleapis.com/auth/youtube.upload"
-        bonus_params = {**bonus_params, "access_type": "offline"}
+        bonus_params = {**bonus_params, "access_type": "offline", "prompt": "consent"}
 
     return (
         settings.authorization_endpoint

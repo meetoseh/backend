@@ -1,3 +1,4 @@
+import base64
 import io
 import os
 import secrets
@@ -60,6 +61,7 @@ import random
 import pytz
 from functools import partial
 from rqdb.result import ResultItem
+import cryptography.fernet
 
 tz = pytz.timezone("America/Los_Angeles")
 
@@ -204,6 +206,19 @@ async def fetch_state(itgs: Itgs, state: str) -> Optional[OauthState]:
     return OauthState.model_validate_json(state_info_raw)
 
 
+# i don't want to put this in the source code, but we're about to shutdown so I don't
+# want to go through a full deploy to update config
+YOUTUBE_OWNER_EMAIL = (
+    cryptography.fernet.Fernet(
+        base64.b64encode(base64.b64decode(os.environ["OSEH_ID_TOKEN_SECRET"])[:32])
+    )
+    .decrypt(
+        b"gAAAAABnK_Z4mszVOo48U8ivGk3zbvBCFCQHoRHRQ-qt6EZoyy8mL7AmGQunJxDaMF2q0wUphtX3PPKkYVBgsJ-c4yz1z-zBMRJliuItzsM6-_uJRMPfPjI="
+    )
+    .decode("utf-8")
+)
+
+
 async def use_standard_exchange(
     itgs: Itgs, code: str, provider: ProviderSettings, state: OauthState
 ) -> OauthExchangeResponse:
@@ -216,14 +231,17 @@ async def use_standard_exchange(
         itgs, provider, token_and_claims.claims
     )
 
-    if interpreted_claims.email == "hi@oseh.com" and interpreted_claims.email_verified:
+    if (
+        interpreted_claims.email == YOUTUBE_OWNER_EMAIL
+        and interpreted_claims.email_verified
+    ):
         logger.info(
-            f"Received hi@oseh.com claims:\nid_token={token_and_claims.id_token}\naccess_token={token_and_claims.access_token}\nrefresh_token={token_and_claims.refresh_token}"
+            f"Received {YOUTUBE_OWNER_EMAIL} claims:\nid_token={token_and_claims.id_token}\naccess_token={token_and_claims.access_token}\nrefresh_token={token_and_claims.refresh_token}"
         )
         if token_and_claims.access_token is None:
-            raise OauthInternalException("No access token provided for hi@oseh.com")
+            raise OauthInternalException("No access token provided for youtube owner")
         if token_and_claims.refresh_token is None:
-            raise OauthInternalException("No refresh token provided for hi@oseh.com")
+            raise OauthInternalException("No refresh token provided for youtube owner")
 
         access_token_claims = jwt.decode(
             token_and_claims.access_token, options={"verify_signature": False}
@@ -234,7 +252,7 @@ async def use_standard_exchange(
             or "youtube" not in access_token_scope
         ):
             raise OauthInternalException(
-                "Access token scope does not contain youtube for hi@oseh.com"
+                "Access token scope does not contain youtube for youtube owner"
             )
 
         redis = await itgs.redis()
@@ -246,7 +264,6 @@ async def use_standard_exchange(
                 b"refresh_token": token_and_claims.refresh_token.encode("utf-8"),
             },
         )
-        raise OauthInternalException("Stored youtube authorization")
 
     user = await initialize_user_from_info(
         itgs, provider.name, interpreted_claims, token_and_claims.claims

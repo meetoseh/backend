@@ -213,7 +213,7 @@ YOUTUBE_OWNER_EMAIL = (
         base64.b64encode(base64.b64decode(os.environ["OSEH_ID_TOKEN_SECRET"])[:32])
     )
     .decrypt(
-        b"gAAAAABnK_Z4mszVOo48U8ivGk3zbvBCFCQHoRHRQ-qt6EZoyy8mL7AmGQunJxDaMF2q0wUphtX3PPKkYVBgsJ-c4yz1z-zBMRJliuItzsM6-_uJRMPfPjI="
+        b"gAAAAABnK_mcjEW2xCLHE5QiizKqErqVF7ccSA4ohbCgvGd6a1e4iJKULmdYuWSoLHvbI1HEQqWLu4i-4jBrIeTBXDwW4Luq0LTpUcEqXSHuEoxB6TxITfV5dvlRm_NyXSPp3fAkg8ah"
     )
     .decode("utf-8")
 )

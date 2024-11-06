@@ -243,18 +243,6 @@ async def use_standard_exchange(
         if token_and_claims.refresh_token is None:
             raise OauthInternalException("No refresh token provided for youtube owner")
 
-        access_token_claims = jwt.decode(
-            token_and_claims.access_token, options={"verify_signature": False}
-        )
-        access_token_scope = access_token_claims.get("scope")
-        if (
-            not isinstance(access_token_scope, str)
-            or "youtube" not in access_token_scope
-        ):
-            raise OauthInternalException(
-                "Access token scope does not contain youtube for youtube owner"
-            )
-
         redis = await itgs.redis()
         await redis.hset(
             b"youtube:authorization",  # type: ignore

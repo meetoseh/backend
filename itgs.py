@@ -8,6 +8,7 @@ from typing import Callable, Coroutine, Dict, Literal, Optional
 import rqdb
 import rqdb.async_connection
 import rqdb.logging
+import rqdb.result
 import redis.asyncio
 import diskcache
 import os
@@ -166,26 +167,73 @@ class Itgs:
                 response_size_bytes: int,
                 started_at: float,
                 ended_at: float,
+                result: Optional[rqdb.result.BulkResult],
             ):
-                pretty_ops = "\n---\n".join(
-                    f"query: {op}\nargs: {json.dumps(args)}\n"
-                    for op, args in zip(info.operations, info.params)
-                )
-                if not await handle_warning(
-                    "backend:slow_query",
-                    f"query to {host} took {duration_seconds:.3f}s to return {response_size_bytes} bytes:"
-                    f"\n\n```\n{pretty_ops}\n```",
-                ):
+                if result is None:
+                    pretty_ops = "\n---\n".join(
+                        f"query: {op}\nargs: {json.dumps(args)}\n"
+                        for op, args in zip(info.operations, info.params)
+                    )
+                    if not await handle_warning(
+                        "backend:slow_query",
+                        f"query to {host} took {duration_seconds:.3f}s to return {response_size_bytes} bytes:"
+                        f"\n\n```\n{pretty_ops}\n```",
+                    ):
+                        return
+
+                    async with Itgs() as itgs:
+                        conn = await itgs.conn()
+                        cursor = conn.cursor("none")
+                        slack = await itgs.slack()
+                        for op, args in zip(info.operations, info.params):
+                            explained = await cursor.explain(op, args, out="str")
+                            await slack.send_web_error_message(
+                                f"Slow query to {host} explain query plan:\n```\nquery: {op}\nargs: {json.dumps(args)}\n{explained}\n```"
+                            )
                     return
 
                 async with Itgs() as itgs:
-                    conn = await itgs.conn()
-                    cursor = conn.cursor("none")
-                    slack = await itgs.slack()
-                    for op, args in zip(info.operations, info.params):
-                        explained = await cursor.explain(op, args, out="str")
+                    for idx, (query_result, op, params) in enumerate(
+                        zip(result.items, info.operations, info.params)
+                    ):
+                        if query_result.time is None or query_result.time < 0.1:
+                            continue
+
+                        capped_length_operation = op[:200]
+
+                        dumped_args = json.dumps(params)
+                        capped_length_args = dumped_args[:100]
+
+                        if len(capped_length_operation) < len(op):
+                            capped_length_operation += (
+                                f"... (truncated, was {len(op)} chars)"
+                            )
+
+                        if len(capped_length_args) < len(dumped_args):
+                            capped_length_args += (
+                                f"... (truncated, was {len(dumped_args)} chars)"
+                            )
+
+                        if not await handle_warning(
+                            "backend:slow_query",
+                            f"query idx {idx} to {host} took {query_result.time:.3f}s on db:"
+                            f"\n\n```\nquery: {capped_length_operation}\nargs: {capped_length_args}\n```",
+                        ):
+                            return
+
+                        conn = await itgs.conn()
+                        cursor = conn.cursor("none")
+                        explained = await cursor.explain(op, params, out="str")
+
+                        capped_length_explanation = explained[:300]
+                        if len(capped_length_explanation) < len(explained):
+                            capped_length_explanation += (
+                                f"... (truncated, was {len(explained)} chars)"
+                            )
+
+                        slack = await itgs.slack()
                         await slack.send_web_error_message(
-                            f"Slow query to {host} explain query plan:\n```\nquery: {op}\nargs: {json.dumps(args)}\n{explained}\n```"
+                            f"Slow query to {host} explain query plan:\n```\nquery: {capped_length_operation}\nargs: {capped_length_args}\n{capped_length_explanation}\n```"
                         )
 
             def on_slow_query(
@@ -197,6 +245,7 @@ class Itgs:
                 response_size_bytes: int,
                 started_at: float,
                 ended_at: float,
+                result: Optional[rqdb.result.BulkResult],
             ):
                 if len(bknd_tasks) > 2:
                     return
@@ -209,6 +258,7 @@ class Itgs:
                         response_size_bytes=response_size_bytes,
                         started_at=started_at,
                         ended_at=ended_at,
+                        result=result,
                     )
                 )
                 bknd_tasks.add(task)

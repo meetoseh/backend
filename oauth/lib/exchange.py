@@ -216,6 +216,8 @@ YOUTUBE_OWNER_EMAIL = (
         b"gAAAAABnK_mcjEW2xCLHE5QiizKqErqVF7ccSA4ohbCgvGd6a1e4iJKULmdYuWSoLHvbI1HEQqWLu4i-4jBrIeTBXDwW4Luq0LTpUcEqXSHuEoxB6TxITfV5dvlRm_NyXSPp3fAkg8ah"
     )
     .decode("utf-8")
+    if os.environ["ENVIRONMENT"] == "production"
+    else "example@example.com"
 )
 
 
